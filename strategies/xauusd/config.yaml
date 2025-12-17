@@ -1,0 +1,123 @@
+# XAUUSD Strategy Configuration
+# Phase 2 Baseline (Final v1.0)
+# 
+# СТАТУС: FROZEN - изменения требуют тестирования в experiments/
+# ДАТА МИГРАЦИИ: 17 декабря 2025
+
+# ==============================================================================
+# ИНСТРУМЕНТ
+# ==============================================================================
+instrument:
+  symbol: "XAUUSD"
+  name: "Gold"
+  contract_size: 100  # oz
+
+# ==============================================================================
+# ТАЙМФРЕЙМЫ
+# ==============================================================================
+timeframes:
+  htf: "H1"   # Higher Timeframe - структурный анализ (BOS)
+  ltf: "M15"  # Lower Timeframe - entry сигналы (OB)
+
+# ==============================================================================
+# H1 АНАЛИЗ (HTF)
+# ==============================================================================
+h1_analysis:
+  # BOS Detection
+  bos_detection: "swing_high_low_break"
+  swing_lookback: 100  # bars для поиска swing points
+  
+  # Swing Point Definition
+  swing_high_pattern: "3_bar"  # high[i] > high[i-1] and high[i] > high[i+1]
+  swing_low_pattern: "3_bar"   # low[i] < low[i-1] and low[i] < low[i+1]
+
+# ==============================================================================
+# M15 АНАЛИЗ (LTF)
+# ==============================================================================
+m15_analysis:
+  # Premium/Discount Zones
+  premium_zone: 0.4   # 40% от range (для SELL)
+  discount_zone: 0.6  # 60% от range (для BUY)
+  range_lookback: 50  # bars для определения swing high/low
+  
+  # Order Block Detection
+  ob_detection:
+    impulse_atr_multiplier: 1.2  # Импульс должен быть > 1.2 * ATR
+    ob_candles_count: 3          # Принимать до 3 OB свечей перед импульсом
+    ob_lookback: 50              # bars для поиска OB
+    ob_min_lookback: 10          # минимальный lookback
+  
+  # ATR Settings
+  atr_period: 14  # bars для расчета ATR
+
+# ==============================================================================
+# RISK MANAGEMENT
+# ==============================================================================
+risk:
+  risk_per_trade: 1.0  # % от баланса на сделку
+  
+  # Stop Loss
+  sl_atr_multiplier: 1.5  # SL = entry +/- (1.5 * ATR)
+  
+  # Take Profit
+  reward_risk_ratio: 2.0  # TP = entry + (SL_distance * 2.0)
+  
+  # Leverage
+  leverage: 100  # 1:100
+
+# ==============================================================================
+# EXECUTION
+# ==============================================================================
+execution:
+  min_lot_size: 0.01     # Минимальный размер позиции
+  lot_size_precision: 2  # Округление лот-сайза (0.01)
+  
+  # Entry Conditions
+  allow_new_entries: true  # Kill switch для новых позиций
+  max_open_positions: 1    # Максимум одновременных позиций
+
+# ==============================================================================
+# PERFORMANCE (REFERENCE - 2023-2025)
+# ==============================================================================
+# Метрики для валидации (НЕ менять параметры выше без тестирования)
+performance_reference:
+  avg_trades_per_year: 148
+  avg_win_rate: 60.76  # %
+  avg_max_dd: 11.51    # %
+  avg_roi: 952.0       # %
+  
+  years_validated:
+    - year: 2023
+      trades: 161
+      win_rate: 63.35
+      max_dd: 6.48
+      roi: 1040.0
+    
+    - year: 2024
+      trades: 160
+      win_rate: 58.13
+      max_dd: 16.98
+      roi: 599.0
+    
+    - year: 2025
+      trades: 125
+      win_rate: 60.80
+      max_dd: 11.07
+      roi: 1218.83
+
+# ==============================================================================
+# BASELINE PROTECTION
+# ==============================================================================
+baseline_info:
+  version: "Final v1.0"
+  date_finalized: "2025-12-16"
+  date_migrated: "2025-12-17"
+  status: "FROZEN"
+  
+  # Любые изменения требуют:
+  modifications_require:
+    - "Тестирование в experiments/"
+    - "Валидация на 2023-2025"
+    - "Сравнение со всеми метриками baseline"
+    - "Документирование гипотезы"
+    - "Approval через testing protocol"
