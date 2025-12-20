@@ -176,10 +176,9 @@ class StrategyXAUUSD:
         
         # Поиск swing highs и lows (последние 100 баров)
         start_idx = max(1, current_idx - 100)
-        for i in range(start_idx, current_idx):
-            if i >= len(h1_data) - 1:
-                continue
-            
+        end_idx = min(current_idx - 1, len(h1_data) - 2)  # -2 чтобы i+1 был валиден
+        
+        for i in range(start_idx, end_idx + 1):
             # Swing High: high[i] > high[i-1] and high[i] > high[i+1]
             if (h1_data.iloc[i]['high'] > h1_data.iloc[i-1]['high'] and
                 h1_data.iloc[i]['high'] > h1_data.iloc[i+1]['high']):
