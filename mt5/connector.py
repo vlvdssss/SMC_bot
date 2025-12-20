@@ -74,14 +74,14 @@ class MT5Connector:
         
         # Инициализация MT5
         if path:
-            if not mt5.initialize(path=path, login=login, password=password, 
-                                  server=server, timeout=timeout):
+            if not mt5.initialize(path=path, login=int(login), password=password, 
+                                  server=server, timeout=int(timeout) if timeout else 10000):
                 error = mt5.last_error()
                 print(f"[!] MT5 initialization failed: {error}")
                 return False
         else:
-            if not mt5.initialize(login=login, password=password, 
-                                  server=server, timeout=timeout):
+            if not mt5.initialize(login=int(login), password=password, 
+                                  server=server, timeout=int(timeout) if timeout else 10000):
                 error = mt5.last_error()
                 print(f"[!] MT5 initialization failed: {error}")
                 return False

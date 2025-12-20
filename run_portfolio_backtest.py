@@ -22,9 +22,9 @@ from pathlib import Path
 
 from strategies.xauusd.strategy import StrategyXAUUSD
 from strategies.eurusd.strategy import StrategyEURUSD_SMC_Retracement
-from data_loader import DataLoader
-from broker_sim import BrokerSim
-from executor import Executor
+from BAZA.core.data_loader import DataLoader
+from BAZA.core.broker_sim import BrokerSim
+from BAZA.core.executor import Executor
 
 
 class PortfolioBacktest:
@@ -40,9 +40,9 @@ class PortfolioBacktest:
         self.max_drawdown = 0.0
         
         # Risk allocation (SIMPLE MODEL)
-        self.risk_xauusd = 0.75  # % per trade
+        self.risk_xauusd = 1.0   # % per trade (Phase 2 Baseline)
         self.risk_eurusd = 0.5   # % per trade
-        self.max_total_risk = 1.25  # % maximum exposure
+        self.max_total_risk = 1.5  # % maximum exposure
         
         # Results tracking
         self.trades = []

@@ -15,11 +15,9 @@ from pathlib import Path
 
 from strategies.xauusd.strategy import StrategyXAUUSD
 from strategies.eurusd.strategy import StrategyEURUSD_SMC_Retracement
-from strategies.gbpusd.strategy import StrategyGBPUSD_MeanReversion
-from strategies.gbpusd.strategy_retracement import StrategyGBPUSD_SMC_Retracement
-from data_loader import DataLoader
-from broker_sim import BrokerSim
-from executor import Executor
+from BAZA.core.data_loader import DataLoader
+from BAZA.core.broker_sim import BrokerSim
+from BAZA.core.executor import Executor
 
 
 def run_backtest(instrument: str, start_date: str, end_date: str, initial_balance: float = 100.0):
@@ -29,9 +27,9 @@ def run_backtest(instrument: str, start_date: str, end_date: str, initial_balanc
     
     # Strategy configuration
     if instrument == 'xauusd':
-        strategy_name = "XAUUSD Phase 2 Baseline"
+        strategy_name = "XAUUSD Trend Following Baseline"
         strategy_class = StrategyXAUUSD
-        risk_pct = 1.0
+        risk_pct = 1.0  # Phase 2 Baseline: 1% risk per trade
         contract_size = 100  # XAUUSD: 100 oz per lot
         spread_points = 20.0
         spread_multiplier = 0.01  # 20 points = 0.20 USD
@@ -46,17 +44,8 @@ def run_backtest(instrument: str, start_date: str, end_date: str, initial_balanc
         spread_multiplier = 0.0001  # 1.5 pips = 0.00015 USD
         commission_per_lot = 0.0  # No commission on forex usually
         price_decimals = 5  # EURUSD: 5 знаков (1.17220)
-    elif instrument == 'gbpusd':
-        strategy_name = "GBPUSD SMC Retracement (FINAL TEST)"
-        strategy_class = StrategyGBPUSD_SMC_Retracement
-        risk_pct = 0.5
-        contract_size = 100000  # GBPUSD: 100,000 units per lot
-        spread_points = 2.0
-        spread_multiplier = 0.0001  # 2.0 pips = 0.00020 USD
-        commission_per_lot = 0.0  # No commission on forex
-        price_decimals = 5  # GBPUSD: 5 знаков (1.27220)
     else:
-        raise ValueError(f"Unknown instrument: {instrument}")
+        raise ValueError(f"Unknown instrument: {instrument}. Supported: xauusd, eurusd")
     
     print("=" * 80)
     print(f"SMC-framework - {strategy_name} Backtest")
@@ -175,7 +164,7 @@ def run_backtest(instrument: str, start_date: str, end_date: str, initial_balanc
             if m15_idx < 20:
                 continue
             
-            signal = strategy.generate_signal(m15_idx, current_price, current_time)
+            signal = strategy.generate_signal(m15_idx, current_price)
             
             if signal['valid']:
                 # Calculate lot size
