@@ -20,8 +20,8 @@ import numpy as np
 from datetime import datetime
 from pathlib import Path
 
-from strategies.xauusd.strategy import StrategyXAUUSD
-from strategies.eurusd.strategy import StrategyEURUSD_SMC_Retracement
+from BAZA.strategies.xauusd_strategy import StrategyXAUUSD
+from BAZA.strategies.eurusd_strategy import StrategyEURUSD_SMC_Retracement
 from BAZA.core.data_loader import DataLoader
 from BAZA.core.broker_sim import BrokerSim
 from BAZA.core.executor import Executor
@@ -189,10 +189,11 @@ class PortfolioBacktest:
                 print(f"[$] Trade #{len(self.trades)} | {instrument.upper()} {pos.direction} | {pos.exit_reason} | PnL: ${pos.pnl:+.2f} | Balance: ${self.balance:,.2f}")
     
     def check_signal(self, instrument: str, m15_idx: int, current_price: float, current_time):
-        """Check for signal and potentially open position."""
+        """Check for signal and potentially open position with FIXED ENTRY LOGIC."""
         executor = self.executors[instrument]
         strategy = self.strategies[instrument]
         config = self.instruments[instrument]
+        m15_data = self.data[instrument]['m15']
         
         # Skip if already has position
         if executor.has_position():
@@ -202,16 +203,38 @@ class PortfolioBacktest:
         if not self.can_open_position(instrument):
             return
         
-        # Get signal from strategy (different signatures for different strategies)
+        # ========== FIXED ENTRY LOGIC v1.1 ==========
+        # Защита: нужна следующая свеча для входа
+        if m15_idx >= len(m15_data) - 1:
+            return
+        
+        # Анализ на close текущей свечи, вход на open следующей
+        analysis_price = m15_data.iloc[m15_idx]['close']
+        entry_price = m15_data.iloc[m15_idx + 1]['open']
+        entry_time = m15_data.iloc[m15_idx + 1]['time']
+        
+        # Get signal from strategy with FIXED logic
         if instrument == 'xauusd':
-            signal = strategy.generate_signal(m15_idx, current_price)
+            signal = strategy.generate_signal(m15_idx, analysis_price, entry_price)
         elif instrument == 'eurusd':
-            signal = strategy.generate_signal(m15_idx, current_price, current_time)
+            signal = strategy.generate_signal(m15_idx, analysis_price, entry_price, current_time)
         else:
             return
         
         if not signal['valid']:
             return
+        
+        # ========== SLIPPAGE SIMULATION ==========
+        # Добавляем спред к entry_price для реалистичной симуляции
+        spread = config['spread_points'] * config['spread_multiplier']
+        adjusted_entry_price = entry_price
+        if signal['direction'] == 'BUY':
+            adjusted_entry_price += spread  # Ask price
+        elif signal['direction'] == 'SELL':
+            adjusted_entry_price -= spread  # Bid price
+        
+        # Обновляем entry в сигнале
+        signal['entry'] = adjusted_entry_price
         
         # Calculate lot size using strategy logic
         trade_params = strategy.execute_trade(signal, self.balance, risk_pct=config['risk_pct'])
@@ -219,19 +242,19 @@ class PortfolioBacktest:
         if not trade_params:
             return
         
-        # Open position
+        # Open position на adjusted_entry_price (next open + spread)
         opened = executor.open_position(
             signal=signal,
             lot_size=trade_params['lot_size'],
-            current_price=current_price,
-            current_time=current_time,
+            current_price=adjusted_entry_price,
+            current_time=entry_time,
             balance=self.balance,
             equity=self.equity,
             used_margin=0.0
         )
         
         if opened and (len(self.trades) + 1) % 5 == 1:
-            print(f"[+] Trade #{len(self.trades)+1} | {instrument.upper()} {signal['direction']} | Entry: {current_price:.{config['price_decimals']}f}")
+            print(f"[+] Trade #{len(self.trades)+1} | {instrument.upper()} {signal['direction']} | Entry: {adjusted_entry_price:.{config['price_decimals']}f} (spread: {spread:.{config['price_decimals']}f})")
     
     def run(self, start_date: str, end_date: str):
         """Run portfolio backtest."""

@@ -265,11 +265,23 @@ class PortfolioManager:
         if not trade_params:
             return
         
-        # Open position на entry_price (next open) с учётом спреда
+        # ========== SLIPPAGE SIMULATION ==========
+        # Добавляем спред к entry_price для реалистичной симуляции
+        spread = config['spread_points'] * config['spread_multiplier']
+        adjusted_entry_price = entry_price
+        if signal['direction'] == 'BUY':
+            adjusted_entry_price += spread  # Ask price
+        elif signal['direction'] == 'SELL':
+            adjusted_entry_price -= spread  # Bid price
+        
+        # Обновляем entry в сигнале для корректного расчета SL/TP
+        signal['entry'] = adjusted_entry_price
+        
+        # Open position на adjusted_entry_price (с учётом спреда)
         opened = executor.open_position(
             signal=signal,
             lot_size=trade_params['lot_size'],
-            current_price=entry_price,  # ← Входим на open следующей свечи
+            current_price=adjusted_entry_price,
             current_time=m15_data.iloc[m15_idx + 1]['time'],
             balance=self.balance,
             equity=self.equity,

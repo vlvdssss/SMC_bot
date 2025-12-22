@@ -319,6 +319,18 @@ class LiveTrader:
                             if self.enable_trading:
                                 print(f"   [!] Executing trade...")
                                 
+                                # ========== GAP PROTECTION ==========
+                                # Проверяем, не ушла ли цена слишком далеко от рассчитанного entry
+                                gap_threshold = 0.001 if instrument == 'EURUSD' else 0.01  # 0.1% для EURUSD, 1% для XAUUSD
+                                gap_pct = abs(price - entry) / entry * 100
+                                
+                                if gap_pct > gap_threshold:
+                                    print(f"   [GAP-BLOCK] Price gap too large: {gap_pct:.2f}% (threshold: {gap_threshold:.2f}%)")
+                                    print(f"   Signal entry: {entry:.5f}, Current price: {price:.5f}")
+                                    continue
+                                
+                                print(f"   [✓] Gap check passed: {gap_pct:.2f}%")
+                                
                                 # Получаем текущий баланс
                                 account_info = self.connector.get_account_info()
                                 if account_info is None:
