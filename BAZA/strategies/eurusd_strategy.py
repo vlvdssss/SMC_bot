@@ -1,14 +1,18 @@
 """
-EURUSD Trading Strategy - SMC Retracement Baseline
+EURUSD Trading Strategy - SMC Retracement Baseline (FIXED ENTRY LOGIC)
 
 Стратегия для торговли валютной пары EUR/USD.
 
-СТАТУС: BASELINE (R&D закрыт до результатов)
-ВЕРСИЯ: v1.0
-ДАТА СОЗДАНИЯ: 18 декабря 2025
+СТАТУС: BASELINE (исправлена логика входа)
+ВЕРСИЯ: v1.1 (Fixed Entry)
+ДАТА ОБНОВЛЕНИЯ: 22 декабря 2025
+
+КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ:
+- Сигнал формируется на close текущей свечи M15
+- Вход происходит на open СЛЕДУЮЩЕЙ свечи M15
+- Устранён look-ahead bias для соответствия live торговле
 
 Тип стратегии: SMC Retracement (pullback entries)
-Отличается от XAUUSD тем, что EURUSD = более стабильная валютная пара с глубокими откатами.
 """
 
 import pandas as pd
@@ -17,7 +21,7 @@ import numpy as np
 
 class StrategyEURUSD_SMC_Retracement:
     """
-    SMC Retracement стратегия для EURUSD.
+    SMC Retracement стратегия для EURUSD с правильной логикой входа.
     
     Концепция:
     - EURUSD = ликвидная валютная пара с четкой структурой
@@ -27,19 +31,18 @@ class StrategyEURUSD_SMC_Retracement:
     Логика:
     1. H1: BOS detection для определения направления тренда
     2. M15: Order Block identification
-    3. M15: Premium/Discount зоны
-    4. Entry: Retracement в OB + правильная зона
+    3. M15: Premium/Discount зоны (проверка на close текущей свечи)
+    4. Entry: На OPEN СЛЕДУЮЩЕЙ свечи (если сигнал валиден)
     5. Exit: 2:1 RR, SL = OB или ATR-based
     
-    Отличия от XAUUSD:
-    - НЕ используем FVG (фокус только на OB)
-    - Более консервативные входы (pullback only)
-    - Риск 0.5% (vs 1% для XAUUSD)
+    FIXED: Теперь сигнал на close → вход на next open (как в live торговле)
     """
     
     def __init__(self):
         """Инициализация стратегии для EURUSD"""
         self.instrument = "EURUSD"
+        self.name = "EURUSD SMC Retracement"
+        self.version = "v1.1 (Fixed Entry)"
         self.htf_timeframe = "H1"
         self.ltf_timeframe = "M15"
         
@@ -84,17 +87,25 @@ class StrategyEURUSD_SMC_Retracement:
             return
         self.analyze_h1(self.h1_data, current_h1_idx)
     
-    def generate_signal(self, current_m15_idx: int, current_price: float, 
-                       current_time: pd.Timestamp) -> dict:
+    def generate_signal(self, current_m15_idx: int, analysis_price: float,
+                       entry_price: float, current_time: pd.Timestamp) -> dict:
         """
         Генерация торгового сигнала на M15.
+        
+        FIXED LOGIC: Анализ на close текущей свечи, вход на open следующей.
+        
+        Args:
+            current_m15_idx: Индекс текущей свечи (которая закрылась)
+            analysis_price: Close текущей свечи (для анализа)
+            entry_price: Open следующей свечи (для входа)
+            current_time: Время текущей свечи
         
         Returns:
             dict: {'direction': str, 'sl': float, 'tp': float, 'valid': bool, 'entry': float}
         """
         if self.m15_data is None:
             return {'valid': False}
-        return self.get_signal(self.m15_data, current_m15_idx, current_price)
+        return self.get_signal(self.m15_data, current_m15_idx, analysis_price, entry_price)
     
     def execute_trade(self, signal: dict, balance: float, risk_pct: float = 0.5) -> dict:
         """
@@ -129,17 +140,20 @@ class StrategyEURUSD_SMC_Retracement:
     
     def get_trade(self, h1_data: pd.DataFrame, m15_data: pd.DataFrame,
                   current_h1_idx: int, current_m15_idx: int,
-                  current_price: float, current_time: pd.Timestamp,
-                  balance: float) -> dict:
+                  analysis_price: float, entry_price: float,
+                  current_time: pd.Timestamp, balance: float) -> dict:
         """
         Главная функция - получение торгового сигнала.
+        
+        FIXED: Разделены цены для анализа и входа.
         
         Args:
             h1_data: H1 DataFrame
             m15_data: M15 DataFrame
             current_h1_idx: Индекс в H1 данных
             current_m15_idx: Индекс в M15 данных
-            current_price: Текущая цена
+            analysis_price: Close текущей свечи (для анализа)
+            entry_price: Open следующей свечи (для входа)
             current_time: Текущее время
             balance: Баланс счета
             
@@ -159,7 +173,7 @@ class StrategyEURUSD_SMC_Retracement:
         self.analyze_h1(h1_data, current_h1_idx)
         
         # Шаг 2: Генерация сигнала M15
-        signal = self.get_signal(m15_data, current_m15_idx, current_price)
+        signal = self.get_signal(m15_data, current_m15_idx, analysis_price, entry_price)
         
         # Шаг 3: Расчет сделки
         if signal['valid']:
@@ -171,7 +185,7 @@ class StrategyEURUSD_SMC_Retracement:
         return None
     
     # =========================================================================
-    # EURUSD SMC RETRACEMENT LOGIC
+    # EURUSD SMC RETRACEMENT LOGIC (FIXED ENTRY - v1.1)
     # =========================================================================
     
     def analyze_h1(self, h1_data: pd.DataFrame, current_idx: int) -> None:
@@ -207,35 +221,35 @@ class StrategyEURUSD_SMC_Retracement:
         if self.last_swing_high_h1 and current_close > self.last_swing_high_h1:
             self.bos_direction = 'BUY'
             self.h1_bos_valid = True
-            self.h1_high = h1_data.iloc[current_idx - 10:current_idx]['high'].max()
-            self.h1_low = h1_data.iloc[current_idx - 10:current_idx]['low'].min()
+            self.h1_high = h1_data.iloc[current_idx - 10:current_idx + 1]['high'].max()
+            self.h1_low = h1_data.iloc[current_idx - 10:current_idx + 1]['low'].min()
         elif self.last_swing_low_h1 and current_close < self.last_swing_low_h1:
             self.bos_direction = 'SELL'
             self.h1_bos_valid = True
-            self.h1_high = h1_data.iloc[current_idx - 10:current_idx]['high'].max()
-            self.h1_low = h1_data.iloc[current_idx - 10:current_idx]['low'].min()
+            self.h1_high = h1_data.iloc[current_idx - 10:current_idx + 1]['high'].max()
+            self.h1_low = h1_data.iloc[current_idx - 10:current_idx + 1]['low'].min()
         else:
             self.bos_direction = None
             self.h1_bos_valid = False
     
-    def get_signal(self, m15_data: pd.DataFrame, current_idx: int, 
-                   current_price: float) -> dict:
+    def get_signal(self, m15_data: pd.DataFrame, current_idx: int,
+                   analysis_price: float, entry_price: float) -> dict:
         """
         Получение торгового сигнала на M15 (RETRACEMENT LOGIC).
         
-        EURUSD Retracement:
-        - Ждем глубоких откатов (50-80% диапазона)
-        - Entry в Order Block
-        - Проверка Premium/Discount
-        - SL = за OB или ATR-based
-        - TP = 2:1 RR
+        FIXED LOGIC: Анализ на analysis_price, вход на entry_price.
+        
+        Args:
+            current_idx: Индекс текущей свечи (которая закрылась)
+            analysis_price: Close текущей свечи (для проверки условий)
+            entry_price: Open следующей свечи (для входа)
         """
         signal = {
             'direction': None, 
             'sl': None, 
             'tp': None, 
             'valid': False,
-            'entry': current_price
+            'entry': entry_price  # ← КРИТИЧЕСКОЕ: вход на следующей свече
         }
         
         if not self.bos_direction or current_idx < 20:
@@ -248,20 +262,17 @@ class StrategyEURUSD_SMC_Retracement:
         
         # Поиск Order Block (последняя свеча перед импульсом)
         lookback = min(20, current_idx)
-        recent_bars = m15_data.iloc[current_idx - lookback:current_idx]
+        recent_bars = m15_data.iloc[current_idx - lookback:current_idx + 1]
         
         if self.bos_direction == 'BUY':
             # Для BUY: ищем bullish OB (свечу перед движением вверх)
-            # Проверяем откат к OB
-            
-            # OB = последняя down свеча перед up движением
             ob_found = False
             ob_low = None
             ob_high = None
             
-            for i in range(len(recent_bars) - 1, 0, -1):
+            for i in range(len(recent_bars) - 2, 0, -1):
                 bar = recent_bars.iloc[i]
-                next_bar = recent_bars.iloc[i+1] if i+1 < len(recent_bars) else m15_data.iloc[current_idx]
+                next_bar = recent_bars.iloc[i+1]
                 
                 # Down свеча + следующая up свеча
                 if bar['close'] < bar['open'] and next_bar['close'] > next_bar['open']:
@@ -273,8 +284,8 @@ class StrategyEURUSD_SMC_Retracement:
             if not ob_found:
                 return signal
             
-            # Проверяем что цена вернулась в OB
-            if not (ob_low <= current_price <= ob_high):
+            # Проверяем что analysis_price (close) был в OB
+            if not (ob_low <= analysis_price <= ob_high):
                 return signal
             
             # Проверяем Premium/Discount (должны быть в Discount для BUY)
@@ -284,15 +295,15 @@ class StrategyEURUSD_SMC_Retracement:
             h1_range = self.h1_high - self.h1_low
             discount_level = self.h1_low + (h1_range * 0.5)
             
-            if current_price > discount_level:
+            if analysis_price > discount_level:
                 # В Premium зоне - не входим
                 return signal
             
-            # Entry на текущей цене
+            # Entry на entry_price (следующий open)
             signal['direction'] = 'BUY'
-            signal['sl'] = ob_low - (atr * 0.2)  # SL чуть ниже OB
-            sl_distance = current_price - signal['sl']
-            signal['tp'] = current_price + (sl_distance * 2.0)  # 2:1 RR
+            signal['sl'] = entry_price - (atr * 1.5)  # SL от entry
+            sl_distance = entry_price - signal['sl']
+            signal['tp'] = entry_price + (sl_distance * 2.0)  # 2:1 RR
             signal['valid'] = True
             
         elif self.bos_direction == 'SELL':
@@ -301,9 +312,9 @@ class StrategyEURUSD_SMC_Retracement:
             ob_low = None
             ob_high = None
             
-            for i in range(len(recent_bars) - 1, 0, -1):
+            for i in range(len(recent_bars) - 2, 0, -1):
                 bar = recent_bars.iloc[i]
-                next_bar = recent_bars.iloc[i+1] if i+1 < len(recent_bars) else m15_data.iloc[current_idx]
+                next_bar = recent_bars.iloc[i+1]
                 
                 # Up свеча + следующая down свеча
                 if bar['close'] > bar['open'] and next_bar['close'] < next_bar['open']:
@@ -315,8 +326,8 @@ class StrategyEURUSD_SMC_Retracement:
             if not ob_found:
                 return signal
             
-            # Проверяем что цена вернулась в OB
-            if not (ob_low <= current_price <= ob_high):
+            # Проверяем что analysis_price (close) был в OB
+            if not (ob_low <= analysis_price <= ob_high):
                 return signal
             
             # Проверяем Premium/Discount (должны быть в Premium для SELL)
@@ -326,15 +337,15 @@ class StrategyEURUSD_SMC_Retracement:
             h1_range = self.h1_high - self.h1_low
             premium_level = self.h1_low + (h1_range * 0.5)
             
-            if current_price < premium_level:
+            if analysis_price < premium_level:
                 # В Discount зоне - не входим
                 return signal
             
-            # Entry на текущей цене
+            # Entry на entry_price (следующий open)
             signal['direction'] = 'SELL'
-            signal['sl'] = ob_high + (atr * 0.2)  # SL чуть выше OB
-            sl_distance = signal['sl'] - current_price
-            signal['tp'] = current_price - (sl_distance * 2.0)  # 2:1 RR
+            signal['sl'] = entry_price + (atr * 1.5)  # SL от entry
+            sl_distance = signal['sl'] - entry_price
+            signal['tp'] = entry_price - (sl_distance * 2.0)  # 2:1 RR
             signal['valid'] = True
         
         return signal
@@ -349,7 +360,7 @@ class StrategyEURUSD_SMC_Retracement:
         if current_idx < period:
             return 0.0
         
-        recent = df.iloc[current_idx - period:current_idx]
+        recent = df.iloc[current_idx - period + 1:current_idx + 1]
         high_low = recent['high'] - recent['low']
         atr = high_low.mean()
         

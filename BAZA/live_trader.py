@@ -170,11 +170,12 @@ class LiveTrader:
             current_price = m15_data.iloc[m15_idx]['close']
             current_time = m15_data.iloc[m15_idx]['time']
             
-            # generate_signal для XAUUSD не требует current_time
+            # generate_signal - LIVE версия: анализ на close, вход market
             if instrument == 'XAUUSD':
-                signal = strategy.generate_signal(m15_idx, current_price)
+                # Для live: используем текущую цену как analysis_price и entry_price
+                signal = strategy.generate_signal(m15_idx, current_price, current_price)
             else:
-                signal = strategy.generate_signal(m15_idx, current_price, current_time)
+                signal = strategy.generate_signal(m15_idx, current_price, current_price, current_time)
             
             signals[instrument] = {
                 'signal': signal,
@@ -185,6 +186,51 @@ class LiveTrader:
             }
         
         return signals
+    
+    def _prepare_mt5_request(self, instrument: str, trade_params: dict) -> dict:
+        """
+        Подготовка MT5 request из trade_params.
+        
+        Args:
+            instrument: Символ (XAUUSD, EURUSD)
+            trade_params: Параметры от execute_trade()
+            
+        Returns:
+            dict: MT5 order request
+        """
+        import MetaTrader5 as mt5
+        
+        direction = trade_params['direction']
+        # В live торговле используем текущую рыночную цену для входа
+        # entry_price из сигнала используется только для расчета SL/TP
+        sl = trade_params['sl']
+        tp = trade_params['tp']
+        lot_size = trade_params['lot_size']
+        
+        # Определяем тип ордера и текущую рыночную цену
+        if direction == 'BUY':
+            order_type = mt5.ORDER_TYPE_BUY
+            price = mt5.symbol_info_tick(instrument).ask
+        elif direction == 'SELL':
+            order_type = mt5.ORDER_TYPE_SELL
+            price = mt5.symbol_info_tick(instrument).bid
+        else:
+            return None
+        
+        return {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": instrument,
+            "volume": lot_size,
+            "type": order_type,
+            "price": price,
+            "sl": sl,
+            "tp": tp,
+            "deviation": 10,  # slippage
+            "magic": 123456,  # magic number
+            "comment": f"SMC {direction}",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": mt5.ORDER_FILLING_IOC,
+        }
     
     def run_monitoring(self, log_interval=60):
         """
@@ -238,6 +284,16 @@ class LiveTrader:
                     print(f"\n[{now.strftime('%Y-%m-%d %H:%M:%S')}] Check #{iteration}")
                     print("-" * 80)
                     
+                    # Логируем открытые позиции
+                    positions = self.connector.get_positions()
+                    if positions:
+                        print("Open Positions:")
+                        for pos in positions:
+                            print(f"  {pos['symbol']} {pos['type']} {pos['volume']} lots @ {pos['price_open']:.5f}, P/L: {pos['profit']:.2f}")
+                    else:
+                        print("No open positions")
+                    print("-" * 40)
+                    
                     # Выводим результаты
                     for instrument, data in signals.items():
                         signal = data['signal']
@@ -261,7 +317,39 @@ class LiveTrader:
                             print(f"   Time: {time_str}")
                             
                             if self.enable_trading:
-                                print(f"   [!] Would execute trade here (trading enabled)")
+                                print(f"   [!] Executing trade...")
+                                
+                                # Получаем текущий баланс
+                                account_info = self.connector.get_account_info()
+                                if account_info is None:
+                                    print(f"   [EXEC-BLOCK] account_info is None")
+                                    continue
+                                
+                                balance = account_info['balance']
+                                
+                                # Получаем risk_pct из config
+                                risk_pct = self.portfolio_config['portfolio']['risk_per_trade']
+                                
+                                # Выполняем trade
+                                strategy = self.strategies[instrument]
+                                trade_params = strategy.execute_trade(signal, balance, risk_pct)
+                                
+                                if trade_params:
+                                    # Преобразуем в MT5 request
+                                    mt5_request = self._prepare_mt5_request(instrument, trade_params)
+                                    
+                                    if mt5_request:
+                                        # Отправляем ордер
+                                        order_result = self.connector.send_order(mt5_request)
+                                        
+                                        if order_result['retcode'] == 10009:  # TRADE_RETCODE_DONE
+                                            print(f"   [✓] Trade executed successfully!")
+                                        else:
+                                            print(f"   [EXEC-BLOCK] order rejected: retcode={order_result['retcode']}, comment='{order_result['comment']}'")
+                                    else:
+                                        print(f"   [EXEC-BLOCK] invalid order request")
+                                else:
+                                    print(f"   [EXEC-BLOCK] trade_params is None")
                             else:
                                 print(f"   [i] Trading disabled - signal logged only")
                         else:

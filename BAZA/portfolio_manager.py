@@ -1,4 +1,10 @@
-"""Portfolio Manager - Multi-instrument portfolio execution with risk management."""
+"""Portfolio Manager - Multi-instrument portfolio execution with FIXED ENTRY LOGIC
+
+КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ v1.1:
+- Сигнал анализируется на close текущей M15 свечи
+- Вход происходит на open СЛЕДУЮЩЕЙ M15 свечи
+- Устранён look-ahead bias для соответствия live торговле
+"""
 
 import pandas as pd
 import numpy as np
@@ -14,7 +20,7 @@ class PortfolioManager:
     """
     Manages multiple instruments in a portfolio with unified risk management.
     
-    FROZEN LOGIC from portfolio backtests (2023-2025 validated).
+    FIXED LOGIC (v1.1): Правильная обработка входа для live торговли.
     """
     
     def __init__(self, initial_balance: float = 100.0):
@@ -46,7 +52,7 @@ class PortfolioManager:
         self.trades = []
         self.equity_curve = []
         
-        print(f"[*] Portfolio Manager initialized")
+        print(f"[*] Portfolio Manager initialized (v1.1 - Fixed Entry)")
         print(f"    Balance: ${self.balance:,.2f}")
         print(f"    Active instruments: {', '.join(self.active_instruments)}")
     
@@ -205,19 +211,23 @@ class PortfolioManager:
                 'balance': self.balance
             })
     
-    def check_signal(self, instrument: str, m15_idx: int, current_price: float, current_time):
+    def check_signal(self, instrument: str, m15_idx: int, current_time):
         """
         Check for signal and potentially open position.
         
+        FIXED LOGIC v1.1:
+        - Анализ на close ТЕКУЩЕЙ свечи (m15_idx)
+        - Вход на open СЛЕДУЮЩЕЙ свечи (m15_idx + 1)
+        
         Args:
             instrument: Instrument to check
-            m15_idx: Current M15 index
-            current_price: Current price
+            m15_idx: Current M15 index (свеча которая закрылась)
             current_time: Current timestamp
         """
         executor = self.executors[instrument]
         strategy = self.strategies[instrument]
         config = self.instruments_config['instruments'][instrument]
+        m15_data = self.data[instrument]['m15']
         
         # Skip if already has position
         if executor.has_position():
@@ -227,11 +237,22 @@ class PortfolioManager:
         if not self.can_open_position(instrument):
             return
         
-        # Get signal from strategy (handle different signatures)
+        # ========== КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ v1.1 ==========
+        # Защита: нужна следующая свеча для входа
+        if m15_idx >= len(m15_data) - 1:
+            return
+        
+        # Берём цены:
+        # - analysis_price = close текущей свечи (для анализа)
+        # - entry_price = open следующей свечи (для входа)
+        analysis_price = m15_data.iloc[m15_idx]['close']
+        entry_price = m15_data.iloc[m15_idx + 1]['open']
+        
+        # Get signal from strategy with FIXED logic
         if instrument == 'XAUUSD':
-            signal = strategy.generate_signal(m15_idx, current_price)
+            signal = strategy.generate_signal(m15_idx, analysis_price, entry_price)
         elif instrument == 'EURUSD':
-            signal = strategy.generate_signal(m15_idx, current_price, current_time)
+            signal = strategy.generate_signal(m15_idx, analysis_price, entry_price, current_time)
         else:
             return
         
@@ -244,12 +265,12 @@ class PortfolioManager:
         if not trade_params:
             return
         
-        # Open position
+        # Open position на entry_price (next open) с учётом спреда
         opened = executor.open_position(
             signal=signal,
             lot_size=trade_params['lot_size'],
-            current_price=current_price,
-            current_time=current_time,
+            current_price=entry_price,  # ← Входим на open следующей свечи
+            current_time=m15_data.iloc[m15_idx + 1]['time'],
             balance=self.balance,
             equity=self.equity,
             used_margin=0.0
@@ -257,7 +278,7 @@ class PortfolioManager:
     
     def run_backtest(self, start_date: str, end_date: str) -> dict:
         """
-        Run portfolio backtest.
+        Run portfolio backtest with FIXED ENTRY LOGIC.
         
         Args:
             start_date: Start date (YYYY-MM-DD)
@@ -267,7 +288,8 @@ class PortfolioManager:
             Dictionary with results
         """
         print("=" * 80)
-        print(f"PORTFOLIO BACKTEST: {self.portfolio_config['portfolio']['name']}")
+        print(f"PORTFOLIO BACKTEST (v1.1 - Fixed Entry)")
+        print(f"  {self.portfolio_config['portfolio']['name']}")
         print("=" * 80)
         print(f"Period: {start_date} to {end_date}")
         print(f"Initial Balance: ${self.initial_balance:,.2f}")
@@ -287,13 +309,13 @@ class PortfolioManager:
         ref_instrument = self.active_instruments[0]
         m15_ref = self.data[ref_instrument]['m15']
         total_bars = len(m15_ref)
-        progress_step = max(1, total_bars // 100)  # 100 updates instead of 20
+        progress_step = max(1, total_bars // 100)
         
         print(f"[*] Running backtest ({total_bars:,} bars)...")
         print(f"    Progress updates every {progress_step:,} bars (~1%)")
         print()
         
-        for m15_idx in range(total_bars):
+        for m15_idx in range(total_bars - 1):  # -1 потому что нужна следующая свеча
             current_time = m15_ref.iloc[m15_idx]['time']
             
             # Progress update (every 1%)
@@ -317,8 +339,6 @@ class PortfolioManager:
                 if time_diff.iloc[closest_idx].total_seconds() > 900:
                     continue
                 
-                current_price = m15_data.iloc[closest_idx]['close']
-                
                 # Update H1 index
                 h1_data = self.data[instrument]['h1']
                 h1_idx = self.data[instrument]['h1_idx']
@@ -334,12 +354,13 @@ class PortfolioManager:
                 # Update H1 context for strategy
                 self.strategies[instrument].build_context(h1_idx)
                 
-                # Update existing positions
+                # Update existing positions (на текущей цене - close)
+                current_price = m15_data.iloc[closest_idx]['close']
                 self.update_positions(instrument, current_price, current_time)
                 
-                # Check for new signals
-                if closest_idx >= 20:
-                    self.check_signal(instrument, closest_idx, current_price, current_time)
+                # Check for new signals (требует следующую свечу)
+                if closest_idx >= 20 and closest_idx < len(m15_data) - 1:
+                    self.check_signal(instrument, closest_idx, current_time)
                 
                 # Add floating P&L
                 if self.executors[instrument].has_position():
@@ -373,7 +394,7 @@ class PortfolioManager:
         """Generate portfolio backtest report."""
         print()
         print("=" * 80)
-        print("PORTFOLIO RESULTS")
+        print("PORTFOLIO RESULTS (v1.1 - Fixed Entry)")
         print("=" * 80)
         
         if len(self.trades) == 0:
@@ -413,13 +434,14 @@ class PortfolioManager:
         output_dir = Path(f"results/portfolio/{year}")
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        trades_file = output_dir / f"portfolio_{start_date}_{end_date}_trades.csv"
-        equity_file = output_dir / f"portfolio_{start_date}_{end_date}_equity.csv"
+        trades_file = output_dir / f"portfolio_{start_date}_{end_date}_trades_FIXED.csv"
+        equity_file = output_dir / f"portfolio_{start_date}_{end_date}_equity_FIXED.csv"
         
         df_trades.to_csv(trades_file, index=False)
         pd.DataFrame(self.equity_curve).to_csv(equity_file, index=False)
         
         print(f"[OK] Results saved to results/portfolio/{year}/")
+        print(f"     Files marked with '_FIXED' suffix")
         print()
         
         return {

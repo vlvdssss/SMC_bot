@@ -86,6 +86,12 @@ def parse_arguments():
         default='config/gui_config.json',
         help='Path to configuration file',
     )
+    parser.add_argument(
+        '--baza',
+        type=str,
+        default=None,
+        help='Path to BAZA folder (overrides bundled lookup)',
+    )
     
     return parser.parse_args()
 
@@ -140,8 +146,24 @@ def main():
     )
     
     # Data bridge (connects to BAZA system)
-    # Use application_path for data storage
-    baza_data_path = application_path if getattr(sys, 'frozen', False) else Path('BAZA')
+    # Determine BAZA path (CLI arg -> env var -> external BAZA folder -> bundle)
+    baza_path_arg = args.baza
+    env_baza = os.environ.get('BAZA_PATH')
+
+    if baza_path_arg:
+        baza_data_path = Path(baza_path_arg)
+    elif env_baza:
+        baza_data_path = Path(env_baza)
+    else:
+        # If running as bundle, prefer a sibling 'BAZA' folder next to the exe
+        if getattr(sys, 'frozen', False):
+            candidate = application_path.parent / 'BAZA'
+            if candidate.exists():
+                baza_data_path = candidate
+            else:
+                baza_data_path = application_path
+        else:
+            baza_data_path = Path('BAZA')
     data_bridge = DataBridge(
         baza_path=baza_data_path,
         update_interval=1000,  # 1 second

@@ -1,0 +1,13 @@
+{
+  "bot_token": "7597254627:AAHbLPmExf0dzZvCHXaX6ZhDMtLf1UnvucE",
+  "chat_id": "543258309",
+  "enabled": true,
+  "notifications": {
+    "trade_opened": true,
+    "trade_closed": true,
+    "system_status": true,
+    "daily_report": true,
+    "errors": true
+  },
+  "commands_enabled": true
+}

@@ -12,7 +12,7 @@ mt5:
     
   # Настройки работы
   settings:
-    enable_trade: false                                # Разрешить торговлю (false = только чтение)
+    enable_trade: True                                # Разрешить торговлю (false = только чтение)
     max_retries: 3                                     # Количество попыток переподключения
     retry_delay: 5                                     # Задержка между попытками (сек)
     check_connection_interval: 60                      # Проверка соединения каждые N сек

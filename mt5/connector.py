@@ -225,6 +225,49 @@ class MT5Connector:
             for pos in positions
         ]
     
+    def send_order(self, request):
+        """
+        Отправка торгового ордера в MT5.
+        
+        Args:
+            request: dict с параметрами ордера (action, symbol, volume, price, sl, tp, type, etc.)
+            
+        Returns:
+            dict: Результат отправки ордера
+        """
+        if not self.connected:
+            print("[!] Not connected to MT5")
+            return {'retcode': -1, 'comment': 'Not connected'}
+        
+        # Логируем request
+        print(f"[*] Sending order: {request}")
+        
+        # Отправляем ордер
+        result = mt5.order_send(request)
+        
+        # Логируем результат
+        if result is None:
+            print("[!] order_send returned None")
+            error = mt5.last_error()
+            print(f"[!] MT5 error: {error}")
+            return {'retcode': -1, 'comment': f'MT5 error: {error}'}
+        
+        print(f"[*] Order result: retcode={result.retcode}, comment='{result.comment}'")
+        
+        if result.retcode == mt5.TRADE_RETCODE_DONE:
+            print(f"[✓] Order executed successfully, ticket: {result.order}")
+        else:
+            print(f"[!] Order failed: {result.comment}")
+        
+        return {
+            'retcode': result.retcode,
+            'comment': result.comment,
+            'order': result.order if hasattr(result, 'order') else None,
+            'deal': result.deal if hasattr(result, 'deal') else None,
+            'volume': result.volume if hasattr(result, 'volume') else None,
+            'price': result.price if hasattr(result, 'price') else None
+        }
+    
     def get_terminal_info(self):
         """
         Получение информации о терминале MT5.

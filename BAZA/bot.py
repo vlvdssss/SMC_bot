@@ -89,7 +89,7 @@ def run_demo_trading(mt5_config: str = None, check_interval: int = 60):
     print()
     
     # Создаём live трейдер
-    config_dir = 'BAZA/config'
+    config_dir = 'config'
     trader = LiveTrader(config_dir=config_dir)
     
     # Подключаемся к MT5

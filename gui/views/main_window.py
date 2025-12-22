@@ -10,6 +10,7 @@ All widgets are connected to AppState and update automatically
 when state changes.
 """
 
+from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QStatusBar, QTabWidget, QLabel, QPushButton,
@@ -64,6 +65,9 @@ class MainWindow(QMainWindow):
         
         # Create MT5 connection manager
         self.mt5_manager = MT5ConnectionManager()
+        
+        # Telegram bot manager (initialized later if configured)
+        self.telegram_bot = None
         
         # Window configuration
         self.setWindowTitle("SMC Control Center")
@@ -337,6 +341,11 @@ class MainWindow(QMainWindow):
         mt5_settings_action.triggered.connect(self._open_mt5_settings)
         file_menu.addAction(mt5_settings_action)
         
+        # Telegram Settings action
+        telegram_settings_action = QAction("🤖 &Telegram Bot Settings...", self)
+        telegram_settings_action.triggered.connect(self._open_telegram_settings)
+        file_menu.addAction(telegram_settings_action)
+        
         # Check Market Session action
         market_session_action = QAction("⏰ Check &Market Session", self)
         market_session_action.triggered.connect(self._check_market_session)
@@ -431,6 +440,50 @@ class MainWindow(QMainWindow):
         
         if not success:
             self.logs_tab.add_log("ERROR", "Connection failed. Check credentials and try again.")
+    
+    def _open_telegram_settings(self):
+        """Open Telegram bot settings dialog."""
+        from views.telegram_settings_dialog import TelegramSettingsDialog
+        
+        dialog = TelegramSettingsDialog(self)
+        dialog.settings_saved.connect(self._on_telegram_settings_saved)
+        dialog.exec()
+    
+    def _on_telegram_settings_saved(self, settings: dict):
+        """Handle Telegram settings saved."""
+        enabled = settings.get('enabled', False)
+        chat_id = settings.get('chat_id', 'Unknown')
+        
+        if enabled:
+            self.logs_tab.add_log("SUCCESS", f"✅ Telegram bot enabled for Chat ID: {chat_id}")
+            self.logs_tab.add_log("INFO", "You will receive notifications about trades and system status")
+            
+            # Initialize Telegram bot manager
+            try:
+                import sys
+                sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+                from telegram_bot import TelegramBotManager
+                
+                self.telegram_bot = TelegramBotManager()
+                if self.telegram_bot.enabled:
+                    # Send welcome message with control panel
+                    self.telegram_bot.send_notification(
+                        "🎉 **SMC Trading Bot Started!**\n\n"
+                        "✅ System connected and ready\n"
+                        "📊 Notifications enabled\n\n"
+                        "Use /menu to open control panel"
+                    )
+                    self.logs_tab.add_log("SUCCESS", "Telegram bot initialized successfully")
+                else:
+                    self.logs_tab.add_log("WARNING", "Telegram bot configuration incomplete")
+            
+            except ImportError:
+                self.logs_tab.add_log("ERROR", "python-telegram-bot not installed. Run: pip install python-telegram-bot")
+            except Exception as e:
+                self.logs_tab.add_log("ERROR", f"Failed to initialize Telegram bot: {e}")
+        else:
+            self.logs_tab.add_log("INFO", "Telegram bot disabled")
+            self.telegram_bot = None
 
     
     def _handle_alert(self, level: str, message: str) -> None:

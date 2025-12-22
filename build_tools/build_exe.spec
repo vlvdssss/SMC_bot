@@ -17,7 +17,10 @@ a = Analysis(
     datas=[
         # Include data directories
         (str(project_root / 'gui' / 'data'), 'gui/data'),
-        # Include any other resources if needed
+        # Include telegram_bot config
+        (str(project_root / 'telegram_bot' / 'config.json'), 'telegram_bot'),
+        # Include telegram library
+        ('D:\\Lib\\site-packages\\telegram', 'telegram'),
     ],
     hiddenimports=[
         'PySide6.QtCore',
@@ -31,8 +34,22 @@ a = Analysis(
         'datetime',
         'threading',
         'queue',
+        # Telegram bot dependencies
+        'telegram',
+        'telegram.ext',
+        'telegram._bot',
+        'telegram._update',
+        'telegram.ext._application',
+        'telegram.ext._commandhandler',
+        'telegram.ext._contexttypes',
+        'asyncio',
+        'httpx',
+        'httpcore',
+        'h11',
+        'anyio',
+        'certifi',
     ],
-    hookspath=[],
+    hookspath=[str(project_root / 'build_tools')],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
@@ -53,13 +70,17 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
     [],
-    exclude_binaries=True,
     name='SMC_Trading_Framework',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
     console=False,  # No console window - GUI only
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -69,13 +90,4 @@ exe = EXE(
     icon=str(project_root / 'build_tools' / 'app_icon.ico'),  # Application icon
 )
 
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='SMC_Trading_Framework',
-)
+# COLLECT removed - using onefile mode
