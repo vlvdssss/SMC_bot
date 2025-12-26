@@ -7,6 +7,7 @@
 - [ ] Добавить topics: `algotrading`, `forex`, `sma`, `trading-bot`, `python`
 - [ ] Создать GitHub Discussions для вопросов
 - [ ] Настроить GitHub Pages (если нужно)
+- [ ] Добавить CONTRIBUTING.md гайд для контрибьюторов
 
 ### Социальные сети
 - [ ] Создать Telegram канал @BAZA_Trading_Bot

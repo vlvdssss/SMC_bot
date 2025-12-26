@@ -37,6 +37,8 @@ I've been working on BAZA - an open-source Python trading bot using Smart Money 
 **GitHub:** https://github.com/vlvdssss/SMC_bot
 **Questions:** kamsaaaimpa@gmail.com
 
+**Want to contribute?** Email me your ideas!
+
 What do you think? Any suggestions for improvement?
 
 #AlgoTrading #Forex #SMC #Python #OpenSource
@@ -74,6 +76,8 @@ Created BAZA - Python trading bot with SMC strategies.
 
 Thoughts on SMC strategies? Anyone using similar approaches?
 
+**Want to help improve it?** Email: kamsaaaimpa@gmail.com
+
 #Forex #SMC #AlgoTrading #Gold #EURUSD
 ```
 
@@ -104,6 +108,8 @@ Thoughts on SMC strategies? Anyone using similar approaches?
 
 🔗 GitHub: https://github.com/vlvdssss/SMC_bot
 📧 Вопросы: kamsaaaimpa@gmail.com
+
+**Хочешь помочь улучшить проект? Пиши на email!** 🤝
 
 Подписывайся за обновлениями! 📈
 #AlgoTrading #Forex #SMC #TradingBot
@@ -217,7 +223,7 @@ GitHub: https://github.com/vlvdssss/SMC_bot
 Questions: kamsaaaimpa@gmail.com
 
 Try it free, upgrade when ready!
-
+**Want to contribute?** Email your ideas!
 #Launch #TradingBot #SMC
 
 8/8 Thanks for reading! What SMC strategies are you using?
@@ -257,6 +263,8 @@ RT if you found this helpful! 🚀
 - Коммерческое: $49.99/полгода
 
 Попробуй: https://github.com/vlvdssss/SMC_bot
+
+**Хочешь помочь с развитием проекта?** У тебя есть идеи по улучшению стратегий или кода? Пиши!
 
 Вопросы: kamsaaaimpa@gmail.com
 
@@ -305,6 +313,8 @@ Vladyslav
 4. Вопросы в соответствующие каналы
 
 Начни с #introductions и #github
+
+**Хочешь помочь развивать проект?** Пиши kamsaaaimpa@gmail.com
 
 Приятного общения! 🚀
 ```
