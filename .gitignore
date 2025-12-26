@@ -1,9 +1,9 @@
-# Данные
+# Данные и результаты
 data/
 results/
 logs/
 
-# Конфиги с секретами
+# Конфиг с паролями
 config/mt5.yaml
 
 # Python
@@ -13,18 +13,24 @@ __pycache__/
 .Python
 venv/
 .venv/
-env/
+*.egg-info/
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+.spyderproject
+.spyproject
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Временные файлы
+# Архив старых файлов
+archive/
+
+# Временные
 *.log
 *.tmp
+*.bak

@@ -1,3 +1,0 @@
-entry_time,exit_time,direction,entry_price,exit_price,position_size,pnl_pips,pnl_money,outcome,reason
-2023-06-22 17:15:00,2023-06-22 17:45:00,long,0.86098,0.86011,0.57,-8.699999999999264,-49.589999999995804,SL,H1_Bullish_M15_OB_Retracement
-2025-04-07 03:30:00,2025-04-07 10:00:00,long,0.84899,0.8543300000000001,0.19,53.40000000000123,101.46000000000234,TP,H1_Bullish_M15_OB_Retracement
