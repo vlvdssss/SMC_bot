@@ -162,7 +162,7 @@ def run_live(args):
         return
     
     # Проверка лицензии
-    license_key = input("Введите лицензионный ключ: ")
+    license_key = input("Введите лицензионный ключ (или 'TRIAL' для пробного периода 3 дня): ")
     if not validate_license(license_key):
         print("[!] НЕВАЛИДНЫЙ КЛЮЧ ЛИЦЕНЗИИ")
         print("[!] Свяжитесь для получения лицензии: kamsaaaimpa@gmail.com")
@@ -193,7 +193,7 @@ def run_live(args):
 
 
 def validate_license(key: str) -> bool:
-    """Простая валидация лицензии"""
+    """Простая валидация лицензии с пробным периодом"""
     # Demo keys for testing (valid until 2026)
     valid_keys = [
         "BAZA-2EA0A37EBB4DADFF-20261227",
@@ -204,7 +204,44 @@ def validate_license(key: str) -> bool:
         "DEMO2025",  # Legacy demo key
         "BETA2025"   # Beta testing key
     ]
-    return key in valid_keys
+    
+    if key in valid_keys:
+        return True
+    
+    # Пробный период 3 дня
+    if key == "TRIAL":
+        return check_trial_period()
+    
+    return False
+
+def check_trial_period() -> bool:
+    """Проверка пробного периода (3 дня от первого запуска)"""
+    import os
+    trial_file = "trial_start.txt"
+    
+    now = datetime.now()
+    
+    if os.path.exists(trial_file):
+        # Читаем дату начала
+        try:
+            with open(trial_file, 'r') as f:
+                start_str = f.read().strip()
+                start_date = datetime.fromisoformat(start_str)
+                days_used = (now - start_date).days
+                if days_used <= 3:
+                    return True
+                else:
+                    print(f"[!] Пробный период истёк ({days_used} дней из 3)")
+                    return False
+        except:
+            pass
+    
+    # Первый запуск - начинаем trial
+    with open(trial_file, 'w') as f:
+        f.write(now.isoformat())
+    
+    print("[+] Активирован пробный период LIVE режима (3 дня)")
+    return True
 
 
 def run_backtest(args):

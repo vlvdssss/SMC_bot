@@ -10,6 +10,7 @@ config/mt5.yaml
 # Логи продаж и лицензии
 sales_log.txt
 license_*.txt
+trial_start.txt
 
 # Python
 __pycache__/
