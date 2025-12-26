@@ -30,12 +30,46 @@ class LiveTrader:
         
         try:
             while self.running:
+                # Проверка времени рынка
+                if not self._is_market_open():
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Рынок закрыт - ждём открытия...")
+                    time.sleep(300)  # Проверка каждые 5 минут
+                    continue
+                
                 self._check_signals_loop()
                 time.sleep(60)  # Проверка каждую минуту
         except KeyboardInterrupt:
             print("\n[!] Остановлено пользователем")
         finally:
             self.mt5_connector.disconnect()
+    
+    def _is_market_open(self) -> bool:
+        """Проверка, открыт ли рынок"""
+        import MetaTrader5 as mt5
+        
+        if not mt5.terminal_info():
+            return False
+            
+        # Проверяем сессии для основных пар
+        symbols = ['EURUSD', 'XAUUSD']
+        for symbol in symbols:
+            if mt5.symbol_info(symbol) is None:
+                continue
+                
+            # Получаем информацию о сессиях
+            symbol_info = mt5.symbol_info(symbol)
+            if symbol_info and hasattr(symbol_info, 'session_deals'):
+                # Если есть сделки в сессии, рынок открыт
+                if symbol_info.session_deals > 0:
+                    return True
+        
+        # Простая проверка по времени
+        now = datetime.now()
+        if now.weekday() >= 5:  # суббота, воскресенье
+            return False
+            
+        # Торговое время (00:00 - 23:59 UTC, но зависит от брокера)
+        return True
     
     def _check_signals_loop(self):
         """Проверка сигналов для всех инструментов"""
@@ -51,21 +85,29 @@ class LiveTrader:
                 return
             
             # Получение текущей цены
-            current_price = self.mt5_connector.get_current_price(instrument)
-            if not current_price:
+            current_price_data = self.mt5_connector.get_current_price(instrument)
+            if not current_price_data:
                 return
             
-            # Генерация сигнала
-            signal = strategy.generate_signal(data.iloc[-1], data)
+            current_price = current_price_data['bid']  # Используем bid цену
+            
+            # Упрощённая генерация сигнала для live (SMA crossover)
+            signal = None
+            if len(data) > 10:
+                sma_short = data['close'].rolling(5).mean().iloc[-1]
+                sma_long = data['close'].rolling(20).mean().iloc[-1]
+                
+                if sma_short > sma_long and data['close'].iloc[-1] > sma_short:
+                    signal = {'type': 'BUY', 'direction': 'BUY', 'sl': current_price * 0.98, 'tp': current_price * 1.05}
+                elif sma_short < sma_long and data['close'].iloc[-1] < sma_short:
+                    signal = {'type': 'SELL', 'direction': 'SELL', 'sl': current_price * 1.02, 'tp': current_price * 0.95}
             
             if signal:
                 self.logger.info(f"Signal generated for {instrument}: {signal}")
                 
-                # Исполнение сигнала
-                if self.executor.execute_signal(signal, current_price):
-                    self.logger.info(f"Signal executed for {instrument}")
-                else:
-                    self.logger.warning(f"Failed to execute signal for {instrument}")
+                # Исполнение сигнала (пока заглушка)
+                print(f"[!] {instrument}: Сигнал {signal['type']} на цене {current_price}")
+                # self.executor.execute_signal(signal, current_price)
         
         except Exception as e:
-            self.logger.error(f"Error checking signals for {instrument}: {e}")
+            print(f"Error checking signals for {instrument}: {e}")

@@ -25,6 +25,9 @@ import sys
 import os
 import time
 import yaml
+import base64
+import json
+import hashlib
 from datetime import datetime
 
 # Добавляем src в путь
@@ -38,6 +41,35 @@ from backtest.portfolio_backtester import PortfolioBacktester
 from backtest.backtester import RealisticBacktester
 from core.broker_sim import BrokerSim
 from core.data_loader import DataLoader
+
+
+def _is_market_open(mt5_connector) -> bool:
+    """Проверка, открыт ли рынок"""
+    import MetaTrader5 as mt5
+    
+    if not mt5.terminal_info():
+        return False
+        
+    # Проверяем сессии для основных пар
+    symbols = ['EURUSD', 'XAUUSD']
+    for symbol in symbols:
+        if mt5.symbol_info(symbol) is None:
+            continue
+            
+        # Получаем информацию о сессиях
+        symbol_info = mt5.symbol_info(symbol)
+        if symbol_info and hasattr(symbol_info, 'session_deals'):
+            # Если есть сделки в сессии, рынок открыт
+            if symbol_info.session_deals > 0:
+                return True
+    
+    # Простая проверка по времени
+    now = datetime.now()
+    if now.weekday() >= 5:  # суббота, воскресенье
+        return False
+        
+    # Торговое время (00:00 - 23:59 UTC, но зависит от брокера)
+    return True
 
 
 def main():
@@ -114,6 +146,12 @@ def run_demo(args):
     
     try:
         while True:
+            # Проверка времени рынка
+            if not _is_market_open(mt5):
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] Рынок закрыт - ждём открытия...")
+                time.sleep(300)  # Проверка каждые 5 минут
+                continue
+                
             print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Проверка сигналов...")
             
             for instrument, strategy in strategies.items():
@@ -194,23 +232,34 @@ def run_live(args):
 
 def validate_license(key: str) -> bool:
     """Простая валидация лицензии с пробным периодом"""
-    # Demo keys for testing (valid until 2026)
-    valid_keys = [
-        "BAZA-2EA0A37EBB4DADFF-20261227",
-        "BAZA-ECA2A3D889AD9E01-20261227",
-        "BAZA-7843D513364DFEC6-20261227",
-        "BAZA-BE0A3BC2E68AA79A-20261227",
-        "BAZA-56D8E2D609A5487C-20261227",
-        "DEMO2025",  # Legacy demo key
-        "BETA2025"   # Beta testing key
-    ]
-    
-    if key in valid_keys:
-        return True
-    
     # Пробный период 3 дня
     if key == "TRIAL":
         return check_trial_period()
+    
+    # Проверка сгенерированных ключей
+    try:
+        if key.startswith("BAZA-"):
+            # Декодирование
+            encoded = key[5:]  # Убираем "BAZA-"
+            json_str = base64.b64decode(encoded).decode()
+            data = json.loads(json_str)
+            
+            # Проверка хэша
+            data_copy = data.copy()
+            hash_check = data_copy.pop("hash")
+            data_str = json.dumps(data_copy, sort_keys=True)
+            hash_obj = hashlib.sha256(data_str.encode())
+            if hash_obj.hexdigest() != hash_check:
+                return False
+            
+            # Проверка даты
+            expiry = datetime.fromisoformat(data["expiry"])
+            if datetime.now() > expiry:
+                return False
+            
+            return True
+    except:
+        pass
     
     return False
 
