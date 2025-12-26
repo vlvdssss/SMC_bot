@@ -1,0 +1,67 @@
+# Portfolio Configuration
+# Defines which instruments to trade together and risk allocation
+
+portfolio:
+  name: "XAUUSD + EURUSD Baseline Portfolio"
+  version: "v1.0 FROZEN"
+  status: "PRODUCTION_READY"
+  
+  # Active instruments
+  instruments:
+    - XAUUSD
+    - EURUSD
+  
+  # Portfolio risk management
+  risk_model:
+    mode: "simple"  # simple, kelly, adaptive
+    max_total_exposure: 1.25  # % max simultaneous risk
+    allow_simultaneous_positions: true
+    
+  # Capital allocation (recommended)
+  allocation:
+    XAUUSD: 0.30  # 30% of capital
+    EURUSD: 0.70  # 70% of capital
+  
+  # Portfolio performance (3-year baseline)
+  baseline_performance:
+    period: "2023-2025"
+    total_trades_avg: 318
+    win_rate_avg: 66.65
+    max_dd_avg: 7.62
+    roi_avg: 2381.59
+    
+    # Per-instrument contribution
+    contribution:
+      XAUUSD: 52.3  # % of profit
+      EURUSD: 47.7  # % of profit
+    
+    # Risk-adjusted metrics
+    sortino_ratio: 312.3
+    diversification_benefit: 206  # % synergy bonus
+
+# Trading schedule (UTC)
+trading_schedule:
+  enabled: true
+  start_hour: 0   # 00:00 UTC
+  end_hour: 23    # 23:59 UTC
+  trading_days:   # 0=Monday, 6=Sunday
+    - 0  # Monday
+    - 1  # Tuesday
+    - 2  # Wednesday
+    - 3  # Thursday
+    - 4  # Friday
+  
+  # Maintenance windows (no trading)
+  maintenance_windows:
+    - name: "Weekend"
+      days: [5, 6]  # Saturday, Sunday
+    - name: "Major news events"
+      description: "NFP, FOMC, etc. - manual disable"
+
+# Monitoring
+monitoring:
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  save_equity_curve: true
+  save_trades: true
+  alert_on_dd_threshold: 15.0  # % DD to trigger alert
+  alert_on_consecutive_losses: 5

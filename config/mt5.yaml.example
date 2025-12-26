@@ -1,0 +1,18 @@
+mt5:
+  connection:
+    login: YOUR_LOGIN_HERE
+    password: "YOUR_PASSWORD_HERE"
+    server: "YOUR_BROKER_SERVER"
+    path: "C:/Program Files/MetaTrader 5/terminal64.exe"
+    timeout: 10000
+    
+  settings:
+    enable_trade: false
+    max_retries: 3
+    retry_delay: 5
+    
+  safety:
+    max_lot_size: 1.0
+    max_open_positions: 4
+    max_daily_trades: 10
+    max_daily_loss_percent: 5.0

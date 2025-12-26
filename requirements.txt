@@ -1,0 +1,8 @@
+pandas>=1.5.0
+numpy>=1.21.0
+PyYAML>=6.0
+MetaTrader5>=5.0.0
+telegram-send>=0.25
+python-telegram-bot>=13.0
+matplotlib>=3.5.0
+seaborn>=0.11.0
