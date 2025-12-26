@@ -1,0 +1,98 @@
+# EURUSD Strategy Configuration
+
+# Instrument specifications
+instrument:
+  name: "EURUSD"
+  type: "Forex"
+  contract_size: 100000  # 1 lot = 100,000 units
+  pip_value: 10.0  # USD per pip for 1 lot
+  pip_size: 0.0001
+  spread: 0.00015  # 1.5 pips
+  commission: 0.0  # No commission
+
+# Strategy parameters
+strategy:
+  type: "SMC_Retracement"
+  version: "v1.0_FROZEN"  # Production ready - NO CHANGES until demo results
+  status: "BASELINE_FROZEN"
+  
+  # Risk management
+  risk_per_trade: 0.5  # percent
+  risk_reward_ratio: 2.0  # 2:1
+  max_trades_per_day: 2
+  
+  # HTF (H1) parameters
+  htf:
+    timeframe: "H1"
+    bos_lookback: 100  # bars
+  
+  # LTF (M15) parameters
+  ltf:
+    timeframe: "M15"
+    ob_lookback: 20  # bars
+    atr_period: 14
+  
+  # Entry rules
+  entry:
+    wait_for_retracement: true
+    check_premium_discount: true
+    ob_required: true
+    
+  # Exit rules
+  exit:
+    sl_type: "OB_based"  # или "ATR_based"
+    sl_buffer_atr: 0.2
+    tp_rr: 2.0
+
+# Baseline performance (FROZEN - 2023-2025 backtests completed)
+baseline_performance:
+  period: "2023-2025"
+  status: "FROZEN"
+  total_trades: 527
+  avg_trades_per_year: 176
+  
+  # 2023
+  year_2023:
+    trades: 168
+    win_rate: 72.0  # percent
+    profit_factor: 2.07
+    max_drawdown: 3.8  # percent
+    roi: 395.17  # percent
+    final_balance: 495.17
+  
+  # 2024
+  year_2024:
+    trades: 189
+    win_rate: 72.0
+    profit_factor: 1.96
+    max_drawdown: 5.3
+    roi: 340.75
+    final_balance: 440.75
+  
+  # 2025
+  year_2025:
+    trades: 170
+    win_rate: 68.2
+    profit_factor: 1.83
+    max_drawdown: 7.2
+    roi: 235.77
+    final_balance: 335.77
+  
+  # 3-year average
+  average:
+    trades_per_year: 176
+    win_rate: 70.7
+    profit_factor: 1.95
+    max_drawdown: 5.4
+    roi: 324.0
+    final_balance: 423.90
+  
+  # Verdict
+  verdict: "APPROVED"
+  criteria_passed: "5/5"
+  ready_for_demo: true
+  notes: "Excellent stability (DD 5.4%) and reliability (WR 70.7%). Superior to XAUUSD in risk metrics."
+  profit_factor: null
+  max_dd: null
+  roi: null
+  status: "PENDING_BACKTEST"

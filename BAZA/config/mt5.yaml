@@ -1,0 +1,55 @@
+# MT5 Connection Configuration
+# Настройки подключения к MetaTrader 5
+
+mt5:
+  # Основные параметры подключения
+  connection:
+    login: 99538704                                    # Логин торгового счёта
+    password: "-4ZwEoIx"                              # Пароль счёта
+    server: "MetaQuotes-Demo"                         # Торговый сервер
+    path: "D:/MetaTrader 5/terminal64.exe"            # Путь к MT5
+    timeout: 10000                                     # Таймаут подключения (мс)
+    
+  # Настройки работы
+  settings:
+    enable_trade: True                                # Разрешить торговлю (false = только чтение)
+    max_retries: 3                                     # Количество попыток переподключения
+    retry_delay: 5                                     # Задержка между попытками (сек)
+    check_connection_interval: 60                      # Проверка соединения каждые N сек
+    
+  # Торговые ограничения (безопасность)
+  safety:
+    max_lot_size: 1.0                                  # Максимальный лот
+    max_open_positions: 4                              # Максимум открытых позиций
+    max_daily_trades: 10                               # Максимум сделок в день
+    max_daily_loss_percent: 5.0                        # Максимальная просадка в день (%)
+    max_total_risk_percent: 2.0                        # Максимальный общий риск (%)
+    
+  # Символы для торговли
+  symbols:
+    XAUUSD:
+      enabled: true
+      min_lot: 0.01
+      max_lot: 0.5
+      lot_step: 0.01
+      
+    EURUSD:
+      enabled: true
+      min_lot: 0.01
+      max_lot: 1.0
+      lot_step: 0.01
+      
+  # Режимы работы
+  mode:
+    current: "demo"                                    # demo | live
+    demo_account: 99538704
+    live_account: null                                 # Для live торговли
+
+# Логирование MT5 операций
+logging:
+  level: "INFO"                                        # DEBUG | INFO | WARNING | ERROR
+  log_trades: true                                     # Логировать сделки
+  log_connections: true                                # Логировать подключения
+  log_errors: true                                     # Логировать ошибки
+  save_to_file: true                                   # Сохранять в файл
+  log_file: "logs/mt5_operations.log"                 # Путь к файлу логов

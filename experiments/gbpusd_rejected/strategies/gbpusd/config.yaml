@@ -1,0 +1,75 @@
+# GBPUSD Mean Reversion Strategy Configuration
+# Status: CANDIDATE (Screening)
+
+strategy:
+  name: "GBPUSD SMC Mean Reversion"
+  version: "0.1 (Candidate)"
+  type: "Mean Reversion / Range"
+  status: "CANDIDATE"
+  
+instrument:
+  symbol: "GBPUSD"
+  name: "British Pound / US Dollar"
+  type: "Forex"
+  contract_size: 100000
+  pip_value: 10.0
+  spread_points: 2.0
+  price_decimals: 5
+
+risk:
+  risk_per_trade: 0.4           # Консервативно (меньше чем EURUSD 0.5%)
+  max_trades_per_day: 1         # Селективность
+  max_drawdown_target: 6.0      # Цель
+  win_rate_target: 65.0         # Цель
+  risk_reward_min: 1.2          # Минимальный RR
+  risk_reward_target: 1.5       # Целевой RR
+
+timeframes:
+  htf: "H1"                      # Range detection
+  ltf: "M15"                     # Entry signals
+
+parameters:
+  # Range Detection (H1)
+  range:
+    min_range_pips: 30           # Минимальный диапазон
+    max_range_pips: 80           # Максимальный диапазон
+    min_touches: 2               # Минимум касаний EH/EL
+    lookback_bars: 50            # Откат для поиска range
+    
+  # Liquidity Sweep (M15)
+  sweep:
+    sweep_buffer_pips: 5         # Пробой за range на N pips
+    rejection_wick_pct: 50       # Минимум 50% wick для rejection
+    
+  # Entry
+  entry:
+    wait_for_pullback: true      # Ждать откат после rejection
+    pullback_bars: 3             # Максимум 3 бара откат
+    
+  # Exit
+  exit:
+    tp_mode: "mid_range"         # mid_range | opposite_range
+    sl_buffer_pips: 10           # SL buffer за sweep
+    trailing_stop: false         # Нет trailing (консервативно)
+
+# Portfolio role
+portfolio:
+  role: "Mean Reversion"
+  diversification: "Range/Fakeout trading"
+  correlation_target: "Low with XAUUSD/EURUSD"
+  exposure_limit: 0.4            # Max 0.4% одновременно
+
+# Targets (для screening)
+targets:
+  annual_roi_min: 200            # Минимум 200% ROI за 3 года
+  win_rate_min: 65               # Минимум 65% WR
+  max_dd_max: 6                  # Максимум 6% DD
+  trades_per_year_min: 80        # Минимум 80 trades/year
+  trades_per_year_max: 120       # Максимум 120 trades/year
+
+# Logging
+logging:
+  log_level: "INFO"
+  log_trades: true
+  log_range_detection: true
+  log_sweeps: true
