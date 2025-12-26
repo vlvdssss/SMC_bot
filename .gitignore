@@ -12,6 +12,10 @@ sales_log.txt
 license_*.txt
 trial_start.txt
 
+# Скрипты генерации лицензий (локальные)
+generate_key.py
+generate_paid_license.py
+
 # Python
 __pycache__/
 *.py[cod]
