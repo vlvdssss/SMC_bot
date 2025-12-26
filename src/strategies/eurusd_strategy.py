@@ -60,10 +60,16 @@ class StrategyEURUSD_SMC_Retracement:
         # Cache
         self._atr_cache = {}
         
-        # Daily limits
+        # Стабилизационные фильтры
+        self.min_atr_threshold = 0.7  # ATR > 70% от среднего
+        self.max_atr_threshold = 1.5  # ATR < 150% от среднего
+        self.max_daily_trades = 1     # Максимум 1 сделка в день
+        self.max_daily_loss = 1.0     # Стоп на день при -1%
+        
+        # Daily tracking
         self.trades_today = 0
+        self.daily_pnl_percent = 0.0
         self.current_date = None
-        self.max_trades_per_day = 1
         
         # Data references (будут загружены через load_data)
         self.h1_data = None
@@ -88,7 +94,7 @@ class StrategyEURUSD_SMC_Retracement:
         self.analyze_h1(self.h1_data, current_h1_idx)
     
     def generate_signal(self, current_m15_idx: int, analysis_price: float,
-                       entry_price: float, current_time: pd.Timestamp) -> dict:
+                       entry_price: float, current_time: pd.Timestamp, current_h1_idx: int = None) -> dict:
         """
         Генерация торгового сигнала на M15.
         
@@ -99,17 +105,20 @@ class StrategyEURUSD_SMC_Retracement:
             analysis_price: Close текущей свечи (для анализа)
             entry_price: Open следующей свечи (для входа)
             current_time: Время текущей свечи
+            current_h1_idx: Текущий индекс в H1 данных
         
         Returns:
             dict: {'direction': str, 'sl': float, 'tp': float, 'valid': bool, 'entry': float}
         """
         if self.m15_data is None:
             return {'valid': False}
+        if current_h1_idx is not None:
+            self.build_context(current_h1_idx)
         return self.get_signal(self.m15_data, current_m15_idx, analysis_price, entry_price)
     
     def execute_trade(self, signal: dict, balance: float, risk_pct: float = 0.5) -> dict:
         """
-        Расчет параметров сделки (lot size, P&L).
+        Расчет параметров сделки с правильным лот-сайзом.
         
         Args:
             signal: Сигнал от generate_signal()
@@ -122,17 +131,26 @@ class StrategyEURUSD_SMC_Retracement:
         if not signal['valid']:
             return None
         
-        risk_amount = balance * (risk_pct / 100.0)
-        points_risk = abs(signal['entry'] - signal['sl'])
+        # Расчет лот-сайза (EURUSD contract size = 100000 units)
+        entry_price = signal['entry']
+        sl_price = signal['sl']
+        contract_size = 100000
         
-        lot_size = self._calculate_lot_size(balance, risk_amount, points_risk)
+        risk_amount = balance * (risk_pct / 100.0)  # Сколько $ рискуем
+        sl_distance = abs(entry_price - sl_price)    # Расстояние до SL
         
-        if lot_size <= 0:
-            return None
+        if sl_distance == 0:
+            lot_size = 0.01  # Минимум
+        else:
+            # risk_amount = lot_size * contract_size * sl_distance
+            lot_size = risk_amount / (contract_size * sl_distance)
+            lot_size = max(0.01, lot_size)  # Минимум 0.01
+            lot_size = min(1.0, lot_size)   # Максимум 1.0
+            lot_size = round(lot_size, 2)   # Округление
         
         return {
             'direction': signal['direction'],
-            'entry': signal['entry'],
+            'entry': entry_price,
             'sl': signal['sl'],
             'tp': signal['tp'],
             'lot_size': lot_size
@@ -262,6 +280,29 @@ class StrategyEURUSD_SMC_Retracement:
         if atr == 0:
             return signal
         
+        # СТАБИЛИЗАЦИОННЫЕ ФИЛЬТРЫ
+        # Фильтр 1: Волатильность в норме
+        atr_avg = self._calculate_atr_sma(m15_data, current_idx, period=14, sma_period=100)
+        if atr_avg > 0:
+            if atr < atr_avg * self.min_atr_threshold:
+                return signal  # Low volatility
+            if atr > atr_avg * self.max_atr_threshold:
+                return signal  # Too high volatility (news?)
+        
+        # Фильтр 2: Лимит сделок в день
+        current_date = pd.to_datetime(m15_data.iloc[current_idx]['time']).date()
+        if self.current_date != current_date:
+            self.trades_today = 0
+            self.daily_pnl_percent = 0.0
+            self.current_date = current_date
+        
+        if self.trades_today >= self.max_daily_trades:
+            return signal  # Daily trade limit
+        
+        # Фильтр 3: Стоп на день при большом убытке
+        if self.daily_pnl_percent <= -self.max_daily_loss:
+            return signal  # Daily loss limit
+        
         # Поиск Order Block (ТОЛЬКО на данных ДО текущего момента)
         # current_idx - это свеча, которая только что закрылась
         # Order Block должен быть найден на предыдущих свечах
@@ -370,6 +411,19 @@ class StrategyEURUSD_SMC_Retracement:
         
         self._atr_cache[cache_key] = atr
         return atr if atr > 0 else 0.0
+    
+    def _calculate_atr_sma(self, df: pd.DataFrame, current_idx: int, 
+                          period: int = 14, sma_period: int = 100) -> float:
+        """Расчет SMA ATR для фильтра волатильности."""
+        if current_idx < sma_period:
+            return 0.0
+        
+        atr_values = []
+        for i in range(current_idx - sma_period + 1, current_idx + 1):
+            atr = self._calculate_atr_cached(df, i, period)
+            atr_values.append(atr)
+        
+        return np.mean(atr_values) if atr_values else 0.0
     
     def _calculate_lot_size(self, balance: float, risk_amount: float, 
                            sl_points: float) -> float:

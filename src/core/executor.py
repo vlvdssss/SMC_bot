@@ -53,6 +53,9 @@ class Executor:
         # Apply spread
         entry_price = self.broker.apply_spread(current_price, signal['direction'])
 
+        # Apply slippage
+        entry_price = self.broker.apply_slippage(entry_price, signal['direction'])
+
         # Calculate commission
         commission = self.broker.calculate_commission(lot_size)
 

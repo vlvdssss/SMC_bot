@@ -6,7 +6,7 @@ class BrokerSim:
 
     def __init__(self, leverage: int = 100, spread_points: float = 20.0,
                  commission_per_lot: float = 7.0, contract_size: int = 100,
-                 spread_multiplier: float = 0.01):
+                 spread_multiplier: float = 0.01, slippage_min: float = 0.0, slippage_max: float = 0.0):
         """
         Args:
             leverage: Leverage (e.g., 100 for 1:100)
@@ -14,11 +14,15 @@ class BrokerSim:
             commission_per_lot: Round turn commission per lot
             contract_size: Contract size (100 oz for XAUUSD, 1 for indices)
             spread_multiplier: Multiplier for spread (0.01 for XAUUSD, 1.0 for US30)
+            slippage_min: Minimum slippage in price units
+            slippage_max: Maximum slippage in price units
         """
         self.leverage = leverage
         self.spread = spread_points * spread_multiplier
         self.commission_per_lot = commission_per_lot
         self.contract_size = contract_size
+        self.slippage_min = slippage_min
+        self.slippage_max = slippage_max
 
     def calculate_margin_required(self, lot_size: float, price: float) -> float:
         """Calculate required margin for position."""
@@ -35,6 +39,15 @@ class BrokerSim:
             return price + self.spread
         else:  # SELL
             return price - self.spread
+
+    def apply_slippage(self, price: float, direction: str) -> float:
+        """Apply slippage to entry price."""
+        import random
+        slippage = random.uniform(self.slippage_min, self.slippage_max)
+        if direction == 'BUY':
+            return price + slippage
+        else:  # SELL
+            return price - slippage
 
     def can_open_position(self, balance: float, equity: float, used_margin: float,
                          lot_size: float, price: float) -> bool:

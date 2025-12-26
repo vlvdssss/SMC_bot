@@ -2,8 +2,9 @@
 data/
 results/
 logs/
+*.csv
 
-# Конфиг с паролями
+# Конфиг с секретами
 config/mt5.yaml
 
 # Python
@@ -13,7 +14,11 @@ __pycache__/
 .Python
 venv/
 .venv/
+env/
 *.egg-info/
+dist/
+build/
+*.egg
 
 # IDE
 .idea/
@@ -26,11 +31,13 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
-
-# Архив старых файлов
-archive/
+desktop.ini
 
 # Временные
 *.log
 *.tmp
 *.bak
+*.cache
+
+# Jupyter
+.ipynb_checkpoints/

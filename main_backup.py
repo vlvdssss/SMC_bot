@@ -28,7 +28,7 @@ from strategies.xauusd_strategy import StrategyXAUUSD
 from strategies.eurusd_strategy import StrategyEURUSD_SMC_Retracement
 from mt5.connector import MT5Connector
 from live.live_trader import LiveTrader
-from backtest.portfolio_backtester import PortfolioBacktester
+from backtest.backtester import RealisticBacktester
 from core.broker_sim import BrokerSim
 from core.data_loader import DataLoader
 
@@ -49,9 +49,6 @@ def main():
     parser.add_argument('--instrument', type=str, default='all',
                         choices=['all', 'xauusd', 'eurusd'],
                         help='Инструмент (по умолчанию all)')
-    
-    parser.add_argument('--portfolio', action='store_true',
-                        help='Запустить портфельный бэктест')
     
     parser.add_argument('--interval', type=int, default=60,
                         help='Интервал проверки в секундах (по умолчанию 60)')
@@ -82,9 +79,8 @@ def run_demo(args):
     print(f"[*] Интервал проверки: {args.interval} сек")
     print("-" * 60)
     
-    print("[!] DEMO режим пока не реализован")
-    print("[!] Используйте --mode backtest для тестирования стратегий")
-    print("[!] Live торговля будет доступна после интеграции с MT5")
+    trader = LiveTrader(config_dir='config', enable_trading=False)
+    trader.run()
 
 
 def run_live(args):
@@ -97,9 +93,8 @@ def run_live(args):
         print("Отменено.")
         return
     
-    print("[!] LIVE режим пока не реализован")
-    print("[!] Используйте --mode backtest для тестирования стратегий")
-    print("[!] Live торговля будет доступна после интеграции с MT5")
+    trader = LiveTrader(config_dir='config', enable_trading=True)
+    trader.run()
 
 
 def run_backtest(args):
@@ -107,37 +102,27 @@ def run_backtest(args):
     print(f"[*] Режим: BACKTEST")
     print(f"[*] Год: {args.year}")
     print(f"[*] Инструмент: {args.instrument}")
-    print(f"[*] Портфель: {args.portfolio}")
     print("-" * 60)
     
-    if args.portfolio:
-        # Portfolio backtest
-        backtester = PortfolioBacktester()
-        result = backtester.run_backtest(
-            f"{args.year}-01-01",
-            f"{args.year}-12-31"
-        )
-        print(f"\n[PORTFOLIO] ROI: {result['roi']}%, Trades: {result['trades']}, Max DD: {result['max_dd']}%, Win Rate: {result['win_rate']}%")
-    else:
-        # Single instrument backtests
-        strategies = {
-            'XAUUSD': StrategyXAUUSD(),
-            'EURUSD': StrategyEURUSD_SMC_Retracement()
-        }
-        
-        # Create broker and data loader
-        broker = BrokerSim()
-        data_loader = DataLoader()
-        
-        backtester = RealisticBacktester(strategies, broker, data_loader)
-        
-        if args.instrument in ['all', 'xauusd']:
-            print("\n[XAUUSD]")
-            backtester.run_backtest('XAUUSD', datetime(args.year, 1, 1), datetime(args.year, 12, 31))
-        
-        if args.instrument in ['all', 'eurusd']:
-            print("\n[EURUSD]")
-            backtester.run_backtest('EURUSD', datetime(args.year, 1, 1), datetime(args.year, 12, 31))
+    # Create strategies
+    strategies = {
+        'XAUUSD': StrategyXAUUSD(),
+        'EURUSD': StrategyEURUSD_SMC_Retracement()
+    }
+    
+    # Create broker and data loader
+    broker = BrokerSim()
+    data_loader = DataLoader()
+    
+    backtester = RealisticBacktester(strategies, broker, data_loader)()
+    
+    if args.instrument in ['all', 'xauusd']:
+        print("\n[XAUUSD]")
+        backtester.run_backtest('XAUUSD', datetime(args.year, 1, 1), datetime(args.year, 12, 31))
+    
+    if args.instrument in ['all', 'eurusd']:
+        print("\n[EURUSD]")
+        backtester.run_backtest('EURUSD', datetime(args.year, 1, 1), datetime(args.year, 12, 31))
 
 
 if __name__ == '__main__':
