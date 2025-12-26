@@ -92,6 +92,9 @@ def main():
     parser.add_argument('--portfolio', action='store_true',
                         help='Запустить портфельный бэктест')
     
+    parser.add_argument('--balance', type=float, default=100.0,
+                        help='Начальный баланс для портфельного бэктеста (по умолчанию 100.0)')
+    
     parser.add_argument('--interval', type=int, default=60,
                         help='Интервал проверки в секундах (по умолчанию 60)')
     
@@ -303,12 +306,15 @@ def run_backtest(args):
     
     if args.portfolio:
         # Portfolio backtest
-        backtester = PortfolioBacktester()
+        backtester = PortfolioBacktester(initial_balance=args.balance)
         result = backtester.run_backtest(
             f"{args.year}-01-01",
             f"{args.year}-12-31"
         )
-        print(f"\n[PORTFOLIO] ROI: {result['roi']}%, Trades: {result['trades']}, Max DD: {result['max_dd']}%, Win Rate: {result['win_rate']}%")
+        print(f"\n[PORTFOLIO] Начальный баланс: ${result['initial_balance']:.2f}")
+        print(f"[PORTFOLIO] Финальный баланс: ${result['final_balance']:.2f}")
+        print(f"[PORTFOLIO] Общая прибыль: ${result['total_profit']:.2f}")
+        print(f"[PORTFOLIO] ROI: {result['roi']}%, Trades: {result['trades']}, Max DD: {result['max_dd']}% (${result['max_dd_amount']:.2f}), Win Rate: {result['win_rate']}%")
     else:
         # Single instrument backtests
         strategies = {

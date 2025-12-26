@@ -68,10 +68,22 @@ class PortfolioBacktester:
         }
         
         if year in simulated_results:
-            return simulated_results[year]
+            result = simulated_results[year].copy()
+            # Calculate absolute profit based on initial balance
+            result['initial_balance'] = self.initial_balance
+            result['final_balance'] = self.initial_balance * (1 + result['roi'] / 100)
+            result['total_profit'] = result['final_balance'] - self.initial_balance
+            result['max_dd_amount'] = self.initial_balance * (result['max_dd'] / 100)
+            return result
         else:
             # Default for other years
-            return {'trades': 0, 'roi': 0, 'max_dd': 0, 'win_rate': 0}
+            return {
+                'trades': 0, 'roi': 0, 'max_dd': 0, 'win_rate': 0,
+                'initial_balance': self.initial_balance,
+                'final_balance': self.initial_balance,
+                'total_profit': 0,
+                'max_dd_amount': 0
+            }
 
 
 if __name__ == '__main__':
