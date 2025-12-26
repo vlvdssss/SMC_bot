@@ -24,6 +24,7 @@ import argparse
 import sys
 import os
 import time
+import yaml
 from datetime import datetime
 
 # Добавляем src в путь
@@ -88,6 +89,15 @@ def run_demo(args):
     print(f"[*] Интервал проверки: {args.interval} сек")
     print("-" * 60)
     
+    # Загрузка конфига MT5
+    try:
+        with open('config/mt5.yaml', 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        mt5_config = config['mt5']
+    except Exception as e:
+        print(f"[!] Ошибка загрузки конфига MT5: {e}")
+        return
+    
     # Инициализация стратегий
     strategies = {
         'XAUUSD': StrategyXAUUSD(),
@@ -95,7 +105,7 @@ def run_demo(args):
     }
     
     # Подключение к MT5
-    mt5 = MT5Connector()
+    mt5 = MT5Connector(mt5_config)
     if not mt5.connect():
         print("[!] Ошибка подключения к MT5")
         return
@@ -108,15 +118,23 @@ def run_demo(args):
             
             for instrument, strategy in strategies.items():
                 # Получение текущих данных
-                data = mt5.get_recent_data(instrument, timeframe='H1', count=100)
+                data = mt5.get_latest_data(instrument, timeframe='H1', count=100)
                 if data is None or data.empty:
                     print(f"[-] {instrument}: Нет данных")
                     continue
                 
                 current_bar = data.iloc[-1]
                 
-                # Генерация сигнала
-                signal = strategy.generate_signal(current_bar, data)
+                # Генерация сигнала (упрощенная для demo)
+                signal = None
+                if len(data) > 10:
+                    sma_short = data['close'].rolling(5).mean().iloc[-1]
+                    sma_long = data['close'].rolling(20).mean().iloc[-1]
+                    
+                    if sma_short > sma_long:
+                        signal = {'type': 'BUY'}
+                    elif sma_short < sma_long:
+                        signal = {'type': 'SELL'}
                 
                 if signal:
                     print(f"[!] {instrument}: СИГНАЛ {signal['type']} на цене {current_bar['close']:.5f}")
@@ -150,6 +168,15 @@ def run_live(args):
         print("[!] Свяжитесь для получения лицензии: kamsaaaimpa@gmail.com")
         return
     
+    # Загрузка конфига MT5
+    try:
+        with open('config/mt5.yaml', 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        mt5_config = config['mt5']
+    except Exception as e:
+        print(f"[!] Ошибка загрузки конфига MT5: {e}")
+        return
+    
     # Инициализация стратегий
     strategies = {
         'XAUUSD': StrategyXAUUSD(),
@@ -157,7 +184,7 @@ def run_live(args):
     }
     
     # Инициализация компонентов
-    mt5_connector = MT5Connector()
+    mt5_connector = MT5Connector(mt5_config)
     executor = BrokerSim()  # Пока используем симулятор, потом заменить на реальный
     
     # Запуск live трейдера
