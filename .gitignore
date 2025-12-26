@@ -14,7 +14,6 @@ trial_start.txt
 
 # Скрипты генерации лицензий (локальные)
 generate_key.py
-generate_paid_license.py
 
 # Python
 __pycache__/
