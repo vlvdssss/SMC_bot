@@ -43,8 +43,14 @@ def main():
     parser.add_argument("--email", required=True, help="Customer email")
     parser.add_argument("--months", type=int, default=12, help="License duration in months (default: 12)")
     parser.add_argument("--days", type=int, help="License duration in days (alternative to months)")
+    parser.add_argument("--master-key", required=True, help="Master key for license generation (required for security)")
 
     args = parser.parse_args()
+
+    # Verify master key
+    if args.master_key != "BAZA_MASTER_2025":
+        print("Error: Invalid master key. License generation denied.")
+        return
 
     # Calculate expiry date
     if args.days:
