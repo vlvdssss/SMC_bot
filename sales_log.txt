@@ -1,5 +1,0 @@
-# BAZA Sales Log
-# Format: Date | Email | Amount | License Key (first 10 chars) | Notes
-
-# Example entries:
-# 2025-12-27 | test@example.com | $99.99 | BAZA-eyJlbW | First test sale

@@ -7,6 +7,10 @@ logs/
 # Конфиг с секретами
 config/mt5.yaml
 
+# Логи продаж и лицензии
+sales_log.txt
+license_*.txt
+
 # Python
 __pycache__/
 *.py[cod]
