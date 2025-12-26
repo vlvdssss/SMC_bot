@@ -9,6 +9,10 @@
 ║  • XAUUSD: +45.86% ROI, 16% Max DD                          ║
 ║  • EURUSD: +340.75% ROI, 5.32% Max DD                       ║
 ║                                                              ║
+║  Лицензия:                                                   ║
+║  • Бэктестинг: БЕСПЛАТНО                                    ║
+║  • Live торговля: ПЛАТНАЯ ЛИЦЕНЗИЯ                         ║
+║                                                              ║
 ║  Запуск:                                                     ║
 ║    python main.py --mode demo                                ║
 ║    python main.py --mode live                                ║
@@ -91,15 +95,38 @@ def run_live(args):
     """Запуск реальной торговли"""
     print("[!] ВНИМАНИЕ: Режим LIVE торговли!")
     print("[!] Будут открываться реальные сделки!")
+    print("[!] Требуется платная лицензия для live торговли!")
     
     confirm = input("\nВведите 'CONFIRM' для подтверждения: ")
     if confirm != 'CONFIRM':
         print("Отменено.")
         return
     
+    # Проверка лицензии
+    license_key = input("Введите лицензионный ключ: ")
+    if not validate_license(license_key):
+        print("[!] НЕВАЛИДНЫЙ КЛЮЧ ЛИЦЕНЗИИ")
+        print("[!] Свяжитесь для получения лицензии: [YOUR_EMAIL]")
+        return
+    
     print("[!] LIVE режим пока не реализован")
     print("[!] Используйте --mode backtest для тестирования стратегий")
     print("[!] Live торговля будет доступна после интеграции с MT5")
+
+
+def validate_license(key: str) -> bool:
+    """Простая валидация лицензии"""
+    # Demo keys for testing (valid until 2026)
+    valid_keys = [
+        "BAZA-2EA0A37EBB4DADFF-20261227",
+        "BAZA-ECA2A3D889AD9E01-20261227",
+        "BAZA-7843D513364DFEC6-20261227",
+        "BAZA-BE0A3BC2E68AA79A-20261227",
+        "BAZA-56D8E2D609A5487C-20261227",
+        "DEMO2025",  # Legacy demo key
+        "BETA2025"   # Beta testing key
+    ]
+    return key in valid_keys
 
 
 def run_backtest(args):
