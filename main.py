@@ -156,8 +156,8 @@ def run_live(args):
     print("[!] Будут открываться реальные сделки!")
     print("[!] Требуется платная лицензия для live торговли!")
     
-    confirm = input("\nВведите 'CONFIRM' для подтверждения: ")
-    if confirm != 'CONFIRM':
+    confirm = input("\nВы уверены что хотите запустить LIVE торговлю? (Y/N): ")
+    if confirm.lower() not in ['y', 'yes']:
         print("Отменено.")
         return
     
