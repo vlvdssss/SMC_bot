@@ -23,6 +23,7 @@
 import argparse
 import sys
 import os
+import time
 from datetime import datetime
 
 # Добавляем src в путь
@@ -33,6 +34,7 @@ from strategies.eurusd_strategy import StrategyEURUSD_SMC_Retracement
 from mt5.connector import MT5Connector
 from live.live_trader import LiveTrader
 from backtest.portfolio_backtester import PortfolioBacktester
+from backtest.backtester import RealisticBacktester
 from core.broker_sim import BrokerSim
 from core.data_loader import DataLoader
 
@@ -86,9 +88,48 @@ def run_demo(args):
     print(f"[*] Интервал проверки: {args.interval} сек")
     print("-" * 60)
     
-    print("[!] DEMO режим пока не реализован")
-    print("[!] Используйте --mode backtest для тестирования стратегий")
-    print("[!] Live торговля будет доступна после интеграции с MT5")
+    # Инициализация стратегий
+    strategies = {
+        'XAUUSD': StrategyXAUUSD(),
+        'EURUSD': StrategyEURUSD_SMC_Retracement()
+    }
+    
+    # Подключение к MT5
+    mt5 = MT5Connector()
+    if not mt5.connect():
+        print("[!] Ошибка подключения к MT5")
+        return
+    
+    print("[+] Подключено к MT5")
+    
+    try:
+        while True:
+            print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Проверка сигналов...")
+            
+            for instrument, strategy in strategies.items():
+                # Получение текущих данных
+                data = mt5.get_recent_data(instrument, timeframe='H1', count=100)
+                if data is None or data.empty:
+                    print(f"[-] {instrument}: Нет данных")
+                    continue
+                
+                current_bar = data.iloc[-1]
+                
+                # Генерация сигнала
+                signal = strategy.generate_signal(current_bar, data)
+                
+                if signal:
+                    print(f"[!] {instrument}: СИГНАЛ {signal['type']} на цене {current_bar['close']:.5f}")
+                else:
+                    print(f"[+] {instrument}: Нет сигнала (цена: {current_bar['close']:.5f})")
+            
+            print(f"Следующая проверка через {args.interval} сек...")
+            time.sleep(args.interval)
+            
+    except KeyboardInterrupt:
+        print("\n[!] Остановлено пользователем")
+    finally:
+        mt5.disconnect()
 
 
 def run_live(args):
@@ -109,9 +150,19 @@ def run_live(args):
         print("[!] Свяжитесь для получения лицензии: kamsaaaimpa@gmail.com")
         return
     
-    print("[!] LIVE режим пока не реализован")
-    print("[!] Используйте --mode backtest для тестирования стратегий")
-    print("[!] Live торговля будет доступна после интеграции с MT5")
+    # Инициализация стратегий
+    strategies = {
+        'XAUUSD': StrategyXAUUSD(),
+        'EURUSD': StrategyEURUSD_SMC_Retracement()
+    }
+    
+    # Инициализация компонентов
+    mt5_connector = MT5Connector()
+    executor = BrokerSim()  # Пока используем симулятор, потом заменить на реальный
+    
+    # Запуск live трейдера
+    trader = LiveTrader(strategies, executor, mt5_connector)
+    trader.run()
 
 
 def validate_license(key: str) -> bool:
@@ -160,11 +211,19 @@ def run_backtest(args):
         
         if args.instrument in ['all', 'xauusd']:
             print("\n[XAUUSD]")
-            backtester.run_backtest('XAUUSD', datetime(args.year, 1, 1), datetime(args.year, 12, 31))
+            result = backtester.run_backtest('XAUUSD', datetime(args.year, 1, 1), datetime(args.year, 12, 31))
+            if 'error' in result:
+                print(f"Ошибка: {result['error']}")
+            else:
+                print(f"ROI: {result['total_return']:.2f}%, Trades: {result['total_trades']}, Max DD: {result['max_drawdown']:.2f}%, Win Rate: {result['win_rate']:.1f}%")
         
         if args.instrument in ['all', 'eurusd']:
             print("\n[EURUSD]")
-            backtester.run_backtest('EURUSD', datetime(args.year, 1, 1), datetime(args.year, 12, 31))
+            result = backtester.run_backtest('EURUSD', datetime(args.year, 1, 1), datetime(args.year, 12, 31))
+            if 'error' in result:
+                print(f"Ошибка: {result['error']}")
+            else:
+                print(f"ROI: {result['total_return']:.2f}%, Trades: {result['total_trades']}, Max DD: {result['max_drawdown']:.2f}%, Win Rate: {result['win_rate']:.1f}%")
 
 
 if __name__ == '__main__':

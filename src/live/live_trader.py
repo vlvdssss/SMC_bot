@@ -17,35 +17,30 @@ class LiveTrader:
         self.running = False
         self.thread = None
     
-    def start(self):
-        """Запуск live trading"""
+    def run(self):
+        """Запуск live trading в основном потоке"""
+        print("[+] Запуск LIVE трейдинга...")
+        
+        if not self.mt5_connector.connect():
+            print("[!] Ошибка подключения к MT5")
+            return
+        
+        print("[+] Подключено к MT5")
         self.running = True
-        self.thread = threading.Thread(target=self._trading_loop)
-        self.thread.daemon = True
-        self.thread.start()
-        self.logger.info("Live trader started")
-    
-    def stop(self):
-        """Остановка live trading"""
-        self.running = False
-        if self.thread:
-            self.thread.join()
-        self.logger.info("Live trader stopped")
-    
-    def _trading_loop(self):
-        """Главный цикл торговли"""
-        while self.running:
-            try:
-                # Проверка каждого инструмента
-                for instrument, strategy in self.strategies.items():
-                    self._check_signals(instrument, strategy)
-                
-                # Пауза между проверками
+        
+        try:
+            while self.running:
+                self._check_signals_loop()
                 time.sleep(60)  # Проверка каждую минуту
-            
-            except Exception as e:
-                self.logger.error(f"Error in trading loop: {e}")
-                time.sleep(60)
+        except KeyboardInterrupt:
+            print("\n[!] Остановлено пользователем")
+        finally:
+            self.mt5_connector.disconnect()
+    
+    def _check_signals_loop(self):
+        """Проверка сигналов для всех инструментов"""
+        for instrument, strategy in self.strategies.items():
+            self._check_signals(instrument, strategy)
     
     def _check_signals(self, instrument: str, strategy):
         """Проверка сигналов для инструмента"""
