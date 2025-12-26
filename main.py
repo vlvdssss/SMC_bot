@@ -106,7 +106,7 @@ def run_live(args):
     license_key = input("Введите лицензионный ключ: ")
     if not validate_license(license_key):
         print("[!] НЕВАЛИДНЫЙ КЛЮЧ ЛИЦЕНЗИИ")
-        print("[!] Свяжитесь для получения лицензии: [YOUR_EMAIL]")
+        print("[!] Свяжитесь для получения лицензии: kamsaaaimpa@gmail.com")
         return
     
     print("[!] LIVE режим пока не реализован")
