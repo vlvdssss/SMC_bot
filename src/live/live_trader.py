@@ -15,6 +15,12 @@ try:
 except ImportError:
     GPT_AVAILABLE = False
 
+try:
+    from src.ml.predictor import TradePredictor
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
+
 class LiveTrader:
     def __init__(self, strategies: Dict, executor, mt5_connector):
         self.strategies = strategies
@@ -34,6 +40,20 @@ class LiveTrader:
                 print(f"[!] GPT Filter disabled: {e}")
         else:
             print("[!] GPT Filter not available (missing dependencies)")
+        
+        # Инициализация ML предиктора
+        self.ml_predictor = None
+        if ML_AVAILABLE:
+            try:
+                self.ml_predictor = TradePredictor()
+                if self.ml_predictor.is_trained:
+                    print("[✓] ML Predictor loaded")
+                else:
+                    print("[!] ML Predictor not trained yet")
+            except Exception as e:
+                print(f"[!] ML Predictor disabled: {e}")
+        else:
+            print("[!] ML Predictor not available (missing dependencies)")
     
     def check_gpt_filter(self, instrument: str) -> Tuple[bool, str]:
         """Проверка через GPT перед открытием сделки."""
@@ -52,32 +72,63 @@ class LiveTrader:
         
         return (True, reason)
     
-    def process_signal(self, instrument: str, signal: dict):
-        """Обработка сигнала с GPT фильтром."""
+    def check_ml_filter(self, h1_data, m15_data, m15_idx, signal) -> Tuple[bool, float]:
+        """Проверка через ML модель."""
+        
+        if not self.ml_predictor or not self.ml_predictor.is_trained:
+            return (True, 0.5)
+        
+        probability, confidence = self.ml_predictor.predict_success(
+            h1_data, m15_data, m15_idx, signal
+        )
+        
+        should_trade = self.ml_predictor.should_take_trade(probability, min_probability=0.55)
+        
+        print(f"[ML] Probability: {probability:.1%} ({confidence})")
+        
+        return (should_trade, probability)
+    
+    def process_signal(self, instrument: str, signal: dict, h1_data=None, m15_data=None, m15_idx=None):
+        """Обработка сигнала с ML и GPT фильтрами."""
         
         if not signal.get('valid', False):
             return
         
-        # Проверка GPT
-        gpt_ok, gpt_reason = self.check_gpt_filter(instrument)
+        # 1. ML проверка (если есть данные)
+        if h1_data is not None and m15_data is not None and m15_idx is not None:
+            ml_ok, ml_prob = self.check_ml_filter(h1_data, m15_data, m15_idx, signal)
+            if not ml_ok:
+                print(f"[{instrument}] Signal BLOCKED by ML: {ml_prob:.1%} probability")
+                return
+        else:
+            ml_prob = 0.5  # Default
         
+        # 2. GPT проверка
+        gpt_ok, gpt_reason = self.check_gpt_filter(instrument)
         if not gpt_ok:
             print(f"[{instrument}] Signal BLOCKED by GPT: {gpt_reason}")
             return
         
-        # Корректировка риска
+        # 3. Корректировка риска на основе ML уверенности
         risk_multiplier = 1.0
+        if ml_prob > 0.7:
+            risk_multiplier = 1.0  # Полный риск
+        elif ml_prob > 0.6:
+            risk_multiplier = 0.75  # 75%
+        else:
+            risk_multiplier = 0.5  # 50%
+        
+        # Корректировка от GPT
         if self.gpt_filter:
-            reduce, multiplier = self.gpt_filter.should_reduce_risk(instrument)
-            if reduce and multiplier < 1.0:
-                risk_multiplier = multiplier
-                print(f"[{instrument}] Risk reduced to {multiplier*100:.0f}%")
+            reduce, gpt_multiplier = self.gpt_filter.should_reduce_risk(instrument)
+            if reduce and gpt_multiplier < risk_multiplier:
+                risk_multiplier = gpt_multiplier
         
         # Применяем мультипликатор риска к сигналу
         signal['risk_multiplier'] = risk_multiplier
         
         # ... остальная логика открытия сделки ...
-        print(f"[{instrument}] Signal approved by GPT - executing with {risk_multiplier*100:.0f}% risk")
+        print(f"[{instrument}] ✅ Signal APPROVED (ML: {ml_prob:.1%}, Risk: {risk_multiplier:.0%})")
     
     def run(self):
         """Запуск live trading в основном потоке"""
