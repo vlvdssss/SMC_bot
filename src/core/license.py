@@ -18,10 +18,18 @@ class LicenseManager:
     
     # Захардкоженные ключи (можешь добавить свои)
     VALID_KEYS = {
+        # Мастер ключи для разных сроков
+        'BAZA-1MONTH-2025': {'type': 'month', 'days': 30},     # 1 месяц
+        'BAZA-3MONTH-2025': {'type': 'quarter', 'days': 90},   # 3 месяца
+        'BAZA-6MONTH-2025': {'type': 'halfyear', 'days': 180}, # 6 месяцев
+        'BAZA-YEAR-2025': {'type': 'year', 'days': 365},       # 1 год
+        'BAZA-CUSTOM-2025': {'type': 'custom', 'days': 60},    # Для другого срока (по умолчанию 60 дней)
+        'BAZA-TRIAL-2025': {'type': 'trial', 'days': 3},       # Триал 3 дня
+        'BAZA-PRO-OWNER': {'type': 'pro', 'days': 36500},      # 100 лет = навсегда
+        
+        # Старые ключи для совместимости
         'BAZA-FREE-2025': {'type': 'free', 'days': 30},
-        'BAZA-PRO-OWNER': {'type': 'pro', 'days': 36500},  # 100 лет = навсегда
         'BAZA-DEMO-TEST': {'type': 'demo', 'days': 7},
-        'BAZA-YEAR-2025': {'type': 'year', 'days': 365},   # 1 год
     }
     
     def __init__(self):
