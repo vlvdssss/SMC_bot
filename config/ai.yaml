@@ -1,0 +1,21 @@
+ai:
+  openai:
+    model: "gpt-4o-mini"
+    max_tokens: 100
+    temperature: 0.1
+
+  news_filter:
+    enabled: true
+    cache_duration: 3600  # секунды
+
+    # Действия по уровню риска
+    risk_actions:
+      LOW: "trade"           # Торгуем нормально
+      MEDIUM: "reduce_75"    # 75% риска
+      HIGH: "reduce_50"      # 50% риска
+      EXTREME: "skip"        # Пропускаем сделку
+
+    # Инструменты для проверки
+    instruments:
+      - XAUUSD
+      - EURUSD

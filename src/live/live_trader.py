@@ -5,8 +5,15 @@ Live Trader - Live and Demo Trading Module
 import logging
 import time
 from datetime import datetime
-from typing import Dict
+from typing import Dict, Tuple
 import threading
+
+# Добавить импорт
+try:
+    from src.ai.news_filter import GPTNewsFilter
+    GPT_AVAILABLE = True
+except ImportError:
+    GPT_AVAILABLE = False
 
 class LiveTrader:
     def __init__(self, strategies: Dict, executor, mt5_connector):
@@ -16,6 +23,61 @@ class LiveTrader:
         self.logger = logging.getLogger('LiveTrader')
         self.running = False
         self.thread = None
+        
+        # Инициализация GPT фильтра
+        self.gpt_filter = None
+        if GPT_AVAILABLE:
+            try:
+                self.gpt_filter = GPTNewsFilter()
+                print("[✓] GPT News Filter initialized")
+            except Exception as e:
+                print(f"[!] GPT Filter disabled: {e}")
+        else:
+            print("[!] GPT Filter not available (missing dependencies)")
+    
+    def check_gpt_filter(self, instrument: str) -> Tuple[bool, str]:
+        """Проверка через GPT перед открытием сделки."""
+        
+        if not self.gpt_filter:
+            return (True, "GPT filter disabled")
+        
+        safe, risk_level, reason = self.gpt_filter.check_trading_safety(instrument)
+        
+        if not safe:
+            print(f"[GPT] ⚠️ {instrument}: {risk_level} risk - {reason}")
+            return (False, reason)
+        
+        if risk_level in ["HIGH", "MEDIUM"]:
+            print(f"[GPT] ⚡ {instrument}: {risk_level} risk - {reason}")
+        
+        return (True, reason)
+    
+    def process_signal(self, instrument: str, signal: dict):
+        """Обработка сигнала с GPT фильтром."""
+        
+        if not signal.get('valid', False):
+            return
+        
+        # Проверка GPT
+        gpt_ok, gpt_reason = self.check_gpt_filter(instrument)
+        
+        if not gpt_ok:
+            print(f"[{instrument}] Signal BLOCKED by GPT: {gpt_reason}")
+            return
+        
+        # Корректировка риска
+        risk_multiplier = 1.0
+        if self.gpt_filter:
+            reduce, multiplier = self.gpt_filter.should_reduce_risk(instrument)
+            if reduce and multiplier < 1.0:
+                risk_multiplier = multiplier
+                print(f"[{instrument}] Risk reduced to {multiplier*100:.0f}%")
+        
+        # Применяем мультипликатор риска к сигналу
+        signal['risk_multiplier'] = risk_multiplier
+        
+        # ... остальная логика открытия сделки ...
+        print(f"[{instrument}] Signal approved by GPT - executing with {risk_multiplier*100:.0f}% risk")
     
     def run(self):
         """Запуск live trading в основном потоке"""

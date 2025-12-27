@@ -6,6 +6,7 @@ logs/
 
 # Конфиг с секретами
 config/mt5.yaml
+config/.env
 
 # Логи продаж и лицензии
 sales_log.txt
