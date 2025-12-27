@@ -48,32 +48,32 @@ class GPTNewsFilter:
         hour = datetime.now().hour
 
         prompt = f"""
-Today is {today}, current hour is {hour}:00 UTC.
+Сегодня {today}, текущее время {hour}:00 UTC.
 
-For trading instrument {instrument}, analyze:
-1. Are there any major economic events TODAY that could cause high volatility?
-   (NFP, FOMC, ECB, CPI, GDP, etc.)
-2. Is it a risky time to trade? (market open, news release, low liquidity)
+Проанализируй торговый инструмент {instrument}:
+1. Есть ли сегодня крупные экономические события, которые могут вызвать высокую волатильность?
+   (NFP, FOMC, ECB, CPI, GDP и т.д.)
+2. Рискованно ли сейчас торговать? (открытие рынка, выход новостей, низкая ликвидность)
 
-For XAUUSD consider: Fed decisions, US economic data, geopolitical events
-For EURUSD consider: ECB decisions, EU/US economic data, major speeches
+Для XAUUSD учитывай: решения ФРС, экономические данные США, геополитические события
+Для EURUSD учитывай: решения ЕЦБ, экономические данные ЕС/США, важные выступления
 
-Respond in this EXACT format:
+Ответь ТОЛЬКО в этом формате:
 RISK_LEVEL: [LOW/MEDIUM/HIGH/EXTREME]
 SAFE_TO_TRADE: [YES/NO]
-REASON: [One sentence explanation]
+REASON: [Одно предложение объяснения на русском]
 
-Example:
+Пример:
 RISK_LEVEL: HIGH
 SAFE_TO_TRADE: NO
-REASON: FOMC meeting today at 18:00 UTC, expect high volatility.
+REASON: Сегодня заседание FOMC в 18:00 UTC, ожидаем высокую волатильность.
 """
 
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a financial market analyst. Be concise and accurate."},
+                    {"role": "system", "content": "Ты финансовый аналитик рынка. Отвечай кратко и точно на русском языке."},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=100,
@@ -131,12 +131,12 @@ REASON: FOMC meeting today at 18:00 UTC, expect high volatility.
         """Получает общую сводку по рынку."""
 
         prompt = """
-Give a brief market summary for today (2-3 sentences):
-- Key events affecting XAUUSD (Gold) and EURUSD
-- Overall market sentiment
-- Any warnings for traders
+Дай краткую сводку по рынку на сегодня (2-3 предложения):
+- Ключевые события, влияющие на XAUUSD (золото) и EURUSD
+- Общее настроение рынка
+- Предупреждения для трейдеров
 
-Be concise.
+Будь краток.
 """
 
         try:
