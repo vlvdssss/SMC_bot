@@ -98,15 +98,26 @@ class BazaApp:
                                bg='#1a1a1a', fg='#888888')
         result_label.pack()
         
-        def activate():
+        def activate(save=True):
             key = key_entry.get()
+            if not key:
+                result_label.config(text="❌ Введите ключ", fg='#ff4757')
+                return
+                
             success, msg = license_manager.activate(key)
             
             if success:
-                result_label.config(text=msg, fg='#00d4aa')
-                dialog.after(1500, dialog.destroy)
+                if save:
+                    result_label.config(text=f"✅ {msg}", fg='#00d4aa')
+                    dialog.after(1500, dialog.destroy)
+                else:
+                    result_label.config(text=f"🧪 ТЕСТ: {msg}", fg='#f39c12')
             else:
-                result_label.config(text=msg, fg='#ff4757')
+                result_label.config(text=f"❌ {msg}", fg='#ff4757')
+        
+        def test_key():
+            """Тест ключа без сохранения."""
+            activate(save=False)
         
         def on_close():
             valid, _ = license_manager.is_valid()
@@ -117,12 +128,23 @@ class BazaApp:
             else:
                 dialog.destroy()
         
-        tk.Button(dialog, text="Активировать",
+        # Кнопки
+        btn_frame = tk.Frame(dialog, bg='#1a1a1a')
+        btn_frame.pack(fill='x', padx=20, pady=10)
+        
+        tk.Button(btn_frame, text="🧪 Тест",
+                 font=('Arial', 10, 'bold'),
+                 bg='#f39c12', fg='black',
+                 command=test_key,
+                 width=8, height=1,
+                 relief='flat', cursor='hand2').pack(side='left', padx=5)
+        
+        tk.Button(btn_frame, text="Активировать",
                  font=('Arial', 11, 'bold'),
                  bg='#00d4aa', fg='black',
-                 command=activate,
-                 width=15, height=1,
-                 relief='flat', cursor='hand2').pack(pady=10)
+                 command=lambda: activate(save=True),
+                 width=12, height=1,
+                 relief='flat', cursor='hand2').pack(side='right', padx=5)
         
         dialog.protocol("WM_DELETE_WINDOW", on_close)
         
@@ -203,6 +225,37 @@ class BazaApp:
                  command=test_api_key,
                  width=15, height=1,
                  relief='flat', cursor='hand2').pack(pady=(0, 10))
+        
+        # Раздел лицензии
+        license_frame = tk.Frame(dialog, bg='#2a2a2a', relief='flat')
+        license_frame.pack(fill='x', padx=20, pady=10)
+        
+        tk.Label(license_frame, text="🔐 Лицензия (для тестирования)",
+                font=('Arial', 11, 'bold'),
+                bg='#2a2a2a', fg='white').pack(anchor='w', pady=(10, 5))
+        
+        def reset_license():
+            """Сброс лицензии для тестирования."""
+            try:
+                license_path = Path('data/license.json')
+                if license_path.exists():
+                    license_path.unlink()
+                    status_label.config(text="✅ Лицензия сброшена! Перезапустите программу.", fg='#00d4aa')
+                else:
+                    status_label.config(text="ℹ️ Лицензия не найдена", fg='#f39c12')
+            except Exception as e:
+                status_label.config(text=f"❌ Ошибка сброса: {e}", fg='#ff4757')
+        
+        tk.Button(license_frame, text="🔄 Сбросить лицензию",
+                 font=('Arial', 10, 'bold'),
+                 bg='#ff4757', fg='white',
+                 command=reset_license,
+                 width=15, height=1,
+                 relief='flat', cursor='hand2').pack(pady=(0, 10))
+        
+        tk.Label(license_frame, text="⚠️ После сброса перезапустите программу для тестирования активации",
+                font=('Arial', 8),
+                bg='#2a2a2a', fg='#888888').pack(anchor='w', pady=(0, 10))
         
         # Кнопки
         btn_frame = tk.Frame(dialog, bg='#1a1a1a')
