@@ -100,3 +100,42 @@ class MT5Connector:
             'free_margin': account.margin_free,
             'leverage': account.leverage
         }
+    
+    def get_trade_history(self, days: int = 30) -> list:
+        """Получение истории сделок за последние дни"""
+        if not self.connected:
+            return []
+        
+        try:
+            # Получаем историю сделок
+            from_date = datetime.now() - timedelta(days=days)
+            to_date = datetime.now()
+            
+            deals = mt5.history_deals_get(from_date, to_date)
+            if deals is None:
+                return []
+            
+            trades = []
+            for deal in deals:
+                if deal.type in [mt5.DEAL_TYPE_BUY, mt5.DEAL_TYPE_SELL]:
+                    # Рассчитываем P&L для закрытых позиций
+                    pnl = 0
+                    if deal.profit is not None:
+                        pnl = deal.profit
+                    
+                    trades.append({
+                        'id': deal.ticket,
+                        'date': deal.time.strftime('%Y-%m-%d'),
+                        'time': deal.time.strftime('%H:%M'),
+                        'instrument': deal.symbol,
+                        'direction': 'BUY' if deal.type == mt5.DEAL_TYPE_BUY else 'SELL',
+                        'pnl': round(pnl, 2),
+                        'volume': deal.volume,
+                        'price': deal.price
+                    })
+            
+            return trades
+        
+        except Exception as e:
+            self.logger.error(f"Error getting trade history: {e}")
+            return []
