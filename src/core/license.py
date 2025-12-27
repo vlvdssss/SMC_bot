@@ -21,6 +21,7 @@ class LicenseManager:
         'BAZA-FREE-2025': {'type': 'free', 'days': 30},
         'BAZA-PRO-OWNER': {'type': 'pro', 'days': 36500},  # 100 лет = навсегда
         'BAZA-DEMO-TEST': {'type': 'demo', 'days': 7},
+        'BAZA-YEAR-2025': {'type': 'year', 'days': 365},   # 1 год
     }
     
     def __init__(self):
