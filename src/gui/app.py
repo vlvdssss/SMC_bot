@@ -72,8 +72,9 @@ class BazaApp:
         
         # Инициализация ручной торговли
         self.manual_controller = None
+        self.manual_config = self._load_manual_config()
         if MANUAL_TRADING_AVAILABLE:
-            config = self._load_manual_config()
+            config = self.manual_config
             if config.get('enabled', False):
                 try:
                     llm_client = None
@@ -1129,8 +1130,20 @@ class BazaApp:
                 return
                 
             price_diff = abs(entry - sl)
-            if price_diff < 0.00001:
-                self.log("Cannot calculate: invalid SL (too close to entry)")
+            # Минимальная допустимая дистанция SL рассчитывается динамически:
+            # - как половина текущего спреда (если есть), или
+            # - как небольшая доля от цены (1e-5), чтобы учитывать инструменты с разной ценовой шкалой
+            spread = getattr(state, 'spread', 0.0) or 0.0
+            # Настраиваемые параметры из config/portfolio.yaml (manual_trading)
+            cfg = getattr(self, 'manual_config', {}) or {}
+            price_fraction = float(cfg.get('min_sl_price_fraction', 1e-5))
+            spread_factor = float(cfg.get('min_sl_spread_half', 0.5))
+            min_distance = max(spread * spread_factor, abs(entry) * price_fraction, 1e-8)
+            if price_diff < min_distance:
+                self.log(
+                    f"Cannot calculate: invalid SL (too close to entry). "
+                    f"price_diff={price_diff:.8f}, min_distance={min_distance:.8f}"
+                )
                 self.manual_lot_label.config(text="Volume: --")
                 self.manual_rr_label.config(text="RR: --")
                 return

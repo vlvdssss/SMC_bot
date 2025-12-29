@@ -5,6 +5,9 @@
 manual_trading:
   enabled: true  # EXPERIMENTAL FEATURE - DISABLED BY DEFAULT
   ai_predict_enabled: true  # AI analysis for manual trades
+  # Минимальная дистанция SL рассчитывается как max(spread*min_sl_spread_half, entry*min_sl_price_fraction)
+  min_sl_price_fraction: 1e-5
+  min_sl_spread_half: 0.5
   min_rr_warning: 1.5  # Minimum RR ratio warning
   max_risk_percent: 5.0  # Maximum risk per trade (%)
   pip_value: 0.0001  # Pip value for EURUSD
