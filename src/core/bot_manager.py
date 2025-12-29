@@ -129,7 +129,7 @@ class BotManager:
             return False
         
         self.mode = mode
-        self.log(f"🔄 Режим изменён на {mode.upper()}")
+        self.log(f"[CHANGE] Mode changed to {mode.upper()}")
         return True
     
     def _run_bot(self, mode: str):

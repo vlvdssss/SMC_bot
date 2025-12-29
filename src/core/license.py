@@ -69,18 +69,59 @@ class LicenseManager:
         Returns:
             (success: bool, message: str)
         """
-        key = key.strip().upper()
+        key = key.strip()
         
-        # Проверяем ключ
-        if key not in self.VALID_KEYS:
-            return (False, "❌ Неверный ключ активации")
+        # Сначала проверяем готовые мастер-ключи
+        key_upper = key.upper()
+        if key_upper in self.VALID_KEYS:
+            key_info = self.VALID_KEYS[key_upper]
+            expires = datetime.now() + timedelta(days=key_info['days'])
+            license_type = key_info['type']
+            self.save_license(key_upper, license_type, expires.isoformat())
+            return (True, f"[ACTIVATED] Activated! Type: {license_type.upper()}, until {expires.strftime('%d.%m.%Y')}")
         
-        key_info = self.VALID_KEYS[key]
-        expires = datetime.now() + timedelta(days=key_info['days'])
+        # Проверяем сгенерированные ключи (BAZA-{base64})
+        if key.startswith('BAZA-'):
+            try:
+                import base64
+                import json
+                import hashlib
+                
+                # Извлекаем base64 часть
+                encoded_data = key[5:]  # Убираем 'BAZA-'
+                decoded_data = base64.b64decode(encoded_data)
+                license_data = json.loads(decoded_data.decode())
+                
+                # Проверяем хэш для верификации
+                data_to_hash = {
+                    'email': license_data['email'],
+                    'expiry': license_data['expiry'],
+                    'type': license_data['type'],
+                    'version': license_data['version']
+                }
+                data_str = json.dumps(data_to_hash, sort_keys=True)
+                expected_hash = hashlib.sha256(data_str.encode()).hexdigest()
+                
+                if license_data.get('hash') != expected_hash:
+                    return (False, "[ERROR] Key damaged or forged")
+                
+                # Проверяем срок действия
+                expiry_date = datetime.fromisoformat(license_data['expiry'])
+                if expiry_date < datetime.now():
+                    return (False, "[ERROR] Key expired")
+                
+                # Сохраняем лицензию
+                self.save_license(key, license_data['type'], license_data['expiry'])
+                return (True, f"[ACTIVATED] Activated! Type: {license_data['type'].upper()}, until {expiry_date.strftime('%d.%m.%Y')}")
+                
+            except Exception as e:
+                return (False, f"[ERROR] Key processing error: {str(e)}")
+        
+        return (False, "[ERROR] Invalid activation key")
         
         self.save_license(key, key_info['type'], expires.isoformat())
         
-        return (True, f"✅ Активировано! Тип: {key_info['type'].upper()}, до {expires.strftime('%d.%m.%Y')}")
+        return (True, f"[ACTIVATED] Activated! Type: {key_info['type'].upper()}, until {expires.strftime('%d.%m.%Y')}")
     
     def is_valid(self) -> tuple[bool, str]:
         """

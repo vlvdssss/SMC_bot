@@ -6,7 +6,8 @@ BAZA Trading Bot - GUI Application
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox, simpledialog, filedialog
+import customtkinter
 import threading
 import json
 from datetime import datetime
@@ -17,45 +18,319 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from src.core.license import license_manager
+from src.core.app_state import AppState
+from src.core.mt5_manager import MT5Manager
+from src.core.logger import logger as app_logger
+from src.core.manual_trade_state import ManualTradeState
+from src.core.market_data_updater import MarketDataUpdater
 try:
     import openai
 except ImportError:
     openai = None
 
+# Manual trading imports
+try:
+    from src.manual_trading.controller import ManualTradingController
+    from src.models import AIPrediction
+    MANUAL_TRADING_AVAILABLE = True
+except ImportError:
+    MANUAL_TRADING_AVAILABLE = False
+
 
 class BazaApp:
-    """Главное окно приложения."""
-    
+    """Главное окно приложения BAZA Trading Bot."""
+
     def __init__(self):
+        # Создание главного окна
         self.root = tk.Tk()
         self.root.title("BAZA Trading Bot")
         self.root.geometry("900x700")
         self.root.configure(bg='#1a1a1a')
         self.root.resizable(True, True)
         
-        # Состояние
+        # Инициализация состояния приложения
+        self.app_state = AppState()
+        
+        # Событие для остановки бота
+        self.stop_event = threading.Event()
+        
+        # Переменные состояния бота (инициализируем в конструкторе)
         self.bot_running = False
         self.bot_paused = False
         self.bot_thread = None
-        self.stop_event = threading.Event()
         self.trader = None
+        self.live_trader = None
         
-        # Статистика
-        self.stats = {
-            'balance': 100.0,
-            'total_pnl': 0.0,
-            'today_pnl': 0.0,
-            'trades': 0,
-            'wins': 0,
-            'losses': 0
-        }
+        # Загрузка настроек
+        self.load_settings()
+        self.load_mt5_config()
+        self.load_mt5_credentials()
         
-        # Проверка лицензии при старте
-        self.check_license_on_start()
+        # Инициализация MT5
+        self._init_mt5_manager()
+        self._start_mt5_monitoring()
         
-        self.load_stats()
+        # Инициализация ручной торговли
+        self.manual_controller = None
+        if MANUAL_TRADING_AVAILABLE:
+            config = self._load_manual_config()
+            if config.get('enabled', False):
+                try:
+                    llm_client = None
+                    if openai and os.getenv('OPENAI_API_KEY'):
+                        llm_client = openai.OpenAI()
+                    
+                    self.manual_controller = ManualTradingController(
+                        config=config,
+                        executor=None,  # Будет установлен позже
+                        llm_client=llm_client
+                    )
+                    self.app_state.manual_trading_enabled = True
+                    app_logger.info("[OK] Manual trading controller initialized")
+                    # Логи по доступности AI-анализатора
+                    if llm_client and self.manual_controller and self.manual_controller.ai_analyzer:
+                        app_logger.info("[OK] AI analyzer (LLM) initialized and ready")
+                    else:
+                        app_logger.info("[INFO] AI analyzer not initialized — check OPENAI_API_KEY or config")
+                except Exception as e:
+                    app_logger.error(f"[ERROR] Manual trading init failed: {e}")
+        
+        # Состояние ручной торговли
+        self.app_state.manual_trade_state = ManualTradeState()
+        
+        # MarketDataUpdater для обновления цен
+        self.market_data_updater = MarketDataUpdater(
+            mt5_manager=self.app_state.mt5_manager,
+            manual_trade_state=self.app_state.manual_trade_state,
+            update_callback=self._on_market_data_update
+        )
+        self.market_data_updater.start()
+        # Интервал опроса MT5 в секундах (можно настроить)
+        self.mt5_poll_interval = 1.0
+        
+        # Создание интерфейса
         self.create_ui()
-        self.update_display()
+        
+        # (callback уже установлен в __init__) — не устанавливаем здесь повторно
+        
+        # Установка executor для manual controller
+        if self.manual_controller and hasattr(self, 'app_state') and hasattr(self.app_state, 'live_trader') and self.app_state.live_trader:
+            self.manual_controller.executor = self.app_state.live_trader.executor
+        
+        # Начальные логи
+        self.log("[INFO] Приложение запущено")
+        self.log("[INFO] Инициализация компонентов...")
+        
+        # Загрузка статистики
+        self.load_stats()
+    
+    def _on_market_data_update(self):
+        """Callback при обновлении рыночных данных."""
+        try:
+            state = self.app_state.manual_trade_state
+            if state.direction == "buy":
+                state.entry_price = state.ask_price
+            elif state.direction == "sell":
+                state.entry_price = state.bid_price
+            else:
+                state.entry_price = state.bid_price
+            
+            # Обновляем GUI в главном потоке
+            if hasattr(self, 'manual_entry'):
+                self.root.after(0, lambda: self.manual_entry.set(state.entry_price))
+            
+            # Пересчитываем если нужно
+            self.root.after(0, self.update_manual_calculations)
+            
+        except Exception as e:
+            self.log(f"[ERROR] Market data update error: {e}")
+        
+        # Установка callback для логов в GUI
+        # (callback устанавливается в __init__, не нужно дублировать здесь)
+    
+    def _add_log_to_gui(self, message: str, level: str = "INFO"):
+        """Callback для добавления логов в GUI с цветами."""
+        try:
+            # Проверяем, что root еще существует
+            if not hasattr(self, 'root') or not self.root or not self.root.winfo_exists():
+                return
+            # Вызываем в главном потоке
+            self.root.after(0, lambda: self._insert_log_message(message, level))
+        except Exception as e:
+            print(f"GUI logging error: {e}")
+    
+    def _init_mt5_manager(self):
+        """Инициализация MT5 Manager."""
+        try:
+            self.app_state.mt5_manager = MT5Manager()
+            
+            # Инициализируем MT5 с путем к терминалу из конфига
+            mt5_config = self.app_state.get_mt5_config()
+            terminal_path = mt5_config.get('terminal_path', '')
+            
+            if terminal_path and Path(terminal_path).exists():
+                if self.app_state.mt5_manager.initialize(terminal_path):
+                    app_logger.info(f"[OK] MT5 initialized with path: {terminal_path}")
+                else:
+                    app_logger.warning(f"[WARNING] Failed to initialize MT5 with path: {terminal_path}, trying without path")
+                    if not self.app_state.mt5_manager.initialize():
+                        app_logger.error("[ERROR] Failed to initialize MT5")
+                        self.app_state.mt5_manager = None
+            else:
+                if self.app_state.mt5_manager.initialize():
+                    app_logger.info("[OK] MT5 initialized without path")
+                else:
+                    app_logger.error("[ERROR] Failed to initialize MT5")
+                    self.app_state.mt5_manager = None
+                    
+        except Exception as e:
+            app_logger.error(f"[ERROR] Failed to initialize MT5 Manager: {e}")
+            self.app_state.mt5_manager = None
+    
+    def _start_mt5_monitoring(self):
+        """Запуск мониторинга статуса MT5."""
+        def monitor():
+            while True:
+                try:
+                    if not self.app_state.mt5_manager:
+                        threading.Event().wait(5)
+                        continue
+
+                    connected = self.app_state.mt5_manager.is_connected()
+
+                    # Если соединение отсутствует — обновим статус и ждём
+                    if not connected:
+                        if self.app_state.mt5_connected:
+                            # Состояние поменялось на disconnected
+                            self.app_state.update_mt5_status(False)
+                            self.root.after(0, self.update_mt5_status)
+                        threading.Event().wait(5)
+                        continue
+
+                    # Получаем актуальную информацию о счете каждый цикл
+                    account_info = self.app_state.mt5_manager.get_account_info() or {}
+
+                    # Обрабатываем баланс и equity
+                    try:
+                        new_balance = float(account_info.get('balance', self.app_state.stats.get('balance', 0.0)))
+                    except Exception:
+                        new_balance = float(self.app_state.stats.get('balance', 0.0))
+
+                    try:
+                        new_equity = float(account_info.get('equity', self.app_state.stats.get('equity', new_balance)))
+                    except Exception:
+                        new_equity = new_balance
+
+                    old_balance = float(self.app_state.stats.get('balance', 0.0))
+                    old_equity = float(self.app_state.stats.get('equity', old_balance))
+
+                    # Обновляем внутренний флаг соединения и account_info всегда
+                    self.app_state.mt5_connected = True
+                    self.app_state.mt5_account_info = account_info
+
+                    # Если баланс или equity изменились — обновляем AppState.stats и UI
+                    if new_balance != old_balance or new_equity != old_equity:
+                        # Записываем в статистику
+                        self.app_state.stats['balance'] = new_balance
+                        self.app_state.stats['equity'] = new_equity
+
+                        # Вычисляем текущий (не реализованный) P&L как equity - balance
+                        try:
+                            pnl = new_equity - new_balance
+                        except Exception:
+                            pnl = 0.0
+
+                        self.app_state.stats['total_pnl'] = round(pnl, 2)
+                        # Для наглядности пометим today_pnl тем же значением (можно улучшить позже)
+                        self.app_state.stats['today_pnl'] = round(pnl, 2)
+
+                        # Обновляем UI
+                        self.app_state.update_mt5_status(True, account_info)
+                        self.root.after(0, self.update_mt5_status)
+                    else:
+                        # Если ничего не изменилось — всё равно обновляем метки аккаунта периодически
+                        self.root.after(0, self.update_mt5_status)
+
+                    threading.Event().wait(self.mt5_poll_interval)
+
+                except Exception as e:
+                    app_logger.error(f"MT5 monitoring error: {e}")
+                    threading.Event().wait(10)
+
+        thread = threading.Thread(target=monitor, daemon=True)
+        thread.start()
+        app_logger.info("MT5 monitoring started")
+
+    def _on_market_data_update(self):
+        """Callback при обновлении рыночных данных."""
+        # Обновляем GUI в главном потоке
+        self.root.after(0, self._refresh_manual_trading_ui)
+
+    def _refresh_manual_trading_ui(self):
+        """Обновление UI ручной торговли."""
+        if not self.app_state.manual_trade_state:
+            return
+
+        state = self.app_state.manual_trade_state
+
+        # Обновляем лейблы расчетов
+        try:
+            # Получаем баланс
+            account_balance = self.app_state.stats.get('balance', 100.0)
+
+            # Расчет объема позиции
+            if self.manual_controller and state.entry_price > 0 and state.stop_loss > 0:
+                lot_size, calc_msg = self.manual_controller.calculator.calculate_lot_size(
+                    symbol=state.symbol,
+                    entry_price=state.entry_price,
+                    stop_loss=state.stop_loss,
+                    risk_amount=state.risk_amount,
+                    account_balance=account_balance
+                )
+                state.set_lot_size(lot_size)
+
+            # Расчет RR
+            if state.entry_price > 0 and state.stop_loss > 0 and state.take_profit > 0:
+                rr_ratio = self.manual_controller.calculator.calculate_rr_ratio(
+                    entry_price=state.entry_price,
+                    stop_loss=state.stop_loss,
+                    take_profit=state.take_profit,
+                    direction=state.direction
+                )
+                state.set_rr_ratio(rr_ratio)
+
+            # Обновляем лейблы
+            if hasattr(self, 'manual_lot_label'):
+                self.manual_lot_label.config(text=f"Объем: {state.lot_size:.2f} лотов")
+            if hasattr(self, 'manual_rr_label'):
+                self.manual_rr_label.config(text=f"RR: {state.risk_reward_ratio:.2f}")
+
+        except Exception as e:
+            app_logger.error(f"Error refreshing manual trading UI: {e}")
+
+    def load_settings(self):
+        """Загрузка настроек из файла."""
+        config_file = Path('data/config.json')
+        self.enable_gpt = True  # По умолчанию включено
+        
+        if config_file.exists():
+            try:
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+                    self.enable_gpt = config.get('enable_gpt', True)
+            except:
+                pass
+    
+    def _load_manual_config(self):
+        """Загрузка конфига для manual trading."""
+        try:
+            import yaml
+            with open('config/portfolio.yaml', 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+                return config.get('manual_trading', {})
+        except Exception as e:
+            self.log(f"Failed to load manual config: {e}")
+            return {}
     
     def check_license_on_start(self):
         """Проверка лицензии при запуске."""
@@ -101,23 +376,21 @@ class BazaApp:
         def activate(save=True):
             key = key_entry.get()
             if not key:
-                result_label.config(text="❌ Введите ключ", fg='#ff4757')
+                result_label.config(text="[ERROR] Enter key", fg='#ff4757')
                 return
                 
             success, msg = license_manager.activate(key)
             
             if success:
                 if save:
-                    result_label.config(text=f"✅ {msg}", fg='#00d4aa')
+                    result_label.config(text=f"[OK] {msg}", fg='#00d4aa')
                     dialog.after(1500, dialog.destroy)
                 else:
-                    result_label.config(text=f"🧪 ТЕСТ: {msg}", fg='#f39c12')
+                    result_label.config(text=f"[INFO] {msg}", fg='#f39c12')
             else:
-                result_label.config(text=f"❌ {msg}", fg='#ff4757')
+                result_label.config(text=f"[ERROR] {msg}", fg='#ff4757')
         
-        def test_key():
-            """Тест ключа без сохранения."""
-            activate(save=False)
+        # Тест без кнопки: просто используем activate(save=False) при необходимости
         
         def on_close():
             valid, _ = license_manager.is_valid()
@@ -131,13 +404,6 @@ class BazaApp:
         # Кнопки
         btn_frame = tk.Frame(dialog, bg='#1a1a1a')
         btn_frame.pack(fill='x', padx=20, pady=10)
-        
-        tk.Button(btn_frame, text="🧪 Тест",
-                 font=('Arial', 10, 'bold'),
-                 bg='#f39c12', fg='black',
-                 command=test_key,
-                 width=8, height=1,
-                 relief='flat', cursor='hand2').pack(side='left', padx=5)
         
         tk.Button(btn_frame, text="Активировать",
                  font=('Arial', 11, 'bold'),
@@ -172,17 +438,37 @@ class BazaApp:
                 font=('Arial', 16, 'bold'),
                 bg='#1a1a1a', fg='white').pack(pady=20)
         
+        # Загружаем настройки
+        config_file = Path('data/config.json')
+        current_config = {}
+        if config_file.exists():
+            try:
+                with open(config_file, 'r') as f:
+                    current_config = json.load(f)
+            except:
+                pass
+        
         # OpenAI API Key
         api_frame = tk.Frame(dialog, bg='#2a2a2a', relief='flat')
         api_frame.pack(fill='x', padx=20, pady=10)
         
-        tk.Label(api_frame, text="🤖 OpenAI API Key (для GPT фильтра)",
+        tk.Label(api_frame, text="[AI] OpenAI API Key (for GPT filter)",
                 font=('Arial', 11, 'bold'),
                 bg='#2a2a2a', fg='white').pack(anchor='w', pady=(10, 5))
         
         tk.Label(api_frame, text="Получите ключ на https://platform.openai.com/api-keys",
                 font=('Arial', 9),
                 bg='#2a2a2a', fg='#888888').pack(anchor='w', pady=(0, 10))
+        
+        # Настройка включения GPT
+        gpt_enabled = tk.BooleanVar(value=current_config.get('enable_gpt', True))  # По умолчанию включено
+        gpt_check = tk.Checkbutton(api_frame, text="Включить GPT фильтр новостей",
+                                  variable=gpt_enabled,
+                                  font=('Arial', 10),
+                                  bg='#2a2a2a', fg='white',
+                                  selectcolor='#1a1a1a', activebackground='#2a2a2a',
+                                  activeforeground='white')
+        gpt_check.pack(anchor='w', pady=(0, 10))
         
         # Текущее значение
         current_key = os.getenv("OPENAI_API_KEY", "")
@@ -200,11 +486,11 @@ class BazaApp:
         def test_api_key():
             key = api_entry.get().strip()
             if not key:
-                status_label.config(text="❌ Ключ не введён", fg='#ff4757')
+                status_label.config(text="[ERROR] Key not entered", fg='#ff4757')
                 return
             
             if openai is None:
-                status_label.config(text="❌ OpenAI библиотека не установлена", fg='#ff4757')
+                status_label.config(text="[ERROR] OpenAI library not installed", fg='#ff4757')
                 return
             
             # Тестируем ключ
@@ -215,9 +501,9 @@ class BazaApp:
                     messages=[{"role": "user", "content": "Hello"}],
                     max_tokens=5
                 )
-                status_label.config(text="✅ Ключ работает!", fg='#00d4aa')
+                status_label.config(text="[OK] Key works!", fg='#00d4aa')
             except Exception as e:
-                status_label.config(text=f"❌ Ошибка: {str(e)[:50]}", fg='#ff4757')
+                status_label.config(text=f"[ERROR] Error: {str(e)[:50]}", fg='#ff4757')
         
         tk.Button(api_frame, text="🔍 Проверить ключ",
                  font=('Arial', 10, 'bold'),
@@ -240,20 +526,20 @@ class BazaApp:
                 license_path = Path('data/license.json')
                 if license_path.exists():
                     license_path.unlink()
-                    status_label.config(text="✅ Лицензия сброшена! Перезапустите программу.", fg='#00d4aa')
+                    status_label.config(text="[OK] License reset! Restart the program.", fg='#00d4aa')
                 else:
                     status_label.config(text="ℹ️ Лицензия не найдена", fg='#f39c12')
             except Exception as e:
-                status_label.config(text=f"❌ Ошибка сброса: {e}", fg='#ff4757')
+                status_label.config(text=f"[ERROR] Reset error: {e}", fg='#ff4757')
         
-        tk.Button(license_frame, text="🔄 Сбросить лицензию",
+        tk.Button(license_frame, text="[RESET] Reset license",
                  font=('Arial', 10, 'bold'),
                  bg='#ff4757', fg='white',
                  command=reset_license,
                  width=15, height=1,
                  relief='flat', cursor='hand2').pack(pady=(0, 10))
         
-        tk.Label(license_frame, text="⚠️ После сброса перезапустите программу для тестирования активации",
+        tk.Label(license_frame, text="[WARNING] After reset, restart the program for activation testing",
                 font=('Arial', 8),
                 bg='#2a2a2a', fg='#888888').pack(anchor='w', pady=(0, 10))
         
@@ -263,6 +549,8 @@ class BazaApp:
         
         def save_settings():
             key = api_entry.get().strip()
+            gpt_enabled_val = gpt_enabled.get()
+            
             if key:
                 # Сохраняем в переменную окружения для текущей сессии
                 os.environ["OPENAI_API_KEY"] = key
@@ -285,14 +573,62 @@ class BazaApp:
                     with open(env_file, 'w') as f:
                         f.writelines(lines)
                     
-                    status_label.config(text="✅ Настройки сохранены!", fg='#00d4aa')
+                    status_label.config(text="[OK] Settings saved!", fg='#00d4aa')
                     
                 except Exception as e:
-                    status_label.config(text=f"❌ Ошибка сохранения: {e}", fg='#ff4757')
+                    status_label.config(text=f"[ERROR] Save error: {e}", fg='#ff4757')
             else:
                 status_label.config(text="ℹ️ Ключ очищен", fg='#f39c12')
                 if 'OPENAI_API_KEY' in os.environ:
                     del os.environ['OPENAI_API_KEY']
+            
+            # Сохраняем настройку GPT
+            config_file = Path('data/config.json')
+            config_file.parent.mkdir(exist_ok=True)
+            try:
+                config = {}
+                if config_file.exists():
+                    with open(config_file, 'r') as f:
+                        config = json.load(f)
+                
+                config['enable_gpt'] = gpt_enabled_val
+                
+                with open(config_file, 'w') as f:
+                    json.dump(config, f, indent=2)
+                
+                # Обновляем настройку в классе
+                self.enable_gpt = gpt_enabled_val
+
+                # Если ключ указан — попробуем инициализировать AI-анализатор в рантайме
+                if key and openai is not None:
+                    try:
+                        # Создаем клиент LLM с ключом
+                        try:
+                            llm_client = openai.OpenAI(api_key=key)
+                        except TypeError:
+                            # fallback: some openai versions expect env var only
+                            llm_client = openai.OpenAI()
+
+                        # Если контроллер ручной торговли уже создан — подцепим анализатор
+                        if getattr(self, 'manual_controller', None):
+                            try:
+                                from src.manual_trading.ai_analyzer import ManualAIAnalyzer
+                                self.manual_controller.llm_client = llm_client
+                                self.manual_controller.ai_analyzer = ManualAIAnalyzer(llm_client, self.manual_controller.config)
+                                app_logger.info("[OK] AI analyzer initialized at runtime")
+                                status_label.config(text="[OK] GPT initialized", fg='#00d4aa')
+                            except Exception as e:
+                                status_label.config(text=f"[ERROR] AI init failed: {e}", fg='#ff4757')
+                        else:
+                            status_label.config(text="[OK] Key saved - restart app to enable GPT", fg='#00d4aa')
+                    except Exception as e:
+                        status_label.config(text=f"[ERROR] OpenAI init: {e}", fg='#ff4757')
+                else:
+                    if not key:
+                        status_label.config(text="[OK] GPT settings saved!", fg='#00d4aa')
+                    
+            except Exception as e:
+                status_label.config(text=f"[ERROR] GPT settings save error: {e}", fg='#ff4757')
         
         tk.Button(btn_frame, text="💾 Сохранить",
                  font=('Arial', 11, 'bold'),
@@ -301,12 +637,772 @@ class BazaApp:
                  width=12, height=2,
                  relief='flat', cursor='hand2').pack(side='left', padx=5)
         
-        tk.Button(btn_frame, text="❌ Отмена",
+        tk.Button(btn_frame, text="[CANCEL] Cancel",
                  font=('Arial', 11, 'bold'),
                  bg='#ff4757', fg='white',
                  command=dialog.destroy,
                  width=12, height=2,
                  relief='flat', cursor='hand2').pack(side='right', padx=5)
+    
+    def show_mt5_dialog(self):
+        """Окно настроек MT5."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("MT5 Настройки")
+        dialog.geometry("500x400")
+        dialog.configure(bg='#1a1a1a')
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Центрируем
+        dialog.geometry("+%d+%d" % (
+            self.root.winfo_screenwidth() / 2 - 250,
+            self.root.winfo_screenheight() / 2 - 200
+        ))
+        
+        tk.Label(dialog, text="[MT5] MetaTrader 5 Settings",
+                font=('Arial', 16, 'bold'),
+                bg='#1a1a1a', fg='white').pack(pady=20)
+        
+        # Получаем текущие настройки
+        mt5_config = self.app_state.get_mt5_config()
+        
+        # Фрейм для полей ввода
+        input_frame = tk.Frame(dialog, bg='#1a1a1a')
+        input_frame.pack(pady=10, padx=20, fill='x')
+        
+        # Login
+        tk.Label(input_frame, text="Login:",
+                font=('Arial', 11),
+                bg='#1a1a1a', fg='white').grid(row=0, column=0, sticky='w', pady=5)
+        
+        login_var = tk.StringVar(value=str(mt5_config.get('login', '')))
+        login_entry = tk.Entry(input_frame, textvariable=login_var,
+                              font=('Arial', 11), bg='#2a2a2a', fg='white',
+                              insertbackground='white', width=30)
+        login_entry.grid(row=0, column=1, pady=5, padx=(10, 0), sticky='ew')
+        
+        # Password
+        tk.Label(input_frame, text="Password:",
+                font=('Arial', 11),
+                bg='#1a1a1a', fg='white').grid(row=1, column=0, sticky='w', pady=5)
+        
+        password_var = tk.StringVar(value=mt5_config.get('password', ''))
+        password_entry = tk.Entry(input_frame, textvariable=password_var, show='*',
+                                 font=('Arial', 11), bg='#2a2a2a', fg='white',
+                                 insertbackground='white', width=30)
+        password_entry.grid(row=1, column=1, pady=5, padx=(10, 0), sticky='ew')
+        
+        # Server
+        tk.Label(input_frame, text="Server:",
+                font=('Arial', 11),
+                bg='#1a1a1a', fg='white').grid(row=2, column=0, sticky='w', pady=5)
+        
+        server_var = tk.StringVar(value=mt5_config.get('server', ''))
+        server_entry = tk.Entry(input_frame, textvariable=server_var,
+                               font=('Arial', 11), bg='#2a2a2a', fg='white',
+                               insertbackground='white', width=30)
+        server_entry.grid(row=2, column=1, pady=5, padx=(10, 0), sticky='ew')
+        
+        # Terminal Path
+        tk.Label(input_frame, text="Terminal Path:",
+                font=('Arial', 11),
+                bg='#1a1a1a', fg='white').grid(row=3, column=0, sticky='w', pady=5)
+        
+        terminal_var = tk.StringVar(value=mt5_config.get('terminal_path', ''))
+        terminal_entry = tk.Entry(input_frame, textvariable=terminal_var,
+                                 font=('Arial', 11), bg='#2a2a2a', fg='white',
+                                 insertbackground='white', width=30)
+        terminal_entry.grid(row=3, column=1, pady=5, padx=(10, 0), sticky='ew')
+        
+        # Кнопка выбора файла
+        def browse_terminal():
+            path = filedialog.askopenfilename(
+                title="Выберите terminal64.exe",
+                filetypes=[("Executable files", "*.exe"), ("All files", "*.*")]
+            )
+            if path:
+                terminal_var.set(path)
+        
+        browse_btn = tk.Button(input_frame, text="📁", command=browse_terminal,
+                              font=('Arial', 10), bg='#4a4a4a', fg='white',
+                              width=3, relief='flat', cursor='hand2')
+        browse_btn.grid(row=3, column=2, padx=(5, 0))
+        
+        # Статус
+        status_var = tk.StringVar(value="Статус: Проверка...")
+        status_label = tk.Label(dialog, textvariable=status_var,
+                               font=('Arial', 10),
+                               bg='#1a1a1a', fg='#888888')
+        status_label.pack(pady=10)
+        
+        def update_status():
+            if self.app_state.mt5_connected:
+                account_info = self.app_state.mt5_account_info
+                status_var.set(f"[CONNECTED] Connected: {account_info.get('login', 'N/A')}")
+                status_label.config(fg='#00d4aa')
+            else:
+                status_var.set("[DISCONNECTED] Not connected")
+                status_label.config(fg='#ff4757')
+        
+        update_status()
+        
+        # Функции подключения
+        def connect_mt5():
+            try:
+                login = int(login_var.get())
+                password = password_var.get()
+                server = server_var.get()
+                
+                if not all([login, password, server]):
+                    messagebox.showerror("Ошибка", "Заполните все поля!")
+                    return
+                
+                self.log(f"🔌 Попытка подключения к MT5: {login}@{server}")
+                
+                success, message = self.app_state.mt5_manager.connect(login, password, server)
+                
+                if success:
+                    # Предлагаем сохранить настройки
+                    if messagebox.askyesno("Сохранение", "Сохранить учётные данные MT5 для автоматической загрузки?"):
+                        try:
+                            self.save_mt5_credentials(login, password, server, terminal_var.get())
+                            self.log("[OK] MT5 credentials saved")
+                        except Exception as save_error:
+                            self.log(f"[WARNING] Failed to save data: {save_error}")
+                    
+                    self.log(f"[OK] MT5 connected: {message}")
+                    messagebox.showinfo("Успех", f"Подключено!\n{message}")
+                else:
+                    self.log(f"[ERROR] MT5 error: {message}")
+                    messagebox.showerror("Ошибка", message)
+                
+                update_status()
+                
+            except ValueError:
+                messagebox.showerror("Ошибка", "Login должен быть числом!")
+            except Exception as e:
+                self.log(f"[ERROR] Connection error: {e}")
+                messagebox.showerror("Ошибка", f"Ошибка подключения:\n{str(e)}")
+        
+        def reconnect_mt5():
+            if self.app_state.mt5_manager:
+                self.app_state.mt5_manager.disconnect()
+                self.app_state.update_mt5_status(False)
+                update_status()
+                self.log("🔌 MT5 отключен")
+            
+            # Пауза перед переподключением
+            dialog.after(1000, connect_mt5)
+        
+        # Кнопки
+        btn_frame = tk.Frame(dialog, bg='#1a1a1a')
+        btn_frame.pack(pady=20)
+        
+        tk.Button(btn_frame, text="🔌 Подключиться",
+                 font=('Arial', 11, 'bold'),
+                 bg='#00d4aa', fg='black',
+                 command=connect_mt5,
+                 width=15, height=2,
+                 relief='flat', cursor='hand2').pack(side='left', padx=5)
+        
+        tk.Button(btn_frame, text="[RECONNECT] Reconnect",
+                 font=('Arial', 11, 'bold'),
+                 bg='#f39c12', fg='black',
+                 command=reconnect_mt5,
+                 width=15, height=2,
+                 relief='flat', cursor='hand2').pack(side='left', padx=5)
+        
+        tk.Button(btn_frame, text="[CLOSE] Close",
+                 font=('Arial', 11, 'bold'),
+                 bg='#ff4757', fg='white',
+                 command=dialog.destroy,
+                 width=12, height=2,
+                 relief='flat', cursor='hand2').pack(side='left', padx=5)
+        
+        # Обновляем статус каждые 2 секунды
+        def periodic_update():
+            if dialog.winfo_exists():
+                update_status()
+                dialog.after(2000, periodic_update)
+        
+        periodic_update()
+    
+    def save_mt5_config(self):
+        """Сохранение MT5 конфига."""
+        config_file = Path('data/mt5_config.json')
+        config_file.parent.mkdir(exist_ok=True)
+        
+        try:
+            with open(config_file, 'w') as f:
+                json.dump(self.app_state.get_mt5_config(), f, indent=2)
+            app_logger.info("MT5 config saved")
+        except Exception as e:
+            app_logger.error(f"Failed to save MT5 config: {e}")
+    
+    def load_mt5_config(self):
+        """Загрузка MT5 конфига."""
+        config_file = Path('data/mt5_config.json')
+        
+        if config_file.exists():
+            try:
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+                    self.app_state.set_mt5_config(config)
+                    app_logger.info("MT5 config loaded")
+            except Exception as e:
+                app_logger.error(f"Failed to load MT5 config: {e}")
+    
+    def create_manual_trading_section(self):
+        """Создание секции ручной торговли."""
+        # Контейнер с двумя колонками: слева - manual controls, справа - мини-логи
+        manual_container = tk.Frame(self.root, bg='#1a1a1a')
+        manual_container.pack(fill='both', expand=True, padx=20, pady=10)
+
+        manual_frame = tk.Frame(manual_container, bg='#1a1a1a')
+        manual_frame.pack(side='left', fill='both', expand=True)
+
+        # Заголовок
+        header = tk.Frame(manual_frame, bg='#2a2a2a')
+        header.pack(fill='x', pady=(0, 10))
+
+        tk.Label(header, text="[MANUAL] MANUAL TRADING (EXPERIMENTAL)",
+                font=('Arial', 14, 'bold'),
+                bg='#2a2a2a', fg='#00d4aa').pack(pady=10)
+
+        # Основная форма
+        form_frame = tk.Frame(manual_frame, bg='#1a1a1a')
+        form_frame.pack(fill='x')
+
+        # Левая колонка - параметры
+        left_frame = tk.Frame(form_frame, bg='#1a1a1a')
+        left_frame.pack(side='left', fill='y', padx=(0, 10))
+
+        # Symbol selector
+        symbol_frame = tk.Frame(left_frame, bg='#2a2a2a', relief='flat')
+        symbol_frame.pack(fill='x', pady=5)
+
+        tk.Label(symbol_frame, text="Инструмент:",
+                font=('Arial', 10, 'bold'),
+                bg='#2a2a2a', fg='white').pack(anchor='w', padx=10, pady=5)
+
+        state = self.app_state.manual_trade_state
+        self.manual_symbol = tk.StringVar(value=state.symbol)
+        symbol_combo = ttk.Combobox(symbol_frame, textvariable=self.manual_symbol,
+                                   values=['EURUSD', 'XAUUSD'],
+                                   state='readonly', font=('Arial', 10))
+        symbol_combo.pack(padx=10, pady=(0, 10))
+        symbol_combo.configure(background='#0f0f0f', foreground='white')
+        symbol_combo.bind('<<ComboboxSelected>>', self._on_symbol_change)
+
+        # Timeframe selector
+        timeframe_frame = tk.Frame(left_frame, bg='#2a2a2a', relief='flat')
+        timeframe_frame.pack(fill='x', pady=5)
+
+        tk.Label(timeframe_frame, text="Таймфрейм:",
+                font=('Arial', 10, 'bold'),
+                bg='#2a2a2a', fg='white').pack(anchor='w', padx=10, pady=5)
+
+        self.manual_timeframe = tk.StringVar(value=state.timeframe)
+        tf_combo = ttk.Combobox(timeframe_frame, textvariable=self.manual_timeframe,
+                               values=['M15', 'H1', 'H4', 'D1'],
+                               state='readonly', font=('Arial', 10))
+        tf_combo.pack(padx=10, pady=(0, 10))
+        tf_combo.configure(background='#0f0f0f', foreground='white')
+        tf_combo.bind('<<ComboboxSelected>>', self._on_timeframe_change)
+        
+        # Direction
+        direction_frame = tk.Frame(left_frame, bg='#2a2a2a', relief='flat')
+        direction_frame.pack(fill='x', pady=5)
+        
+        tk.Label(direction_frame, text="Направление:",
+                font=('Arial', 10, 'bold'),
+                bg='#2a2a2a', fg='white').pack(anchor='w', padx=10, pady=5)
+        
+        tk.Label(direction_frame, text="Направление:",
+                font=('Arial', 10, 'bold'),
+                bg='#2a2a2a', fg='white').pack(anchor='w', padx=10, pady=5)
+        
+        self.manual_direction = tk.StringVar(value=state.direction)
+        tk.Radiobutton(direction_frame, text="Покупка", variable=self.manual_direction,
+                      value='buy', bg='#2a2a2a', fg='white',
+                      selectcolor='#1a1a1a', activebackground='#2a2a2a',
+                      font=('Arial', 10), command=self._on_direction_change).pack(anchor='w', padx=20)
+        tk.Radiobutton(direction_frame, text="Продажа", variable=self.manual_direction,
+                      value='sell', bg='#2a2a2a', fg='white',
+                      selectcolor='#1a1a1a', activebackground='#2a2a2a',
+                      font=('Arial', 10), command=self._on_direction_change).pack(anchor='w', padx=20, pady=(0, 10))
+        
+        # Правая колонка - уровни и риск
+        right_frame = tk.Frame(form_frame, bg='#1a1a1a')
+        right_frame.pack(side='left', fill='y', padx=(10, 0))
+        
+        # Entry Price
+        entry_frame = tk.Frame(right_frame, bg='#2a2a2a', relief='flat')
+        entry_frame.pack(fill='x', pady=5)
+        
+        tk.Label(entry_frame, text="Цена входа:",
+                font=('Arial', 10, 'bold'),
+                bg='#2a2a2a', fg='white').pack(anchor='w', padx=10, pady=5)
+        
+        self.manual_entry = tk.DoubleVar(value=state.entry_price)
+        entry_spin = tk.Spinbox(entry_frame, from_=0, to=10000, increment=0.0001,
+                               textvariable=self.manual_entry, font=('Arial', 10),
+                               bg='#0f0f0f', fg='white', insertbackground='white',
+                               buttonbackground='#2a2a2a', command=self._on_price_change)
+        entry_spin.pack(padx=10, pady=(0, 10), fill='x')
+        entry_spin.bind('<FocusOut>', self._on_price_change)
+        
+        # Stop Loss
+        sl_frame = tk.Frame(right_frame, bg='#2a2a2a', relief='flat')
+        sl_frame.pack(fill='x', pady=5)
+        
+        tk.Label(sl_frame, text="Stop Loss:",
+                font=('Arial', 10, 'bold'),
+                bg='#2a2a2a', fg='white').pack(anchor='w', padx=10, pady=5)
+        
+        self.manual_sl = tk.DoubleVar(value=state.stop_loss)
+        sl_spin = tk.Spinbox(sl_frame, from_=0, to=10000, increment=0.0001,
+                            textvariable=self.manual_sl, font=('Arial', 10),
+                            bg='#0f0f0f', fg='white', insertbackground='white',
+                            buttonbackground='#2a2a2a', command=self._on_price_change)
+        sl_spin.pack(padx=10, pady=(0, 10), fill='x')
+        sl_spin.bind('<FocusOut>', self._on_price_change)
+        
+        # Take Profit
+        tp_frame = tk.Frame(right_frame, bg='#2a2a2a', relief='flat')
+        tp_frame.pack(fill='x', pady=5)
+        
+        tk.Label(tp_frame, text="Take Profit:",
+                font=('Arial', 10, 'bold'),
+                bg='#2a2a2a', fg='white').pack(anchor='w', padx=10, pady=5)
+        
+        self.manual_tp = tk.DoubleVar(value=state.take_profit)
+        tp_spin = tk.Spinbox(tp_frame, from_=0, to=10000, increment=0.0001,
+                            textvariable=self.manual_tp, font=('Arial', 10),
+                            bg='#0f0f0f', fg='white', insertbackground='white',
+                            buttonbackground='#2a2a2a', command=self._on_price_change)
+        tp_spin.pack(padx=10, pady=(0, 10), fill='x')
+        tp_spin.bind('<FocusOut>', self._on_price_change)
+        
+        # Risk-Reward (RR) ratio
+        rr_frame = tk.Frame(right_frame, bg='#2a2a2a', relief='flat')
+        rr_frame.pack(fill='x', pady=5)
+
+        tk.Label(rr_frame, text="РР (RR):",
+            font=('Arial', 10, 'bold'),
+            bg='#2a2a2a', fg='white').pack(anchor='w', padx=10, pady=5)
+
+        # RR as numeric ratio (e.g. 2.0 for 2:1)
+        initial_rr = getattr(state, 'risk_reward_ratio', 1.0) or 1.0
+        self.manual_rr_ratio = tk.DoubleVar(value=initial_rr)
+        rr_spin = tk.Spinbox(rr_frame, from_=0.1, to=10.0, increment=0.1,
+                     textvariable=self.manual_rr_ratio, format="%.1f",
+                     font=('Arial', 10), bg='#0f0f0f', fg='white',
+                     insertbackground='white', buttonbackground='#2a2a2a',
+                     command=self._on_rr_change)
+        rr_spin.pack(padx=10, pady=(0, 10), fill='x')
+        rr_spin.bind('<FocusOut>', self._on_rr_change)
+        
+        # Risk
+        risk_frame = tk.Frame(right_frame, bg='#2a2a2a', relief='flat')
+        risk_frame.pack(fill='x', pady=5)
+        
+        tk.Label(risk_frame, text="Риск (% или $):",
+                font=('Arial', 10, 'bold'),
+                bg='#2a2a2a', fg='white').pack(anchor='w', padx=10, pady=5)
+        
+        self.manual_risk = tk.DoubleVar(value=state.risk_amount)
+        risk_spin = tk.Spinbox(risk_frame, from_=0, to=100, increment=0.1,
+                              textvariable=self.manual_risk, font=('Arial', 10),
+                              bg='#0f0f0f', fg='white', insertbackground='white',
+                              buttonbackground='#2a2a2a', command=self._on_price_change)
+        risk_spin.pack(padx=10, pady=(0, 10), fill='x')
+        risk_spin.bind('<FocusOut>', self._on_price_change)
+
+        # Быстрые действия (дублирующие кнопки, видимые рядом с полями)
+        quick_action_frame = tk.Frame(right_frame, bg='#1a1a1a')
+        quick_action_frame.pack(fill='x', pady=(10, 0))
+
+        self.btn_predict_quick = tk.Button(quick_action_frame, text="🔮 Predict",
+                           command=self.manual_predict,
+                           font=('Arial', 10, 'bold'),
+                           bg='#f39c12', fg='black',
+                           width=10, height=1,
+                           relief='flat', cursor='hand2')
+        self.btn_predict_quick.pack(side='left', padx=5)
+
+        self.btn_open_quick = tk.Button(quick_action_frame, text="[OPEN] Open",
+                        command=self.manual_open_trade,
+                        font=('Arial', 10, 'bold'),
+                        bg='#00d4aa', fg='black',
+                        width=10, height=1,
+                        relief='flat', cursor='hand2', state='disabled')
+        self.btn_open_quick.pack(side='left', padx=5)
+        
+        # Кнопки
+        buttons_frame = tk.Frame(manual_frame, bg='#1a1a1a')
+        buttons_frame.pack(fill='x', pady=10)
+        
+        # Левая часть - расчеты
+        calc_frame = tk.Frame(buttons_frame, bg='#1a1a1a')
+        calc_frame.pack(side='left')
+        
+        # Авторасчет
+        self.manual_lot_label = tk.Label(calc_frame, text="Объем: --",
+                                        font=('Arial', 10),
+                                        bg='#1a1a1a', fg='#888888')
+        self.manual_lot_label.pack(anchor='w', pady=2)
+        
+        self.manual_rr_label = tk.Label(calc_frame, text="RR: --",
+                                       font=('Arial', 10),
+                                       bg='#1a1a1a', fg='#888888')
+        self.manual_rr_label.pack(anchor='w', pady=2)
+        
+        # Правая часть - кнопки и мини-логи
+        action_frame = tk.Frame(buttons_frame, bg='#1a1a1a')
+        # Размещаем блок кнопок слева в рамках buttons_frame, рядом с расчетами
+        action_frame.pack(side='left', padx=(20, 0))
+        action_frame.pack_propagate(False)
+        
+        # Кнопка Predict (GPT)
+        self.btn_predict = tk.Button(action_frame, text="🔮 GPT Predict",
+                                    command=self.manual_predict,
+                                    font=('Arial', 11, 'bold'),
+                                    bg='#f39c12', fg='black',
+                                    width=12, height=2,
+                                    relief='flat', cursor='hand2',
+                                    state='normal')
+        self.btn_predict.pack(side='left', padx=5)
+        
+        # Кнопка открытия сделки
+        self.btn_open_trade = tk.Button(action_frame, text="[OPEN] Open trade",
+                                       command=self.manual_open_trade,
+                                       font=('Arial', 11, 'bold'),
+                                       bg='#00d4aa', fg='black',
+                                       width=15, height=2,
+                                       relief='flat', cursor='hand2',
+                                       state='disabled')
+        self.btn_open_trade.pack(side='left', padx=5)
+        
+        # Мини-логи правее кнопок — делаем дочерним элементом manual_container
+        mini_logs_frame = customtkinter.CTkFrame(manual_container, height=800, width=520, fg_color="#1a1a1a")
+        mini_logs_frame.pack(side='right', padx=(30, 0), pady=(10, 0), fill='y')  # Отдельный фрейм правее с отступом сверху
+        mini_logs_frame.pack_propagate(False)  # Фиксированная высота
+
+        tk.Label(mini_logs_frame, text="Логи:",
+            font=('Arial', 12, 'bold'),
+            bg='#1a1a1a', fg='white').pack(anchor='w', padx=10, pady=(10, 5))
+
+        self.mini_logs_text = tk.Text(mini_logs_frame, height=20, width=120,
+                         bg='#0f0f0f', fg='white',
+                         font=('Consolas', 11),
+                         relief='flat', state='disabled')
+        self.mini_logs_text.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        
+        # Цветные теги для мини-логов
+        self.mini_logs_text.tag_config("info", foreground="#ffffff")  # Ярко-белый
+        self.mini_logs_text.tag_config("warning", foreground="#ffff00", background="#333300")  # Ярко-желтый с темным фоном
+        self.mini_logs_text.tag_config("error", foreground="#ff4444", background="#330000")  # Ярко-красный с темным фоном
+        self.mini_logs_text.tag_config("critical", foreground="#ff0000", background="#220000")  # Ярко-красный с темным фоном
+        self.ai_result_text = tk.Text(manual_frame, height=6,
+                                     bg='#0f0f0f', fg='#00d4aa',
+                                     font=('Consolas', 9),
+                                     relief='flat', state='disabled')
+        self.ai_result_text.pack(fill='x', pady=(10, 0))
+    
+    def update_manual_calculations(self):
+        """Расчет лота и RR с полной валидацией."""
+        try:
+            state = self.app_state.manual_trade_state
+            symbol = state.symbol
+            entry = state.entry_price
+            sl = state.stop_loss
+            tp = state.take_profit
+            risk = state.risk_amount
+            direction = state.direction
+            
+            # Валидация входных данных
+            if entry <= 0:
+                self.log("Cannot calculate: entry price must be > 0")
+                self.manual_lot_label.config(text="Volume: --")
+                self.manual_rr_label.config(text="RR: --")
+                return
+                
+            price_diff = abs(entry - sl)
+            if price_diff < 0.00001:
+                self.log("Cannot calculate: invalid SL (too close to entry)")
+                self.manual_lot_label.config(text="Volume: --")
+                self.manual_rr_label.config(text="RR: --")
+                return
+            
+            account_balance = self.app_state.stats.get('balance', 100.0)
+            if account_balance <= 0:
+                self.log("Cannot calculate: account balance unavailable")
+                self.manual_lot_label.config(text="Volume: --")
+                self.manual_rr_label.config(text="RR: --")
+                return
+            
+            # Расчет объема позиции
+            try:
+                # Простой расчет: risk / price_diff * account_balance / 100
+                lot_size = (risk / price_diff) / account_balance * 100
+                lot_size = round(lot_size / 0.01) * 0.01
+                lot_size = max(0.01, min(lot_size, 1.0))
+            except ZeroDivisionError:
+                self.log("Cannot calculate lot: division by zero")
+                lot_size = 0.0
+            
+            # Расчет RR
+            try:
+                if direction == 'buy':
+                    rr_ratio = abs(tp - entry) / price_diff
+                else:
+                    rr_ratio = abs(entry - tp) / price_diff
+            except ZeroDivisionError:
+                rr_ratio = 0.0
+            
+            # Обновление GUI
+            if lot_size > 0:
+                self.manual_lot_label.config(text=f"Volume: {lot_size:.2f} lots")
+            else:
+                self.manual_lot_label.config(text="Volume: --")
+                
+            if rr_ratio > 0:
+                self.manual_rr_label.config(text=f"RR: {rr_ratio:.2f}")
+            else:
+                self.manual_rr_label.config(text="RR: --")
+            
+            # Включаем/отключаем кнопки открытия сделки в зависимости от валидности
+            try:
+                valid = state.is_valid()
+            except Exception:
+                valid = False
+
+            if hasattr(self, 'btn_open_trade'):
+                self.btn_open_trade.config(state='normal' if valid else 'disabled')
+            if hasattr(self, 'btn_open_quick'):
+                self.btn_open_quick.config(state='normal' if valid else 'disabled')
+            
+        except Exception as e:
+            self.log(f"Critical calculation error: {e}")
+            self.manual_lot_label.config(text="Volume: --")
+            self.manual_rr_label.config(text="RR: --")
+    
+    def manual_predict(self):
+        """AI анализ для ручной торговли."""
+        if not self.manual_controller:
+            self.log("[ERROR] Manual trading controller not available")
+            return
+        # Не запускаем автоматические пересчёты полей здесь — только собираем текущий контекст
+        
+        # Собираем расширенный контекст из состояния и приложения
+        state = self.app_state.manual_trade_state
+        # Base state dict
+        context = state.to_dict() if hasattr(state, 'to_dict') else {
+            'symbol': state.symbol,
+            'timeframe': state.timeframe,
+            'direction': state.direction,
+            'entry_price': state.entry_price,
+            'stop_loss': state.stop_loss,
+            'take_profit': state.take_profit,
+            'risk_amount': state.risk_amount,
+            'lot_size': state.lot_size,
+        }
+
+        # Add account and environment info
+        context['account_balance'] = float(self.app_state.stats.get('balance', 0.0))
+        context['account_equity'] = float(self.app_state.stats.get('equity', context.get('entry_price', 0.0)))
+        context['timestamp'] = datetime.now().isoformat()
+
+        # Market hints
+        bid = getattr(state, 'bid_price', 0.0)
+        ask = getattr(state, 'ask_price', 0.0)
+        spread = getattr(state, 'spread', 0.0)
+        context['bid'] = bid
+        context['ask'] = ask
+        context['spread'] = spread
+
+        # Simple volatility proxy: spread relative to price
+        try:
+            context['volatility_est'] = round((spread / max(ask, 1e-6)) * 10000, 4)
+        except Exception:
+            context['volatility_est'] = 0.0
+
+        # Price distance to entry
+        try:
+            context['price_distance'] = round(abs((context.get('entry_price', 0.0) - ((bid+ask)/2)) ), 6)
+        except Exception:
+            context['price_distance'] = 0.0
+
+        # Fallback placeholders for advanced signals
+        context.setdefault('smc_structure', 'Не определена')
+        context.setdefault('ml_bias', 'Нейтральный')
+        context.setdefault('ml_confidence', 0.5)
+        context.setdefault('news_status', 'Нет важных новостей')
+        
+        # Проверяем доступность AI анализатора и конфигурацию
+        if not getattr(self.manual_controller, 'ai_analyzer', None):
+            self.log("[ERROR] AI analyzer not available. Check OPENAI_API_KEY and manual config.")
+            return
+
+        if not self.manual_controller.config.get('ENABLE_MANUAL_AI_PREDICT', False):
+            self.log("[INFO] AI prediction is disabled in manual trading config")
+            return
+
+        self.log(f"🔮 Запуск AI анализа для {context['symbol']} {context['direction'].upper()}")
+
+        # Запускаем анализ в отдельном потоке
+        def analyze():
+            prediction = self.manual_controller.get_ai_prediction(context)
+            if prediction:
+                self.root.after(0, lambda: self.display_ai_prediction(prediction))
+            else:
+                self.root.after(0, lambda: self.log("[ERROR] AI analysis failed"))
+
+        threading.Thread(target=analyze, daemon=True).start()
+    
+    def display_ai_prediction(self, prediction: AIPrediction):
+        """Отображение AI прогноза."""
+        if not MANUAL_TRADING_AVAILABLE or not AIPrediction:
+            return
+        self.ai_result_text.config(state='normal')
+        self.ai_result_text.delete(1.0, tk.END)
+        # Build a concise but informative explanation for the user
+        scenarios_best = prediction.scenarios.get('best_case', 'N/A') if getattr(prediction, 'scenarios', None) else 'N/A'
+        scenarios_worst = prediction.scenarios.get('worst_case', 'N/A') if getattr(prediction, 'scenarios', None) else 'N/A'
+        invalids = ', '.join(prediction.invalidation_levels) if getattr(prediction, 'invalidation_levels', None) else 'N/A'
+
+        # Extract helpful context hints (if present)
+        ctx = getattr(prediction, 'context', {}) or {}
+        ml_bias = ctx.get('ml_bias', 'N/A')
+        ml_conf = ctx.get('ml_confidence', 'N/A')
+        news = ctx.get('news_status', 'N/A')
+        smc = ctx.get('smc_structure', 'N/A')
+
+        # Переводы для стандартных полей прогноза
+        bias_map = {'bullish': 'бычий', 'bearish': 'медвежий', 'range': 'флэт'}
+        align_map = {'aligned': 'совпадает', 'neutral': 'нейтрально', 'risky': 'рискованно'}
+        conf_map = {'low': 'низкая', 'medium': 'средняя', 'high': 'высокая'}
+
+        bias_rus = bias_map.get(prediction.market_bias, prediction.market_bias)
+        align_rus = align_map.get(prediction.trade_alignment, prediction.trade_alignment)
+        conf_rus = conf_map.get(prediction.confidence, prediction.confidence)
+
+        result = (
+            f"[AI] AI FORECAST\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Рыночный тренд: {bias_rus}\n"
+            f"Совпадение со сделкой: {align_rus}\n"
+            f"Уверенность: {conf_rus}\n\n"
+            "Короткое объяснение (почему такой прогноз):\n"
+            f"- ML сигнал: {ml_bias} (conf {ml_conf})\n"
+            f"- Новости: {news}\n"
+            f"- SMC структура: {smc}\n\n"
+            "Ключевые сценарии:\n"
+            f"• Лучший: {scenarios_best}\n"
+            f"• Худший: {scenarios_worst}\n\n"
+            f"Уровни отмены: {invalids}\n\n"
+            f"Комментарий: {prediction.comment}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        )
+        
+        self.ai_result_text.insert(1.0, result)
+        self.ai_result_text.config(state='disabled')
+        
+        # Log a concise Russian message for console + GUI logs
+        try:
+            bias_map = {'bullish': 'бычий', 'bearish': 'медвежий', 'range': 'флэт'}
+            conf_map = {'low': 'низкая', 'medium': 'средняя', 'high': 'высокая'}
+            bias_txt = bias_map.get(prediction.market_bias, prediction.market_bias)
+            conf_txt = conf_map.get(prediction.confidence, prediction.confidence)
+            short_reason = prediction.comment if getattr(prediction, 'comment', None) else ''
+            self.log(f"[OK] AI прогноз: {bias_txt}, уверенность: {conf_txt}. {short_reason}")
+        except Exception:
+            self.log(f"[OK] AI forecast received: {prediction.market_bias}, confidence {prediction.confidence}")
+    
+    def manual_open_trade(self):
+        """Открытие ручной сделки с исправлением ошибки 'dict has no attribute 'source'."""
+        if not self.manual_controller:
+            self.log("[ERROR] Manual trading controller not available")
+            return
+        
+        if self.app_state.bot_running:
+            messagebox.showerror("Ошибка", "Нельзя открывать ручные сделки пока бот работает!")
+            return
+        
+        if not self.app_state.can_execute_trades():
+            messagebox.showerror("Ошибка", "MT5 не подключен!")
+            return
+        
+        self.update_manual_calculations()
+        
+        state = self.app_state.manual_trade_state
+        
+        # Подготавливаем параметры для prepare_trade
+        trade_params = {
+            'symbol': str(state.symbol),
+            'direction': str(state.direction),
+            'entry_price': float(state.entry_price),
+            'stop_loss': float(state.stop_loss),
+            'take_profit': float(state.take_profit),
+            'risk_amount': float(state.risk_amount)
+        }
+        
+        self.log(f"[LAUNCH] Preparing manual trade: {trade_params}")
+        
+        try:
+            # Сначала подготавливаем сделку
+            success, message, trade_request = self.manual_controller.prepare_trade(
+                trade_params, 
+                self.app_state.stats.get('balance', 100.0)
+            )
+            
+            if not success:
+                self.log(f"[ERROR] Trade preparation failed: {message}")
+                messagebox.showerror("Ошибка", f"Не удалось подготовить сделку:\n{message}")
+                return
+            
+            self.log(f"[OK] Trade prepared: {message}")
+            
+            # Теперь исполняем
+            # Если executor не установлен — попробуем создать временный Executor для live-режима
+            if not getattr(self.manual_controller, 'executor', None):
+                try:
+                    from src.core.executor import Executor
+                    if getattr(self.app_state, 'mt5_manager', None) and getattr(self.app_state.mt5_manager, 'mt5', None):
+                        self.manual_controller.executor = Executor(mt5_connector=self.app_state.mt5_manager.mt5)
+                        self.log("[OK] Temporary executor created for manual trade")
+                except Exception as e:
+                    self.log(f"[WARNING] Failed to create temporary executor: {e}")
+
+            success, message = self.manual_controller.execute_trade(trade_request)
+            
+            if success:
+                self.log(f"[OK] Manual trade opened: {message}")
+                messagebox.showinfo("Успех", f"Сделка открыта!\n{message}")
+            else:
+                self.log(f"[ERROR] Trade failed: {message}")
+                messagebox.showerror("Ошибка", f"Не удалось открыть сделку:\n{message}")
+        except Exception as e:
+            self.log(f"[CRITICAL] Trade execution error: {e}")
+            messagebox.showerror("Ошибка", f"Критическая ошибка:\n{str(e)}")
+    
+    def create_stat_card(self, parent, title, value):
+        """Создание карточки статистики."""
+        frame = tk.Frame(parent, bg='#2a2a2a', relief='flat')
+        
+        title_label = tk.Label(frame, text=title,
+                              font=('Arial', 10, 'bold'),
+                              bg='#2a2a2a', fg='#888888')
+        title_label.pack(pady=(10, 0))
+        
+        value_label = tk.Label(frame, text=value,
+                              font=('Arial', 16, 'bold'),
+                              bg='#2a2a2a', fg='white')
+        value_label.pack(pady=(0, 10))
+        
+        frame.value_label = value_label
+        return frame
     
     def create_ui(self):
         """Создание интерфейса."""
@@ -316,14 +1412,14 @@ class BazaApp:
         header.pack(fill='x', padx=20, pady=10)
         
         # Логотип
-        logo = tk.Label(header, text="🤖 BAZA Trading Bot", 
+        logo = tk.Label(header, text="[BOT] BAZA Trading Bot", 
                        font=('Arial', 20, 'bold'), 
                        bg='#1a1a1a', fg='white')
         logo.pack(side='left')
         
         # Лицензия
         license_info = license_manager.get_license_info()
-        license_text = f"🔑 {license_info.get('type', '').upper() or 'N/A'}" if license_info['valid'] else "🔒 Не активировано"
+        license_text = f"[LICENSE] {license_info.get('type', '').upper() or 'N/A'}" if license_info['valid'] else "[LOCKED] Not activated"
         
         self.license_label = tk.Label(header, text=license_text,
                                      font=('Arial', 10),
@@ -349,7 +1445,7 @@ class BazaApp:
         mt5_frame.pack(fill='x', padx=20, pady=5)
         
         self.mt5_status = tk.Label(mt5_frame, 
-                                   text="📡 MT5: Не подключено",
+                                   text="[MT5] MT5: Not connected",
                                    font=('Arial', 10),
                                    bg='#2a2a2a', fg='#888888')
         self.mt5_status.pack(side='left', padx=10, pady=8)
@@ -402,6 +1498,15 @@ class BazaApp:
                                       relief='flat', cursor='hand2')
         self.btn_activate.pack(side='left', padx=20)
         
+        # Кнопка MT5
+        self.btn_mt5 = tk.Button(btn_frame, text="[MT5] MT5",
+                                 command=self.show_mt5_dialog,
+                                 font=('Arial', 10),
+                                 bg='#5a5a5a', fg='white',
+                                 width=8, height=2,
+                                 relief='flat', cursor='hand2')
+        self.btn_mt5.pack(side='left', padx=5)
+        
         # Кнопка настроек
         self.btn_settings = tk.Button(btn_frame, text="⚙ Настройки",
                                       command=self.show_settings_dialog,
@@ -411,21 +1516,13 @@ class BazaApp:
                                       relief='flat', cursor='hand2')
         self.btn_settings.pack(side='left', padx=5)
         
-        # Режим
+        # Режим (фиксирован на Live)
         mode_frame = tk.Frame(control, bg='#2a2a2a')
         mode_frame.pack(pady=5)
         
-        self.mode_var = tk.StringVar(value='demo')
-        
-        tk.Radiobutton(mode_frame, text="Demo", variable=self.mode_var, 
-                      value='demo', bg='#2a2a2a', fg='white',
-                      selectcolor='#1a1a1a', activebackground='#2a2a2a',
-                      font=('Arial', 10)).pack(side='left', padx=10)
-        
-        tk.Radiobutton(mode_frame, text="Live", variable=self.mode_var,
-                      value='live', bg='#2a2a2a', fg='white',
-                      selectcolor='#1a1a1a', activebackground='#2a2a2a',
-                      font=('Arial', 10)).pack(side='left', padx=10)
+        tk.Label(mode_frame, text="Режим: Live",
+                font=('Arial', 10, 'bold'),
+                bg='#2a2a2a', fg='#00d4aa').pack(side='left', padx=10)
         
         # ===== STATS CARDS =====
         stats_frame = tk.Frame(self.root, bg='#1a1a1a')
@@ -443,26 +1540,39 @@ class BazaApp:
         self.card_winrate = self.create_stat_card(stats_frame, "Win Rate", "0%")
         self.card_winrate.pack(side='left', expand=True, fill='x', padx=5)
         
+        # ===== MANUAL TRADING =====
+        if self.manual_controller and self.manual_controller.is_enabled():
+            self.create_manual_trading_section()
+        
         # ===== LOGS =====
-        logs_frame = tk.Frame(self.root, bg='#1a1a1a')
-        logs_frame.pack(fill='both', expand=True, padx=20, pady=10)
+        logs_title = customtkinter.CTkLabel(self.root, text="[LOGS] Системные логи", 
+                                           font=customtkinter.CTkFont(size=16, weight="bold"), 
+                                           text_color="#00FFFF")
+        logs_title.pack(pady=(20, 5), padx=20, anchor="w")
         
-        logs_header = tk.Label(logs_frame, text="📊 Логи",
-                              font=('Arial', 12, 'bold'),
-                              bg='#1a1a1a', fg='white')
-        logs_header.pack(anchor='w', pady=(0, 5))
+        # Большой фрейм для логов
+        self.logs_frame = customtkinter.CTkFrame(self.root, height=300, fg_color="#1e1e1e")
+        self.logs_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        self.logs_frame.pack_propagate(False)  # Важно! Чтобы height не сжимался
         
-        self.logs_text = tk.Text(logs_frame, 
-                                 bg='#0f0f0f', fg='#00d4aa',
-                                 font=('Consolas', 10),
-                                 relief='flat',
-                                 state='disabled')
-        self.logs_text.pack(fill='both', expand=True)
+        # Текстовое поле
+        self.log_text = customtkinter.CTkTextbox(self.logs_frame, font=("Consolas", 11), wrap="none")
+        self.log_text.pack(fill="both", expand=True, padx=10, pady=10)
         
-        scrollbar = tk.Scrollbar(self.logs_text)
-        scrollbar.pack(side='right', fill='y')
-        self.logs_text.config(yscrollcommand=scrollbar.set)
-        scrollbar.config(command=self.logs_text.yview)
+        # Скроллбар
+        scrollbar = customtkinter.CTkScrollbar(self.logs_frame, command=self.log_text.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.log_text.configure(yscrollcommand=scrollbar.set)
+        
+        # Цветные теги с контрастными фонами для лучшей читаемости
+        try:
+            self.log_text.tag_config("info", foreground="#ffffff", background="#1e1e1e")
+            self.log_text.tag_config("warning", foreground="#ffff00", background="#333300")
+            self.log_text.tag_config("error", foreground="#ff4444", background="#330000")
+            self.log_text.tag_config("critical", foreground="#ff0000", background="#220000")
+        except Exception:
+            # Some CTkTextbox versions may not support tag_config fully — ignore if fails
+            pass
         
         # ===== FOOTER =====
         footer = tk.Frame(self.root, bg='#1a1a1a')
@@ -470,6 +1580,27 @@ class BazaApp:
         
         tk.Label(footer, text="BAZA v3.0 | SMC + ML + GPT",
                 font=('Arial', 9), bg='#1a1a1a', fg='#555555').pack()
+    
+    def _add_log_to_gui(self, message: str, level: str = "INFO"):
+        """Callback для добавления логов в GUI."""
+        try:
+            if not hasattr(self, 'root') or not self.root or not self.root.winfo_exists():
+                return
+            self.root.after(0, lambda: self._insert_log_message(message, level))
+        except Exception as e:
+            print(f"GUI logging error: {e}")
+
+    def _insert_log_message(self, message: str, level: str):
+        """Вставка сообщения в лог с цветом."""
+        if not hasattr(self, 'log_text') or not self.log_text:
+            return
+        
+        try:
+            # Вставляем текст с тегом
+            self.log_text.insert('end', message + '\n', level.lower())
+            self.log_text.see('end')
+        except Exception as e:
+            print(f"Error inserting log message: {e}")
     
     def create_stat_card(self, parent, title, value):
         """Создание карточки статистики."""
@@ -485,49 +1616,69 @@ class BazaApp:
         card.value_label = value_label
         return card
     
-    def log(self, message):
+    def log(self, message, level="info"):
         """Добавление лога."""
-        timestamp = datetime.now().strftime("%H:%M:%S")
+        # Логируем через централизованный логгер
+        if level == "info":
+            app_logger.info(message)
+        elif level == "warning":
+            app_logger.warning(message)
+        elif level == "error":
+            app_logger.error(message)
+        elif level == "debug":
+            app_logger.debug(message)
+        elif level == "critical":
+            app_logger.critical(message)
+        else:
+            app_logger.info(message)
         
-        self.logs_text.config(state='normal')
-        self.logs_text.insert('end', f"[{timestamp}] {message}\n")
-        self.logs_text.see('end')
-        self.logs_text.config(state='disabled')
+        # Добавляем в GUI
+        self._add_log_to_gui(message, level.upper())
     
-    def update_mt5_status(self, connected: bool, info: dict = None):
-        """Обновление статуса MT5."""
-        if connected and info:
-            self.mt5_status.config(text="📡 MT5: Подключено ✓", fg='#00d4aa')
+    def update_mt5_status(self):
+        """Обновление статуса MT5 в UI."""
+        if self.app_state.mt5_connected:
+            account_info = self.app_state.mt5_account_info
+            self.mt5_status.config(
+                text=f"[MT5] MT5: Connected ({account_info.get('login', 'N/A')})",
+                fg='#00d4aa'
+            )
             self.mt5_account.config(
-                text=f"Счёт: {info.get('account', 'N/A')} | Баланс: ${info.get('balance', 0):.2f}",
+                text=f"Баланс: ${account_info.get('balance', 0):.2f} | Свободно: ${account_info.get('margin_free', 0):.2f}",
                 fg='#888888'
             )
+            # Обновляем баланс в статистике
+            self.app_state.stats['balance'] = account_info.get('balance', 100.0)
+            self.update_display()
         else:
-            self.mt5_status.config(text="📡 MT5: Не подключено", fg='#ff4757')
-            self.mt5_account.config(text="")
+            self.mt5_status.config(text="[MT5] MT5: Not connected", fg='#ff4757')
+            self.mt5_account.config(text="", fg='#888888')
+            # Возвращаем баланс к демо значению
+            self.app_state.stats['balance'] = 100.0
+            self.update_display()
     
     def update_display(self):
         """Обновление статистики."""
-        self.card_balance.value_label.config(text=f"${self.stats['balance']:.2f}")
+        self.card_balance.value_label.config(text=f"${self.app_state.stats['balance']:.2f}")
         
-        pnl = self.stats['total_pnl']
+        pnl = self.app_state.stats['total_pnl']
         color = '#00d4aa' if pnl >= 0 else '#ff4757'
         self.card_pnl.value_label.config(
             text=f"{'+' if pnl >= 0 else ''}${pnl:.2f}", fg=color)
         
-        today = self.stats['today_pnl']
+        today = self.app_state.stats['today_pnl']
         color = '#00d4aa' if today >= 0 else '#ff4757'
         self.card_today.value_label.config(
             text=f"{'+' if today >= 0 else ''}${today:.2f}", fg=color)
         
-        total = self.stats['wins'] + self.stats['losses']
-        winrate = (self.stats['wins'] / total * 100) if total > 0 else 0
+        total = self.app_state.stats['wins'] + self.app_state.stats['losses']
+        winrate = (self.app_state.stats['wins'] / total * 100) if total > 0 else 0
         self.card_winrate.value_label.config(text=f"{winrate:.0f}%")
     
     def update_status(self, running, paused=False):
         """Обновление статуса бота."""
-        self.bot_running = running
-        self.bot_paused = paused
+        self.app_state.bot_running = running
+        self.app_state.bot_paused = paused
         
         if running and not paused:
             self.status_dot.config(fg='#00d4aa')
@@ -535,16 +1686,31 @@ class BazaApp:
             self.btn_start.config(state='disabled')
             self.btn_pause.config(state='normal', text='⏸ ПАУЗА')
             self.btn_stop.config(state='normal')
+            # Блокируем manual trading
+            if hasattr(self, 'btn_open_trade'):
+                self.btn_open_trade.config(state='disabled')
+            if hasattr(self, 'btn_predict'):
+                self.btn_predict.config(state='disabled')
         elif running and paused:
             self.status_dot.config(fg='#f39c12')
             self.status_label.config(text='Пауза')
             self.btn_pause.config(text='▶ ПРОДОЛЖИТЬ')
+            # Блокируем manual trading
+            if hasattr(self, 'btn_open_trade'):
+                self.btn_open_trade.config(state='disabled')
+            if hasattr(self, 'btn_predict'):
+                self.btn_predict.config(state='disabled')
         else:
             self.status_dot.config(fg='#ff4757')
             self.status_label.config(text='Остановлен')
             self.btn_start.config(state='normal')
             self.btn_pause.config(state='disabled', text='⏸ ПАУЗА')
             self.btn_stop.config(state='disabled')
+            # Разблокируем manual trading
+            if hasattr(self, 'btn_open_trade'):
+                self.btn_open_trade.config(state='normal')
+            if hasattr(self, 'btn_predict'):
+                self.btn_predict.config(state='normal')
     
     def start_bot(self):
         """Запуск бота."""
@@ -554,27 +1720,28 @@ class BazaApp:
             messagebox.showerror("Ошибка", f"Лицензия недействительна: {msg}")
             return
         
-        mode = self.mode_var.get()
+        mode = 'live'  # Фиксирован на Live режиме
         
-        if mode == 'live':
-            if not messagebox.askyesno("Подтверждение", 
-                    "Вы уверены что хотите запустить LIVE торговлю?\n\n"
-                    "Будут открываться РЕАЛЬНЫЕ сделки!"):
-                return
+        # Подтверждение для Live торговли
+        if not messagebox.askyesno("Подтверждение", 
+                "Вы уверены что хотите запустить LIVE торговлю?\n\n"
+                "Будут открываться РЕАЛЬНЫЕ сделки!"):
+            return
         
         self.stop_event.clear()
         self.bot_thread = threading.Thread(target=self.run_bot, args=(mode,), daemon=True)
         self.bot_thread.start()
         
         self.update_status(True, False)
-        self.log(f"🚀 Бот запущен в режиме {mode.upper()}")
+        self.log(f"[LAUNCH] Bot started in {mode.upper()} mode")
     
     def stop_bot(self):
         """Остановка бота."""
         self.stop_event.set()
         self.update_status(False)
-        self.update_mt5_status(False)
-        self.log("⏹️ Бот остановлен")
+        self.app_state.update_mt5_status(False)
+        self.root.after(0, self.update_mt5_status)
+        self.log("[STOP] Bot stopped")
     
     def pause_bot(self):
         """Пауза/продолжение."""
@@ -589,29 +1756,46 @@ class BazaApp:
     
     def run_bot(self, mode):
         """Основной цикл бота."""
+        self.log("[START] Starting bot thread...")
         try:
             from src.live.live_trader import LiveTrader
             
-            self.log("📡 Подключение к MT5...")
+            self.log("[CONNECT] Connecting to MT5...")
             
             enable_trading = (mode == 'live')
-            self.trader = LiveTrader(config_dir='config', enable_trading=enable_trading)
+            self.trader = LiveTrader(config_dir='config', enable_trading=enable_trading, enable_gpt=self.enable_gpt)
+            self.live_trader = self.trader  # Для совместимости
+            
+            # Устанавливаем executor для manual trading
+            if self.manual_controller:
+                # Импортируем executor из trader
+                self.manual_controller.executor = self.trader.executor
+                self.log("[OK] Manual trading executor connected")
             
             # Обновляем статус MT5
             status = self.trader.get_connection_status()
-            self.root.after(0, lambda: self.update_mt5_status(
-                status['connected'], status
-            ))
+            if status['connected']:
+                # build a consistent account_info dict to avoid passing raw ints
+                account_info = {
+                    'login': status.get('account'),
+                    'balance': status.get('balance'),
+                    'equity': status.get('equity'),
+                    'broker': status.get('broker')
+                }
+                self.app_state.update_mt5_status(True, account_info)
+            else:
+                self.app_state.update_mt5_status(False)
+            self.root.after(0, self.update_mt5_status)
             
             if status['connected']:
-                self.log(f"✅ MT5 подключен: {status.get('broker', '')} | Счёт: {status.get('account', '')}")
-                self.log(f"💰 Баланс: ${status.get('balance', 0):.2f}")
+                self.log(f"[OK] MT5 connected: {status.get('broker', '')} | Account: {status.get('account', '')}")
+                self.log(f"[BALANCE] Balance: ${status.get('balance', 0):.2f}")
             else:
-                self.log(f"❌ Ошибка подключения: {status.get('message', 'Unknown')}")
+                self.log(f"[ERROR] Connection error: {status.get('message', 'Unknown')}")
                 self.root.after(0, lambda: self.update_status(False))
                 return
             
-            self.log("🔄 Начинаю мониторинг рынка...")
+            self.log("[MONITOR] Starting market monitoring...")
             
             while not self.stop_event.is_set():
                 if self.bot_paused:
@@ -624,39 +1808,46 @@ class BazaApp:
                     
                     if signals:
                         for signal in signals:
-                            self.log(f"📊 {signal}")
+                            self.log(f"[SIGNAL] {signal}")
                         
                         # Обновляем статистику
                         self.root.after(0, self.update_display)
                     
                 except Exception as e:
-                    self.log(f"⚠️ Ошибка: {str(e)}")
+                    self.log(f"[WARNING] Error in signal check: {str(e)}")
+                    import traceback
+                    self.log(f"[DEBUG] Traceback: {traceback.format_exc()}")
                 
                 # Ждём 60 секунд
                 self.stop_event.wait(60)
             
+            self.log("[STOP] Bot thread stopped normally")
+            
         except Exception as e:
-            self.log(f"❌ Критическая ошибка: {str(e)}")
+            self.log(f"[CRITICAL] Critical error in bot thread: {str(e)}")
+            import traceback
+            self.log(f"[DEBUG] Full traceback: {traceback.format_exc()}")
             self.root.after(0, lambda: self.update_status(False))
-            self.root.after(0, lambda: self.update_mt5_status(False))
+        
+        self.log("[END] Bot thread finished")
     
     def load_stats(self):
         """Загрузка статистики."""
         stats_file = Path('data/bot_stats.json')
         if stats_file.exists():
             with open(stats_file, 'r') as f:
-                self.stats.update(json.load(f))
+                self.app_state.stats.update(json.load(f))
     
     def save_stats(self):
         """Сохранение статистики."""
         stats_file = Path('data/bot_stats.json')
         stats_file.parent.mkdir(exist_ok=True)
         with open(stats_file, 'w') as f:
-            json.dump(self.stats, f)
+            json.dump(self.app_state.stats, f)
     
     def on_closing(self):
         """При закрытии."""
-        if self.bot_running:
+        if self.app_state.bot_running:
             if messagebox.askyesno("Выход", "Бот работает. Остановить и выйти?"):
                 self.stop_bot()
                 self.save_stats()
@@ -665,12 +1856,349 @@ class BazaApp:
             self.save_stats()
             self.root.destroy()
     
+    def _on_symbol_change(self, event=None):
+        """Обработчик изменения символа с немедленным обновлением цены."""
+        if not hasattr(self, 'manual_symbol') or not self.manual_symbol:
+            return
+        new_symbol = self.manual_symbol.get()
+        self.app_state.manual_trade_state.symbol = new_symbol
+        self.log(f"[CHANGE] Symbol changed to {new_symbol}")
+        self._update_price_now()
+        self.update_manual_calculations()
+
+    def _apply_rr_to_state(self, from_state: bool = False):
+        """Применить выбранный RR к состоянию: пересчитать TP или SL в зависимости от того, что задано.
+
+        Если `from_state` True, вызов происходит при синхронизации GUI из состояния — не перезаписываем явно
+        введённые пользователем значения, но можем вычислить недостающие на основе RR.
+        """
+        state = self.app_state.manual_trade_state
+        if not state:
+            return
+        try:
+            rr = float(self.manual_rr_ratio.get())
+        except Exception:
+            return
+        if rr <= 0:
+            return
+
+        entry = float(self.manual_entry.get() if hasattr(self, 'manual_entry') else state.entry_price)
+        sl = float(self.manual_sl.get() if hasattr(self, 'manual_sl') else state.stop_loss)
+        tp = float(self.manual_tp.get() if hasattr(self, 'manual_tp') else state.take_profit)
+        direction = self.manual_direction.get() if hasattr(self, 'manual_direction') else state.direction
+
+        # If stop loss exists, compute TP from SL
+        if sl and sl > 0 and entry and entry > 0:
+            if direction == 'buy':
+                sl_distance = entry - sl
+                if sl_distance > 0:
+                    new_tp = entry + sl_distance * rr
+                    # Update only TP (user SL preserved)
+                    self.manual_tp.set(round(new_tp, 6))
+                    state.take_profit = float(round(new_tp, 6))
+            else:  # sell
+                sl_distance = sl - entry
+                if sl_distance > 0:
+                    new_tp = entry - sl_distance * rr
+                    self.manual_tp.set(round(new_tp, 6))
+                    state.take_profit = float(round(new_tp, 6))
+            state.risk_reward_ratio = rr
+            return
+
+        # Else if TP exists, compute SL from TP
+        if tp and tp > 0 and entry and entry > 0:
+            if direction == 'buy':
+                tp_distance = tp - entry
+                if tp_distance > 0:
+                    new_sl = entry - (tp_distance / rr)
+                    self.manual_sl.set(round(new_sl, 6))
+                    state.stop_loss = float(round(new_sl, 6))
+            else:  # sell
+                tp_distance = entry - tp
+                if tp_distance > 0:
+                    new_sl = entry + (tp_distance / rr)
+                    self.manual_sl.set(round(new_sl, 6))
+                    state.stop_loss = float(round(new_sl, 6))
+            state.risk_reward_ratio = rr
+            return
+
+        # If neither SL nor TP set, and `from_state` is False (user is interacting), do nothing.
+        return
+
+    def _on_rr_change(self, event=None):
+        """Handler when RR spinbox changes in UI."""
+        try:
+            self._apply_rr_to_state()
+        except Exception as e:
+            self.log(f"[ERROR] RR apply error: {e}")
+        # Recalculate derived values
+        try:
+            self.update_manual_calculations()
+        except Exception:
+            pass
+    
+    def _on_timeframe_change(self, event=None):
+        """Обработчик изменения таймфрейма."""
+        if not hasattr(self, 'manual_timeframe') or not self.manual_timeframe:
+            return
+        new_timeframe = self.manual_timeframe.get()
+        self.app_state.manual_trade_state.timeframe = new_timeframe
+        self.log(f"[CHANGE] Timeframe changed to {new_timeframe}")
+        self.update_manual_calculations()
+    
+    def _on_direction_change(self):
+        """Обработчик изменения направления с обновлением цены."""
+        if not hasattr(self, 'manual_direction') or not self.manual_direction:
+            return
+        new_direction = self.manual_direction.get()
+        self.app_state.manual_trade_state.direction = new_direction
+        self.log(f"[CHANGE] Direction changed to {new_direction}")
+        self._update_price_now()
+        self.update_manual_calculations()
+    
+    def _update_price_now(self):
+        """Немедленное обновление цены из MT5."""
+        try:
+            state = self.app_state.manual_trade_state
+            symbol = state.symbol
+            if not symbol or not self.app_state.mt5_manager or not self.app_state.mt5_manager.is_connected():
+                state.entry_price = 0.0
+                if hasattr(self, 'manual_entry'):
+                    self.manual_entry.set(0.0)
+                return
+            
+            tick = self.app_state.mt5_manager.mt5.symbol_info_tick(symbol)
+            if not tick:
+                self.log(f"[WARNING] Failed to get price for {symbol}")
+                state.entry_price = 0.0
+                if hasattr(self, 'manual_entry'):
+                    self.manual_entry.set(0.0)
+                return
+            
+            if state.direction == "buy":
+                state.entry_price = tick.ask
+            elif state.direction == "sell":
+                state.entry_price = tick.bid
+            else:
+                state.entry_price = tick.bid
+            
+            if hasattr(self, 'manual_entry'):
+                self.manual_entry.set(state.entry_price)
+                
+        except Exception as e:
+            self.log(f"[ERROR] Price update error: {e}")
+            state.entry_price = 0.0
+    
+    def _on_price_change(self, event=None):
+        """Обработчик изменения цен."""
+        if not all([self.manual_entry, self.manual_sl, self.manual_tp]):
+            return
+        state = self.app_state.manual_trade_state
+        state.entry_price = self.manual_entry.get()
+        state.stop_loss = self.manual_sl.get()
+        state.take_profit = self.manual_tp.get()
+        
+        # Обновляем расчеты
+        # Если задан RR и есть стоп — пересчитываем тейк автоматически
+        try:
+            self._apply_rr_to_state()
+        except Exception:
+            pass
+
+        self.update_manual_calculations()
+    
+    def _on_market_data_update(self, prices=None):
+        """Обработчик обновления рыночных данных."""
+        try:
+            state = self.app_state.manual_trade_state
+            
+            # Если MT5 не подключен или нет данных
+            if not self.app_state.mt5_manager or not self.app_state.mt5_manager.is_connected():
+                self.log("[WARNING] MT5 not connected - prices not updating")
+                return
+            
+            # Получаем текущие цены
+            symbol = state.symbol
+            if not symbol:
+                return
+                
+            tick = self.app_state.mt5_manager.mt5.symbol_info_tick(symbol)
+            if not tick:
+                self.log(f"[WARNING] Failed to get prices for {symbol}")
+                return
+            
+            bid = tick.bid
+            ask = tick.ask
+            
+            # Обновляем состояние
+            state.bid_price = bid
+            state.ask_price = ask
+            state.spread = ask - bid
+            state.market_data_timestamp = datetime.now()
+            
+            # Автоматически обновляем entry_price если не заблокировано
+            if state.auto_update_prices and not state.prices_locked:
+                if state.direction == "buy" and ask > 0:
+                    state.entry_price = ask
+                elif state.direction == "sell" and bid > 0:
+                    state.entry_price = bid
+            
+            # Обновляем GUI в главном потоке
+            self.root.after(0, self.update_manual_from_state)
+            
+        except Exception as e:
+            self.log(f"[ERROR] Market data update error: {e}")
+    
+    def update_manual_from_state(self):
+        """Обновление GUI из состояния."""
+        try:
+            state = self.app_state.manual_trade_state
+            
+            # Обновляем переменные GUI
+            self.manual_symbol.set(state.symbol)
+            self.manual_timeframe.set(state.timeframe)
+            # Обновляем только цену входа из состояния — не перезаписываем SL/TP/risk,
+            # чтобы не ломать значения, введённые пользователем.
+            self.manual_entry.set(state.entry_price)
+            self.manual_direction.set(state.direction)
+
+            # Обновляем расчеты
+            # При обновлении GUI из состояния, пересчитываем TP/SL по RR,
+            # но не перезаписываем явно введённые пользователем SL/TP.
+            try:
+                self._apply_rr_to_state(from_state=True)
+            except Exception:
+                pass
+            self.update_manual_calculations()
+            
+        except Exception as e:
+            self.log(f"[ERROR] GUI update error: {e}")
+    
+    def save_mt5_credentials(self, login: int, password: str, server: str, terminal_path: str):
+        """Сохранение учетных данных MT5 в зашифрованный файл."""
+        import json
+        import base64
+        
+        try:
+            # Создаем данные для сохранения
+            credentials = {
+                'login': login,
+                'password': password,
+                'server': server,
+                'terminal_path': terminal_path,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            # Простое шифрование (base64 для демо, в продакшене использовать cryptography)
+            data_str = json.dumps(credentials)
+            encoded_data = base64.b64encode(data_str.encode('utf-8')).decode('utf-8')
+            
+            # Сохраняем в файл
+            config_dir = Path('config')
+            config_dir.mkdir(exist_ok=True)
+            cred_file = config_dir / 'mt5_credentials.enc'
+            
+            with open(cred_file, 'w') as f:
+                f.write(encoded_data)
+                
+        except Exception as e:
+            raise Exception(f"Не удалось сохранить учетные данные: {e}")
+    
+    def load_mt5_credentials(self):
+        """Загрузка учетных данных MT5 из файла."""
+        import json
+        import base64
+        
+        try:
+            cred_file = Path('config/mt5_credentials.enc')
+            if not cred_file.exists():
+                return  # Файл не существует
+            
+            with open(cred_file, 'r') as f:
+                encoded_data = f.read()
+            
+            # Расшифровываем
+            decoded_data = base64.b64decode(encoded_data).decode('utf-8')
+            credentials = json.loads(decoded_data)
+            
+            # Устанавливаем в app_state
+            config = {
+                'login': credentials['login'],
+                'password': credentials['password'],
+                'server': credentials['server'],
+                'terminal_path': credentials.get('terminal_path', '')
+            }
+            self.app_state.set_mt5_config(config)
+            
+            self.log("[OK] MT5 credentials loaded from file")
+            
+        except Exception as e:
+            self.log(f"[WARNING] Failed to load MT5 credentials: {e}")
+    
     def run(self):
         """Запуск приложения."""
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-        self.log("✅ BAZA Trading Bot готов к работе")
-        self.log("💡 Выберите режим и нажмите СТАРТ")
-        self.root.mainloop()
+        
+        # Стартовые логи
+        self.log("[INFO] Приложение BAZA Trading Bot запущено", "info")
+        self.log("[READY] BAZA Trading Bot ready to work", "info")
+        
+        # Логируем запуск mainloop
+        self.log("[START] Starting GUI mainloop...")
+        try:
+            self.root.mainloop()
+        finally:
+            print("GUI mainloop finished")
+
+    def _add_log_to_gui(self, message: str, level: str = "INFO"):
+        """Callback для добавления логов в GUI."""
+        try:
+            if not hasattr(self, 'root') or not self.root or not self.root.winfo_exists():
+                return
+            self.root.after(0, lambda: self._insert_log_message(message, level))
+        except Exception as e:
+            print(f"GUI logging error: {e}")
+
+    def _insert_log_message(self, message: str, level: str):
+        """Вставка сообщения в лог с цветом."""
+        # Основные логи внизу
+        if hasattr(self, 'log_text') and self.log_text:
+            try:
+                self.log_text.configure(state='normal')
+                self.log_text.insert('end', message + '\n', level.lower())
+                self.log_text.see('end')
+                self.log_text.configure(state='disabled')
+            except Exception as e:
+                print(f"Main logs error: {e}")
+        
+        # Мини-логи рядом с кнопками
+        if hasattr(self, 'mini_logs_text') and self.mini_logs_text:
+            try:
+                # Ensure the widget supports text operations
+                if callable(getattr(self.mini_logs_text, 'get', None)) and callable(getattr(self.mini_logs_text, 'delete', None)):
+                    self.mini_logs_text.config(state='normal')
+
+                    # Ограничиваем количество строк в мини-логах (последние 25)
+                    lines = self.mini_logs_text.get('1.0', 'end-1c').split('\n')
+                    if len(lines) >= 25:
+                        # Удаляем старые строки
+                        try:
+                            self.mini_logs_text.delete('1.0', '2.0')
+                        except Exception:
+                            pass
+
+                    self.mini_logs_text.insert('end', message + '\n', level.lower())
+                    self.mini_logs_text.see('end')
+                    self.mini_logs_text.config(state='disabled')
+                else:
+                    # Fallback: try to append if object supports insert
+                    if callable(getattr(self.mini_logs_text, 'insert', None)):
+                        try:
+                            self.mini_logs_text.insert('end', message + '\n')
+                        except Exception:
+                            pass
+            except Exception as e:
+                print(f"Mini logs error: {e}")
 
 
 def main():

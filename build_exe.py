@@ -37,7 +37,7 @@ def build():
     ])
 
     print("\n" + "=" * 50)
-    print("✅ ГОТОВО!")
+    print("[DONE] READY!")
     print("Файл: dist/BAZA.exe")
     print("=" * 50)
 

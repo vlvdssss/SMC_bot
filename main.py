@@ -8,6 +8,13 @@ BAZA Trading Bot v3.0
 
 import argparse
 import sys
+from dotenv import load_dotenv
+
+# Настройка UTF-8 для консоли
+sys.stdout.reconfigure(encoding='utf-8')
+
+# Загружаем переменные окружения
+load_dotenv()
 
 def main():
     parser = argparse.ArgumentParser(description='BAZA Trading Bot')

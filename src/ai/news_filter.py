@@ -9,6 +9,10 @@ import os
 from openai import OpenAI
 from datetime import datetime
 from typing import Tuple
+from dotenv import load_dotenv
+
+# Загружаем переменные окружения из .env файла
+load_dotenv()
 
 class GPTNewsFilter:
     def __init__(self):

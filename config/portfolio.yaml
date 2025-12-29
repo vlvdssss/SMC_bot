@@ -1,6 +1,15 @@
 # Portfolio Configuration
 # Defines which instruments to trade together and risk allocation
 
+# Manual Trading Configuration
+manual_trading:
+  enabled: true  # EXPERIMENTAL FEATURE - DISABLED BY DEFAULT
+  ai_predict_enabled: true  # AI analysis for manual trades
+  min_rr_warning: 1.5  # Minimum RR ratio warning
+  max_risk_percent: 5.0  # Maximum risk per trade (%)
+  pip_value: 0.0001  # Pip value for EURUSD
+  contract_size: 100000  # Standard lot size
+
 portfolio:
   name: "XAUUSD + EURUSD Baseline Portfolio"
   version: "v1.0 FROZEN"

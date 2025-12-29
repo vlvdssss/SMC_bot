@@ -7,6 +7,17 @@ logs/
 # Конфиг с секретами
 config/mt5.yaml
 config/.env
+config/mt5_credentials.enc
+config/*.enc
+config/*.key
+config/*.pem
+
+# Environment files
+.env
+
+# Telegram / bot tokens
+archive/**/config.json
+**/config.json
 
 # Логи продаж и лицензии
 sales_log.txt
@@ -47,6 +58,10 @@ desktop.ini
 *.tmp
 *.bak
 *.cache
+
+# Sensitive local files
+.secret
+.credentials
 
 # Jupyter
 .ipynb_checkpoints/
