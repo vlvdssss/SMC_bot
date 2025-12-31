@@ -1110,6 +1110,19 @@ class BazaApp:
                                        state='disabled')
         self.btn_open_trade.pack(side='left', padx=5)
         
+        # Большая панель быстрых действий (Open / Close) — располагается между кнопками и мини-логами
+        trade_control_frame = tk.Frame(manual_container, bg='#1a1a1a')
+        trade_control_frame.pack(side='right', padx=(10, 0), pady=(10, 0))
+
+        self.btn_big_open = tk.Button(trade_control_frame, text='ОТКРЫТЬ\nСДЕЛКУ', command=self.manual_open_trade,
+                          font=('Arial', 12, 'bold'), bg='#00d4aa', fg='black',
+                          width=14, height=3, relief='flat', cursor='hand2', state='disabled')
+        self.btn_big_open.pack(padx=5, pady=(0, 8))
+
+        self.btn_big_close = tk.Button(trade_control_frame, text='ЗАКРЫТЬ\nСДЕЛКУ', command=self.manual_close_trade,
+                           font=('Arial', 12, 'bold'), bg='#ff5c5c', fg='black',
+                           width=14, height=3, relief='flat', cursor='hand2', state='disabled')
+        self.btn_big_close.pack(padx=5)
         # Мини-логи правее кнопок — делаем дочерним элементом manual_container
         mini_logs_frame = customtkinter.CTkFrame(manual_container, height=800, width=520, fg_color="#1a1a1a")
         mini_logs_frame.pack(side='right', padx=(30, 0), pady=(10, 0), fill='y')  # Отдельный фрейм правее с отступом сверху
@@ -1220,6 +1233,20 @@ class BazaApp:
                 self.btn_open_trade.config(state='normal' if valid else 'disabled')
             if hasattr(self, 'btn_open_quick'):
                 self.btn_open_quick.config(state='normal' if valid else 'disabled')
+            if hasattr(self, 'btn_big_open'):
+                self.btn_big_open.config(state='normal' if valid else 'disabled')
+
+            # Enable close button only if an executor has an open position
+            close_state = 'disabled'
+            try:
+                exec_obj = getattr(self.manual_controller, 'executor', None)
+                if exec_obj and getattr(exec_obj, 'has_position', lambda: False)():
+                    close_state = 'normal'
+            except Exception:
+                close_state = 'disabled'
+
+            if hasattr(self, 'btn_big_close'):
+                self.btn_big_close.config(state=close_state)
             
         except Exception as e:
             self.log(f"Critical calculation error: {e}")
@@ -1377,6 +1404,8 @@ class BazaApp:
             entry_var = tk.StringVar()
             entry = tk.Entry(entry_frame, textvariable=entry_var, font=('Arial', 11), bg='#0f0f0f', fg='white')
             entry.pack(side='left', fill='x', expand=True, padx=(0, 5))
+            entry.focus_set()
+            entry.bind('<Return>', lambda e: send_message())
 
             def send_message():
                 msg = entry_var.get().strip()
@@ -1386,37 +1415,95 @@ class BazaApp:
                 chat_box.config(state='normal')
                 chat_box.insert('end', f"You: {msg}\n")
                 chat_box.see('end')
+                # Build a small context
+                context = {
+                    'text': msg,
+                    'symbol': getattr(self, 'manual_symbol', tk.StringVar(value='')).get() if hasattr(self, 'manual_symbol') else '',
+                    'entry_price': getattr(self, 'manual_entry', tk.DoubleVar(value=0)).get() if hasattr(self, 'manual_entry') else 0,
+                    'stop_loss': getattr(self, 'manual_sl', tk.DoubleVar(value=0)).get() if hasattr(self, 'manual_sl') else 0,
+                    'take_profit': getattr(self, 'manual_tp', tk.DoubleVar(value=0)).get() if hasattr(self, 'manual_tp') else 0,
+                    'direction': getattr(self, 'manual_direction', tk.StringVar(value='')).get() if hasattr(self, 'manual_direction') else ''
+                }
 
-                # Try to use manual_controller.ai_analyzer to produce response
-                response = None
-                try:
-                    if hasattr(self, 'manual_controller') and self.manual_controller and getattr(self.manual_controller, 'ai_analyzer', None):
-                        # Build simple context from manual fields
-                        context = {
-                            'text': msg,
-                            'symbol': getattr(self, 'manual_symbol', tk.StringVar(value='')).get(),
-                            'entry_price': getattr(self, 'manual_entry', tk.DoubleVar(value=0)).get(),
-                            'stop_loss': getattr(self, 'manual_sl', tk.DoubleVar(value=0)).get(),
-                            'take_profit': getattr(self, 'manual_tp', tk.DoubleVar(value=0)).get(),
-                            'direction': getattr(self, 'manual_direction', tk.StringVar(value='')).get()
-                        }
-                        ai = self.manual_controller.ai_analyzer
-                        try:
-                            pred = ai.analyze_manual_trade(context)
-                            if pred:
-                                response = f"AI Prediction: {getattr(pred, 'market_bias', '')}, confidence {getattr(pred, 'confidence', '')}\nComment: {getattr(pred, 'comment', '')}"
-                        except Exception:
-                            response = None
+                def do_query():
+                    # Prefer controller AI prediction if available
+                    response_text = None
+                    try:
+                        # If there is an LLM client configured, call it directly for free-form chat
+                        llm = None
+                        if getattr(self, 'manual_controller', None) and getattr(self.manual_controller, 'llm_client', None):
+                            llm = self.manual_controller.llm_client
+                        elif getattr(self, 'app_state', None) and getattr(self.app_state, 'llm_client', None):
+                            llm = self.app_state.llm_client
 
-                except Exception:
-                    response = None
+                        if llm is not None:
+                            try:
+                                model = None
+                                # prefer model from manual controller config
+                                if getattr(self, 'manual_controller', None):
+                                    model = self.manual_controller.config.get('AI_MODEL')
+                                if not model:
+                                    model = 'gpt-4o-mini'
 
-                if not response:
-                    response = "AI not available or no prediction returned."
+                                # Build messages
+                                messages = [
+                                    {"role": "system", "content": "You are an experienced trading analyst. Answer concisely and helpfully."},
+                                    {"role": "user", "content": msg}
+                                ]
 
-                chat_box.insert('end', f"Analyst: {response}\n\n")
-                chat_box.config(state='disabled')
-                chat_box.see('end')
+                                # Try OpenAI-like SDK call used elsewhere in project
+                                try:
+                                    resp = llm.chat.completions.create(model=model, messages=messages, max_tokens=800)
+                                    content = None
+                                    try:
+                                        content = resp.choices[0].message.content
+                                    except Exception:
+                                        # Some SDKs return 'text' directly
+                                        content = getattr(resp, 'text', None) or str(resp)
+                                    if content:
+                                        response_text = content
+                                except Exception as e:
+                                    # last-resort: try simple 'create' on llm
+                                    try:
+                                        resp = llm.Completion.create(model=model, prompt=msg, max_tokens=500)
+                                        content = getattr(resp, 'text', None) or str(resp)
+                                        response_text = content
+                                    except Exception:
+                                        response_text = None
+                            except Exception:
+                                response_text = None
+
+                        # If no LLM or LLM failed, try controller AI analyzer (structured prediction)
+                        if not response_text and getattr(self, 'manual_controller', None):
+                            try:
+                                if getattr(self.manual_controller, 'ai_analyzer', None):
+                                    pred = self.manual_controller.get_ai_prediction(context)
+                                    if pred:
+                                        response_text = f"AI Prediction: {getattr(pred, 'market_bias', '')}, confidence {getattr(pred, 'confidence', '')}\n{getattr(pred, 'comment', '')}"
+                            except Exception:
+                                response_text = None
+
+                        # Fallback simple rule-based responder
+                        if not response_text:
+                            if 'stop' in msg.lower() or 'risk' in msg.lower():
+                                response_text = "Совет: проверьте расстояние SL от входа и размер риска. Рекомендуется RR >= 1.5."
+                            elif 'open' in msg.lower() or 'вход' in msg.lower():
+                                response_text = "Проверьте: направление, расстояние SL/TP, и объем позиции. Могу подготовить сделку по текущим полям."
+                            else:
+                                response_text = "AI недоступен — опишите вопрос по сделке (SL/TP/объем), или включите AI в настройках."
+
+                    except Exception as e:
+                        response_text = f"Ошибка AI: {e}"
+
+                    # Post result back to UI
+                    self.root.after(0, lambda: finish_response(response_text))
+
+                def finish_response(text):
+                    chat_box.insert('end', f"Analyst: {text}\n\n")
+                    chat_box.config(state='disabled')
+                    chat_box.see('end')
+
+                threading.Thread(target=do_query, daemon=True).start()
 
             send_btn = tk.Button(entry_frame, text='Send', command=send_message, font=('Arial', 11, 'bold'), bg='#00d4aa', fg='black')
             send_btn.pack(side='right')
@@ -1484,12 +1571,91 @@ class BazaApp:
             if success:
                 self.log(f"[OK] Manual trade opened: {message}")
                 messagebox.showinfo("Успех", f"Сделка открыта!\n{message}")
+                try:
+                    if hasattr(self, 'btn_big_close'):
+                        self.btn_big_close.config(state='normal')
+                except Exception:
+                    pass
             else:
                 self.log(f"[ERROR] Trade failed: {message}")
                 messagebox.showerror("Ошибка", f"Не удалось открыть сделку:\n{message}")
         except Exception as e:
             self.log(f"[CRITICAL] Trade execution error: {e}")
             messagebox.showerror("Ошибка", f"Критическая ошибка:\n{str(e)}")
+
+    def manual_close_trade(self):
+        """Закрыть текущую открытую ручную позицию (если есть)."""
+        try:
+            if not self.manual_controller:
+                self.log("[ERROR] Manual trading controller not available")
+                return
+
+            executor = getattr(self.manual_controller, 'executor', None)
+            if not executor:
+                # Try to grab from app_state
+                executor = getattr(self.app_state.live_trader, 'executor', None) if getattr(self, 'app_state', None) else None
+
+            if not executor:
+                self.log("[ERROR] Executor not available to close position")
+                messagebox.showerror("Ошибка", "Executor не доступен для закрытия сделки")
+                return
+
+            if not executor.has_position():
+                messagebox.showinfo("Инфо", "Нет открытой позиции для закрытия")
+                return
+
+            # Confirm
+            if not messagebox.askyesno("Подтвердите", "Закрыть текущую позицию вручную?"):
+                return
+
+            # Determine current price
+            symbol = None
+            try:
+                pos = getattr(executor, 'position', None)
+                symbol = getattr(pos, 'instrument', None) or getattr(pos, 'symbol', None)
+            except Exception:
+                symbol = None
+
+            current_price = None
+            # Try MT5 tick if live
+            if getattr(executor, 'is_live', False) and getattr(self, 'app_state', None) and getattr(self.app_state, 'mt5_manager', None):
+                try:
+                    mt5 = self.app_state.mt5_manager.mt5
+                    if mt5 and symbol:
+                        tick = mt5.symbol_info_tick(symbol)
+                        if tick:
+                            current_price = getattr(tick, 'last', None) or getattr(tick, 'bid', None) or getattr(tick, 'ask', None)
+                except Exception:
+                    current_price = None
+
+            if current_price is None:
+                try:
+                    current_price = executor._get_current_price(symbol or 'EURUSD')
+                except Exception:
+                    current_price = getattr(executor.position, 'entry_price', 0.0)
+
+            from datetime import datetime
+            pnl = None
+            try:
+                pnl = executor._close_position(float(current_price), datetime.now(), reason='manual_close')
+            except Exception as e:
+                self.log(f"[ERROR] Closing failed: {e}")
+                messagebox.showerror("Ошибка", f"Не удалось закрыть позицию: {e}")
+                return
+
+            self.log(f"[OK] Position closed manually. PnL: {pnl}")
+            messagebox.showinfo("Успех", f"Позиция закрыта. PnL: {pnl}")
+
+            # Update buttons
+            try:
+                if hasattr(self, 'btn_big_close'):
+                    self.btn_big_close.config(state='disabled')
+            except Exception:
+                pass
+
+        except Exception as e:
+            self.log(f"[CRITICAL] manual_close_trade error: {e}")
+            messagebox.showerror("Ошибка", f"Критическая ошибка при закрытии: {e}")
     
     def create_stat_card(self, parent, title, value):
         """Создание карточки статистики."""
