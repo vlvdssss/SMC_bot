@@ -1393,13 +1393,18 @@ class BazaApp:
             win.geometry("600x400")
             win.configure(bg='#1a1a1a')
 
+            # Use grid so input area is always visible at bottom
+            win.grid_rowconfigure(0, weight=1)
+            win.grid_rowconfigure(1, weight=0)
+            win.grid_columnconfigure(0, weight=1)
+
             chat_box = tk.Text(win, bg='#0f0f0f', fg='white', font=('Consolas', 11))
-            chat_box.pack(fill='both', expand=True, padx=10, pady=(10, 0))
+            chat_box.grid(row=0, column=0, sticky='nsew', padx=10, pady=(10, 5))
             chat_box.insert('end', "AI Analyst chat initialized. Type a question below and press Send.\n")
             chat_box.config(state='disabled')
 
             entry_frame = tk.Frame(win, bg='#1a1a1a')
-            entry_frame.pack(side='bottom', fill='x', padx=10, pady=10)
+            entry_frame.grid(row=1, column=0, sticky='ew', padx=10, pady=(0, 10))
 
             entry_var = tk.StringVar()
             entry = tk.Entry(entry_frame, textvariable=entry_var, font=('Arial', 11), bg='#0f0f0f', fg='white', insertbackground='white')
