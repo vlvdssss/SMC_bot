@@ -451,3 +451,44 @@ class StrategyEURUSD_SMC_Retracement:
         
         # Минимум 0.01 лота
         return max(0.01, lot_size)
+
+    def check_signal(self, h1_data: pd.DataFrame, m15_data: pd.DataFrame) -> dict:
+        """
+        Проверка сигнала для мониторинга.
+        
+        Args:
+            h1_data: H1 DataFrame
+            m15_data: M15 DataFrame
+            
+        Returns:
+            dict: Сигнал или {'valid': False}
+        """
+        try:
+            # Загружаем данные
+            self.load_data(h1_data, m15_data)
+            
+            # Получаем текущие индексы
+            current_m15_idx = len(m15_data) - 1
+            current_h1_idx = len(h1_data) - 1
+            
+            # Получаем цены для анализа
+            if current_m15_idx < 0:
+                return {'valid': False}
+                
+            analysis_price = m15_data.iloc[current_m15_idx]['close']
+            entry_price = m15_data.iloc[current_m15_idx]['open']  # Для следующей свечи
+            
+            # Получаем сигнал
+            signal = self.generate_signal(
+                current_m15_idx=current_m15_idx,
+                analysis_price=analysis_price,
+                entry_price=entry_price,
+                current_time=m15_data.index[current_m15_idx],
+                current_h1_idx=current_h1_idx
+            )
+            
+            return signal
+            
+        except Exception as e:
+            print(f"[!] Error in check_signal: {e}")
+            return {'valid': False}
