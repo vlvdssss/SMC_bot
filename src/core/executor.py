@@ -15,6 +15,7 @@ class Position:
         self.lot_size = lot_size
         self.entry_time = entry_time
         self.commission = commission
+        self.instrument = None
         self.exit_price = None
         self.exit_time = None
         self.pnl = 0.0
@@ -140,6 +141,12 @@ class Executor:
             commission=commission
         )
 
+        # Try to capture instrument name if provided in signal
+        try:
+            self.position.instrument = signal.get('symbol') or signal.get('instrument') or None
+        except Exception:
+            self.position.instrument = None
+
         return True
 
     def update_position(self, current_price: float, current_time) -> dict:
@@ -215,6 +222,30 @@ class Executor:
         # Save closed position before clearing
         self.last_closed_position = self.position
 
+        # Attempt to record trade into central bot_manager (if available)
+        try:
+            from src.core.bot_manager import bot_manager
+
+            trade = {
+                'id': int(exit_time.timestamp()) if hasattr(exit_time, 'timestamp') else 0,
+                'date': exit_time.strftime('%Y-%m-%d') if hasattr(exit_time, 'strftime') else str(exit_time),
+                'time': exit_time.strftime('%H:%M') if hasattr(exit_time, 'strftime') else '',
+                'instrument': getattr(self.last_closed_position, 'instrument', None) or 'UNKNOWN',
+                'direction': self.last_closed_position.direction,
+                'pnl': round(float(self.last_closed_position.pnl), 2),
+                'volume': float(self.last_closed_position.lot_size),
+                'price': float(exit_price)
+            }
+
+            try:
+                bot_manager.add_trade(trade)
+            except Exception:
+                # Do not fail closing if stats update fails
+                pass
+        except Exception:
+            # bot_manager not available or import failed — ignore
+            pass
+
         # Clear position
         self.position = None
 
@@ -270,7 +301,8 @@ class Executor:
                     'direction': trade_request.direction.upper(),
                     'lot_size': trade_request.lot_size,
                     'sl': trade_request.stop_loss,
-                    'tp': trade_request.take_profit
+                    'tp': trade_request.take_profit,
+                    'symbol': trade_request.symbol
                 }
                 
                 success = self._execute_signal_live(trade_request.symbol, signal)
@@ -294,7 +326,8 @@ class Executor:
                 signal = {
                     'direction': trade_request.direction.upper(),
                     'sl': trade_request.stop_loss,
-                    'tp': trade_request.take_profit
+                    'tp': trade_request.take_profit,
+                    'symbol': trade_request.symbol
                 }
 
                 current_price = self._get_current_price(trade_request.symbol)

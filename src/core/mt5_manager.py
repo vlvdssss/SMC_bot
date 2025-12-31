@@ -176,6 +176,120 @@ class MT5Manager:
             'terminal': terminal_info
         }
 
+    def get_trade_history(self, days: int = 30) -> list:
+        """Получение истории сделок из терминала за последние `days` дней.
+
+        Возвращает список словарей с полями: id, date, time, instrument, direction, pnl, volume, price
+        """
+        result = []
+        try:
+            if not self.is_connected():
+                return result
+
+            from datetime import datetime, timedelta
+            to_date = datetime.now()
+            from_date = to_date - timedelta(days=days)
+
+            deals = self.mt5.history_deals_get(from_date, to_date)
+            if deals is None:
+                return result
+
+            for deal in deals:
+                # Учтём только торговые сделки (buy/sell)
+                if deal.type in [self.mt5.DEAL_TYPE_BUY, self.mt5.DEAL_TYPE_SELL]:
+                    pnl = float(deal.profit) if deal.profit is not None else 0.0
+
+                    # deal.time can be datetime or int timestamp depending on MT5 bindings
+                    try:
+                        t = deal.time
+                        if isinstance(t, int) or isinstance(t, float):
+                            from datetime import datetime
+                            dt = datetime.fromtimestamp(int(t))
+                        else:
+                            dt = t
+                    except Exception:
+                        from datetime import datetime
+                        dt = datetime.now()
+
+                    result.append({
+                        'id': int(deal.ticket),
+                        'date': dt.strftime('%Y-%m-%d'),
+                        'time': dt.strftime('%H:%M'),
+                        'instrument': deal.symbol,
+                        'direction': 'BUY' if deal.type == self.mt5.DEAL_TYPE_BUY else 'SELL',
+                        'pnl': round(pnl, 2),
+                        'volume': float(deal.volume),
+                        'price': float(deal.price)
+                    })
+
+        except Exception as e:
+            logger.error(f"Error getting trade history from MT5: {e}")
+
+        return result
+
+    def start_trade_sync(self, poll_interval: float = 5.0, lookback_days: int = 365):
+        """Start background thread to poll MT5 for new deals and push them to bot_manager.
+
+        This will read existing `data/trades_history.json` to determine the last seen ticket
+        and then periodically call `get_trade_history` and add new trades via `bot_manager.add_trade()`.
+        """
+        # If already started, skip
+        if hasattr(self, '_trade_sync_thread') and self._trade_sync_thread is not None:
+            return
+
+        def sync_loop():
+            try:
+                from time import sleep
+                from src.core.bot_manager import bot_manager
+
+                # Determine last seen ticket from local file
+                last_ticket = 0
+                try:
+                    import json
+                    from pathlib import Path
+                    tf = Path('data/trades_history.json')
+                    if tf.exists():
+                        with open(tf, 'r', encoding='utf-8') as f:
+                            trades = json.load(f)
+                        tickets = [int(t.get('id')) for t in trades if t.get('id') is not None]
+                        if tickets:
+                            last_ticket = max(tickets)
+                except Exception:
+                    last_ticket = 0
+
+                while True:
+                    try:
+                        if not self.is_connected():
+                            sleep(1.0)
+                            continue
+
+                        trades = self.get_trade_history(days=lookback_days)
+                        # Sort by id ascending
+                        trades_sorted = sorted(trades, key=lambda x: int(x.get('id') or 0))
+                        for t in trades_sorted:
+                            try:
+                                tid = int(t.get('id') or 0)
+                            except Exception:
+                                tid = 0
+                            if tid > last_ticket:
+                                try:
+                                    bot_manager.add_trade(t)
+                                except Exception:
+                                    pass
+                                last_ticket = max(last_ticket, tid)
+
+                    except Exception:
+                        pass
+
+                    sleep(poll_interval)
+
+            except Exception:
+                return
+
+        import threading
+        self._trade_sync_thread = threading.Thread(target=sync_loop, daemon=True)
+        self._trade_sync_thread.start()
+
     def __del__(self):
         """Деструктор - корректное отключение."""
         self.disconnect()

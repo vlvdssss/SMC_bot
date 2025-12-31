@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from src.core.license import license_manager
 from src.core.app_state import AppState
 from src.core.mt5_manager import MT5Manager
+from src.core.bot_manager import bot_manager
 from src.core.logger import logger as app_logger
 from src.core.manual_trade_state import ManualTradeState
 from src.core.market_data_updater import MarketDataUpdater
@@ -50,6 +51,13 @@ class BazaApp:
         
         # Инициализация состояния приложения
         self.app_state = AppState()
+
+        # Hook bot_manager updates to UI
+        try:
+            self.bot_manager = bot_manager
+            self.bot_manager.on_update = lambda: self.root.after(0, self._on_bot_manager_update)
+        except Exception:
+            self.bot_manager = None
         
         # Событие для остановки бота
         self.stop_event = threading.Event()
@@ -229,6 +237,13 @@ class BazaApp:
                     self.app_state.mt5_connected = True
                     self.app_state.mt5_account_info = account_info
 
+                    # Запускаем синхронизацию сделок из MT5 в background (если доступно)
+                    try:
+                        if hasattr(self.app_state.mt5_manager, 'start_trade_sync'):
+                            self.app_state.mt5_manager.start_trade_sync()
+                    except Exception:
+                        pass
+
                     # Если баланс или equity изменились — обновляем AppState.stats и UI
                     if new_balance != old_balance or new_equity != old_equity:
                         # Записываем в статистику
@@ -241,9 +256,8 @@ class BazaApp:
                         except Exception:
                             pnl = 0.0
 
-                        self.app_state.stats['total_pnl'] = round(pnl, 2)
-                        # Для наглядности пометим today_pnl тем же значением (можно улучшить позже)
-                        self.app_state.stats['today_pnl'] = round(pnl, 2)
+                        # Сохраняем нереализованный P&L отдельно, не затирая суммарный реализованный PnL
+                        self.app_state.stats['unrealized_pnl'] = round(pnl, 2)
 
                         # Обновляем UI
                         self.app_state.update_mt5_status(True, account_info)
@@ -261,6 +275,22 @@ class BazaApp:
         thread = threading.Thread(target=monitor, daemon=True)
         thread.start()
         app_logger.info("MT5 monitoring started")
+
+    def _on_bot_manager_update(self):
+        """Callback when bot_manager stats change - sync to app_state and refresh UI."""
+        try:
+            if hasattr(self, 'bot_manager') and self.bot_manager:
+                # copy stats to app_state
+                try:
+                    self.app_state.stats.update(self.bot_manager.stats)
+                except Exception:
+                    pass
+                try:
+                    self.update_display()
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def _on_market_data_update(self):
         """Callback при обновлении рыночных данных."""
@@ -933,6 +963,15 @@ class BazaApp:
                       selectcolor='#1a1a1a', activebackground='#2a2a2a',
                       font=('Arial', 10), command=self._on_direction_change).pack(anchor='w', padx=20, pady=(0, 10))
         
+        # AI Chat button under direction block (larger, left)
+        self.btn_ai_chat = tk.Button(direction_frame, text="💬 Чат с аналитиком",
+                         command=self.open_ai_chat,
+                         font=('Arial', 11, 'bold'),
+                         bg='#4a90e2', fg='white',
+                         width=20, height=2,
+                         relief='flat', cursor='hand2')
+        self.btn_ai_chat.pack(anchor='w', padx=10, pady=(0, 10))
+        
         # Правая колонка - уровни и риск
         right_frame = tk.Frame(form_frame, bg='#1a1a1a')
         right_frame.pack(side='left', fill='y', padx=(10, 0))
@@ -1024,13 +1063,7 @@ class BazaApp:
         quick_action_frame = tk.Frame(right_frame, bg='#1a1a1a')
         quick_action_frame.pack(fill='x', pady=(10, 0))
 
-        self.btn_predict_quick = tk.Button(quick_action_frame, text="🔮 Predict",
-                           command=self.manual_predict,
-                           font=('Arial', 10, 'bold'),
-                           bg='#f39c12', fg='black',
-                           width=10, height=1,
-                           relief='flat', cursor='hand2')
-        self.btn_predict_quick.pack(side='left', padx=5)
+        # quick Predict removed; keep Open quick
 
         self.btn_open_quick = tk.Button(quick_action_frame, text="[OPEN] Open",
                         command=self.manual_open_trade,
@@ -1065,15 +1098,7 @@ class BazaApp:
         action_frame.pack(side='left', padx=(20, 0))
         action_frame.pack_propagate(False)
         
-        # Кнопка Predict (GPT)
-        self.btn_predict = tk.Button(action_frame, text="🔮 GPT Predict",
-                                    command=self.manual_predict,
-                                    font=('Arial', 11, 'bold'),
-                                    bg='#f39c12', fg='black',
-                                    width=12, height=2,
-                                    relief='flat', cursor='hand2',
-                                    state='normal')
-        self.btn_predict.pack(side='left', padx=5)
+        # Predict button removed from main actions (use AI Chat)
         
         # Кнопка открытия сделки
         self.btn_open_trade = tk.Button(action_frame, text="[OPEN] Open trade",
@@ -1332,6 +1357,72 @@ class BazaApp:
             self.log(f"[OK] AI прогноз: {bias_txt}, уверенность: {conf_txt}. {short_reason}")
         except Exception:
             self.log(f"[OK] AI forecast received: {prediction.market_bias}, confidence {prediction.confidence}")
+    
+    def open_ai_chat(self):
+        """Open a simple AI chat window for analyst/assistant consultations."""
+        try:
+            win = tk.Toplevel(self.root)
+            win.title("AI Analyst Chat")
+            win.geometry("600x400")
+            win.configure(bg='#1a1a1a')
+
+            chat_box = tk.Text(win, bg='#0f0f0f', fg='white', font=('Consolas', 11))
+            chat_box.pack(fill='both', expand=True, padx=10, pady=(10, 0))
+            chat_box.insert('end', "AI Analyst chat initialized. Type a question below and press Send.\n")
+            chat_box.config(state='disabled')
+
+            entry_frame = tk.Frame(win, bg='#1a1a1a')
+            entry_frame.pack(fill='x', padx=10, pady=10)
+
+            entry_var = tk.StringVar()
+            entry = tk.Entry(entry_frame, textvariable=entry_var, font=('Arial', 11), bg='#0f0f0f', fg='white')
+            entry.pack(side='left', fill='x', expand=True, padx=(0, 5))
+
+            def send_message():
+                msg = entry_var.get().strip()
+                if not msg:
+                    return
+                entry_var.set('')
+                chat_box.config(state='normal')
+                chat_box.insert('end', f"You: {msg}\n")
+                chat_box.see('end')
+
+                # Try to use manual_controller.ai_analyzer to produce response
+                response = None
+                try:
+                    if hasattr(self, 'manual_controller') and self.manual_controller and getattr(self.manual_controller, 'ai_analyzer', None):
+                        # Build simple context from manual fields
+                        context = {
+                            'text': msg,
+                            'symbol': getattr(self, 'manual_symbol', tk.StringVar(value='')).get(),
+                            'entry_price': getattr(self, 'manual_entry', tk.DoubleVar(value=0)).get(),
+                            'stop_loss': getattr(self, 'manual_sl', tk.DoubleVar(value=0)).get(),
+                            'take_profit': getattr(self, 'manual_tp', tk.DoubleVar(value=0)).get(),
+                            'direction': getattr(self, 'manual_direction', tk.StringVar(value='')).get()
+                        }
+                        ai = self.manual_controller.ai_analyzer
+                        try:
+                            pred = ai.analyze_manual_trade(context)
+                            if pred:
+                                response = f"AI Prediction: {getattr(pred, 'market_bias', '')}, confidence {getattr(pred, 'confidence', '')}\nComment: {getattr(pred, 'comment', '')}"
+                        except Exception:
+                            response = None
+
+                except Exception:
+                    response = None
+
+                if not response:
+                    response = "AI not available or no prediction returned."
+
+                chat_box.insert('end', f"Analyst: {response}\n\n")
+                chat_box.config(state='disabled')
+                chat_box.see('end')
+
+            send_btn = tk.Button(entry_frame, text='Send', command=send_message, font=('Arial', 11, 'bold'), bg='#00d4aa', fg='black')
+            send_btn.pack(side='right')
+
+        except Exception as e:
+            self.log(f"[ERROR] open_ai_chat failed: {e}")
     
     def manual_open_trade(self):
         """Открытие ручной сделки с исправлением ошибки 'dict has no attribute 'source'."""
@@ -1850,6 +1941,71 @@ class BazaApp:
         if stats_file.exists():
             with open(stats_file, 'r') as f:
                 self.app_state.stats.update(json.load(f))
+        
+        # Если локальной истории сделок нет — попробуем подтянуть из терминала MT5.
+        # Часто мониторинг MT5 стартует в фоновом потоке и соединение ещё не установлено,
+        # поэтому запускаем фоновую задачу с ожиданием подключения и повторным получением истории.
+        trades_file = Path('data/trades_history.json')
+
+        def compute_from_file():
+            try:
+                if trades_file.exists():
+                    with open(trades_file, 'r', encoding='utf-8') as f:
+                        trades = json.load(f)
+
+                    total_pnl = sum(t.get('pnl', 0) for t in trades)
+                    total_trades = len(trades)
+                    wins = sum(1 for t in trades if t.get('pnl', 0) > 0)
+                    losses = sum(1 for t in trades if t.get('pnl', 0) <= 0)
+                    today = datetime.now().strftime('%Y-%m-%d')
+                    today_pnl = sum(t.get('pnl', 0) for t in trades if t.get('date') == today)
+
+                    self.app_state.stats['total_pnl'] = round(float(total_pnl), 2)
+                    self.app_state.stats['today_pnl'] = round(float(today_pnl), 2)
+                    self.app_state.stats['trades'] = total_trades
+                    self.app_state.stats['total_trades'] = total_trades
+                    self.app_state.stats['wins'] = wins
+                    self.app_state.stats['losses'] = losses
+                    self.save_stats()
+                    # Обновляем отображение в UI
+                    try:
+                        self.root.after(0, self.update_display)
+                    except Exception:
+                        pass
+            except Exception as e:
+                self.log(f"[ERROR] compute_from_file failed: {e}")
+
+        # Если файла нет — попробуем дождаться подключения MT5 и скачать историю.
+        if not trades_file.exists():
+            def fetch_when_connected():
+                try:
+                    # Ожидаем подключение до 15 секунд
+                    wait_secs = 15
+                    interval = 1
+                    waited = 0
+                    while waited < wait_secs:
+                        if self.app_state.mt5_manager and self.app_state.mt5_manager.is_connected():
+                            try:
+                                trades = self.app_state.mt5_manager.get_trade_history(days=365)
+                            except Exception:
+                                trades = []
+
+                            if trades:
+                                trades_file.parent.mkdir(exist_ok=True)
+                                with open(trades_file, 'w', encoding='utf-8') as f:
+                                    json.dump(trades, f, indent=2, ensure_ascii=False)
+                                compute_from_file()
+                            return
+
+                        waited += interval
+                        threading.Event().wait(interval)
+                except Exception as e:
+                    self.log(f"[ERROR] fetch_when_connected failed: {e}")
+
+            threading.Thread(target=fetch_when_connected, daemon=True).start()
+        else:
+            # Файл есть — сразу пересчитываем агрегаты
+            compute_from_file()
     
     def save_stats(self):
         """Сохранение статистики."""

@@ -54,6 +54,7 @@ class BotManager:
             'total_pnl': 0.0,
             'today_pnl': 0.0,
             'total_trades': 0,
+            'trades': 0,
             'wins': 0,
             'losses': 0,
             'open_positions': []
@@ -207,7 +208,9 @@ class BotManager:
         pnl = trade.get('pnl', 0)
         self.stats['total_pnl'] += pnl
         self.stats['balance'] += pnl
+        # Обновляем счётчики сделок (синхронизируем оба ключа для совместимости)
         self.stats['total_trades'] += 1
+        self.stats['trades'] = self.stats.get('trades', 0) + 1
         
         if pnl > 0:
             self.stats['wins'] += 1
@@ -222,6 +225,15 @@ class BotManager:
         # Сохраняем в файл
         self.save_trade(trade)
         self.save_stats()
+        # Вызов callback для обновления UI / внешних обработчиков
+        try:
+            if self.on_update and callable(self.on_update):
+                try:
+                    self.on_update()
+                except Exception:
+                    pass
+        except Exception:
+            pass
     
     def save_trade(self, trade: dict):
         """Сохранение сделки в файл."""
@@ -230,12 +242,30 @@ class BotManager:
         
         trades = []
         if trades_file.exists():
-            with open(trades_file, 'r') as f:
-                trades = json.load(f)
-        
+            try:
+                with open(trades_file, 'r', encoding='utf-8') as f:
+                    trades = json.load(f)
+            except Exception:
+                trades = []
+
+        # Защита от дубликатов по ticket/id
+        existing_ids = set()
+        for t in trades:
+            try:
+                if t.get('id') is not None:
+                    existing_ids.add(int(t.get('id')))
+            except Exception:
+                continue
+
+        try:
+            if trade.get('id') is not None and int(trade.get('id')) in existing_ids:
+                return
+        except Exception:
+            pass
+
         trades.append(trade)
-        
-        with open(trades_file, 'w') as f:
+
+        with open(trades_file, 'w', encoding='utf-8') as f:
             json.dump(trades, f, indent=2, ensure_ascii=False)
     
     def save_stats(self):
@@ -253,17 +283,33 @@ class BotManager:
         if stats_file.exists():
             with open(stats_file, 'r') as f:
                 saved_stats = json.load(f)
+                # Обновим базовые значения из сохранённого файла
                 self.stats.update(saved_stats)
+
+        # Попробуем загрузить историю сделок и пересчитать агрегаты (если файл есть)
         
-        # Сбрасываем today_pnl если новый день
         trades_file = Path('data/trades_history.json')
         if trades_file.exists():
             with open(trades_file, 'r') as f:
                 trades = json.load(f)
-            
+
+            # Пересчитываем суммарный PnL, число сделок, wins/losses и PnL за сегодня
+            total_pnl = sum(t.get('pnl', 0) for t in trades)
+            total_trades = len(trades)
+            wins = sum(1 for t in trades if t.get('pnl', 0) > 0)
+            losses = sum(1 for t in trades if t.get('pnl', 0) <= 0)
+
             today = datetime.now().strftime('%Y-%m-%d')
-            today_pnl = sum(t['pnl'] for t in trades if t.get('date') == today)
-            self.stats['today_pnl'] = today_pnl
+            today_pnl = sum(t.get('pnl', 0) for t in trades if t.get('date') == today)
+
+            # Обновляем статистику
+            self.stats['total_pnl'] = round(float(total_pnl), 2)
+            self.stats['today_pnl'] = round(float(today_pnl), 2)
+            # Сохраняем обе вариации ключей для совместимости с GUI и API
+            self.stats['total_trades'] = total_trades
+            self.stats['trades'] = total_trades
+            self.stats['wins'] = wins
+            self.stats['losses'] = losses
     
     def get_status_info(self) -> dict:
         """Информация о статусе для API."""

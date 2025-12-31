@@ -121,17 +121,32 @@ class MT5Connector:
                     # Рассчитываем P&L для закрытых позиций
                     pnl = 0
                     if deal.profit is not None:
-                        pnl = deal.profit
-                    
+                        try:
+                            pnl = float(deal.profit)
+                        except Exception:
+                            pnl = 0.0
+
+                    # deal.time may be numeric timestamp or datetime
+                    try:
+                        t = deal.time
+                        if isinstance(t, int) or isinstance(t, float):
+                            from datetime import datetime
+                            dt = datetime.fromtimestamp(int(t))
+                        else:
+                            dt = t
+                    except Exception:
+                        from datetime import datetime
+                        dt = datetime.now()
+
                     trades.append({
-                        'id': deal.ticket,
-                        'date': deal.time.strftime('%Y-%m-%d'),
-                        'time': deal.time.strftime('%H:%M'),
+                        'id': int(deal.ticket),
+                        'date': dt.strftime('%Y-%m-%d'),
+                        'time': dt.strftime('%H:%M'),
                         'instrument': deal.symbol,
                         'direction': 'BUY' if deal.type == mt5.DEAL_TYPE_BUY else 'SELL',
                         'pnl': round(pnl, 2),
-                        'volume': deal.volume,
-                        'price': deal.price
+                        'volume': float(deal.volume),
+                        'price': float(deal.price)
                     })
             
             return trades
