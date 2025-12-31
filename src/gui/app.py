@@ -1399,12 +1399,16 @@ class BazaApp:
             chat_box.config(state='disabled')
 
             entry_frame = tk.Frame(win, bg='#1a1a1a')
-            entry_frame.pack(fill='x', padx=10, pady=10)
+            entry_frame.pack(side='bottom', fill='x', padx=10, pady=10)
 
             entry_var = tk.StringVar()
-            entry = tk.Entry(entry_frame, textvariable=entry_var, font=('Arial', 11), bg='#0f0f0f', fg='white')
+            entry = tk.Entry(entry_frame, textvariable=entry_var, font=('Arial', 11), bg='#0f0f0f', fg='white', insertbackground='white')
             entry.pack(side='left', fill='x', expand=True, padx=(0, 5))
-            entry.focus_set()
+            entry.config(state='normal')
+            # ensure input is visible and focused
+            win.update_idletasks()
+            entry.focus_force()
+            entry.lift()
             entry.bind('<Return>', lambda e: send_message())
 
             def send_message():
@@ -1504,6 +1508,8 @@ class BazaApp:
                     chat_box.see('end')
 
                 threading.Thread(target=do_query, daemon=True).start()
+                # return focus to entry when background thread completes
+                entry.focus_force()
 
             send_btn = tk.Button(entry_frame, text='Send', command=send_message, font=('Arial', 11, 'bold'), bg='#00d4aa', fg='black')
             send_btn.pack(side='right')
