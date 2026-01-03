@@ -1066,19 +1066,7 @@ class BazaApp:
         risk_spin.pack(padx=10, pady=(0, 10), fill='x')
         risk_spin.bind('<FocusOut>', self._on_price_change)
 
-        # Быстрые действия (дублирующие кнопки, видимые рядом с полями)
-        quick_action_frame = tk.Frame(right_frame, bg='#1a1a1a')
-        quick_action_frame.pack(fill='x', pady=(10, 0))
-
-        # quick Predict removed; keep Open quick
-
-        self.btn_open_quick = tk.Button(quick_action_frame, text="[OPEN] Open",
-                        command=self.manual_open_trade,
-                        font=('Arial', 10, 'bold'),
-                        bg='#00d4aa', fg='black',
-                        width=10, height=1,
-                        relief='flat', cursor='hand2', state='disabled')
-        self.btn_open_quick.pack(side='left', padx=5)
+        # Быстрая кнопка удалена - используем только большие кнопки справа
         
         # Кнопки
         buttons_frame = tk.Frame(manual_frame, bg='#1a1a1a')
@@ -1225,8 +1213,7 @@ class BazaApp:
                 valid = False
 
             # Маленькая кнопка удалена - используем только большие кнопки
-            if hasattr(self, 'btn_open_quick'):
-                self.btn_open_quick.config(state='normal' if valid else 'disabled')
+            # Быстрая кнопка удалена - обновляем только большую кнопку
             if hasattr(self, 'btn_big_open'):
                 self.btn_big_open.config(state='normal' if valid else 'disabled')
 
