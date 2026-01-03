@@ -904,7 +904,7 @@ class BazaApp:
 
         tk.Label(header, text="[MANUAL] MANUAL TRADING (EXPERIMENTAL)",
                 font=('Arial', 14, 'bold'),
-                bg='#2a2a2a', fg='#00d4aa').pack(pady=10)
+                bg='#2a2a2a', fg='#00ffcc').pack(pady=10)
 
         # Основная форма
         form_frame = tk.Frame(manual_frame, bg='#1a1a1a')
@@ -969,14 +969,15 @@ class BazaApp:
                       selectcolor='#1a1a1a', activebackground='#2a2a2a',
                       font=('Arial', 10), command=self._on_direction_change).pack(anchor='w', padx=20, pady=(0, 10))
         
-        # AI Chat button under direction block (larger, left)
+        # AI Chat button under direction block - улучшенный дизайн
         self.btn_ai_chat = tk.Button(direction_frame, text="💬 Чат с аналитиком",
                          command=self.open_ai_chat,
-                         font=('Arial', 11, 'bold'),
-                         bg='#4a90e2', fg='white',
-                         width=20, height=2,
-                         relief='flat', cursor='hand2')
-        self.btn_ai_chat.pack(anchor='w', padx=10, pady=(0, 10))
+                         font=('Arial', 12, 'bold'),
+                         bg='#5b7dff', fg='white',
+                         width=22, height=2,
+                         relief='flat', cursor='hand2',
+                         bd=0, activebackground='#7a96ff')
+        self.btn_ai_chat.pack(anchor='w', padx=10, pady=(5, 10))
         
         # Правая колонка - уровни и риск
         right_frame = tk.Frame(form_frame, bg='#1a1a1a')
@@ -1098,36 +1099,24 @@ class BazaApp:
                                        bg='#1a1a1a', fg='#888888')
         self.manual_rr_label.pack(anchor='w', pady=2)
         
-        # Правая часть - кнопки и мини-логи
-        action_frame = tk.Frame(buttons_frame, bg='#1a1a1a')
-        # Размещаем блок кнопок слева в рамках buttons_frame, рядом с расчетами
-        action_frame.pack(side='left', padx=(20, 0))
-        action_frame.pack_propagate(False)
-        
         # Predict button removed from main actions (use AI Chat)
         
-        # Кнопка открытия сделки
-        self.btn_open_trade = tk.Button(action_frame, text="[OPEN] Open trade",
-                                       command=self.manual_open_trade,
-                                       font=('Arial', 11, 'bold'),
-                                       bg='#00d4aa', fg='black',
-                                       width=15, height=2,
-                                       relief='flat', cursor='hand2',
-                                       state='disabled')
-        self.btn_open_trade.pack(side='left', padx=5)
-        
-        # Большая панель быстрых действий (Open / Close) — располагается между кнопками и мини-логами
+        # Большая панель быстрых действий (Open / Close) — улучшенный дизайн
         trade_control_frame = tk.Frame(manual_container, bg='#1a1a1a')
-        trade_control_frame.pack(side='right', padx=(10, 0), pady=(10, 0))
+        trade_control_frame.pack(side='right', padx=(20, 10), pady=(10, 0))
 
-        self.btn_big_open = tk.Button(trade_control_frame, text='ОТКРЫТЬ\nСДЕЛКУ', command=self.manual_open_trade,
-                          font=('Arial', 12, 'bold'), bg='#00d4aa', fg='black',
-                          width=14, height=3, relief='flat', cursor='hand2', state='disabled')
-        self.btn_big_open.pack(padx=5, pady=(0, 8))
+        # Современная кнопка ОТКРЫТЬ с градиентным стилем
+        self.btn_big_open = tk.Button(trade_control_frame, text='▲ ОТКРЫТЬ\nСДЕЛКУ', command=self.manual_open_trade,
+                          font=('Arial', 13, 'bold'), bg='#00d4aa', fg='#ffffff',
+                          width=16, height=4, relief='flat', cursor='hand2', state='disabled',
+                          bd=0, highlightthickness=0, activebackground='#00ffcc')
+        self.btn_big_open.pack(padx=5, pady=(0, 15))
 
-        self.btn_big_close = tk.Button(trade_control_frame, text='ЗАКРЫТЬ\nСДЕЛКУ', command=self.manual_close_trade,
-                           font=('Arial', 12, 'bold'), bg='#ff5c5c', fg='black',
-                           width=14, height=3, relief='flat', cursor='hand2', state='disabled')
+        # Современная кнопка ЗАКРЫТЬ с градиентным стилем
+        self.btn_big_close = tk.Button(trade_control_frame, text='▼ ЗАКРЫТЬ\nСДЕЛКУ', command=self.manual_close_trade,
+                           font=('Arial', 13, 'bold'), bg='#ff5c5c', fg='#ffffff',
+                           width=16, height=4, relief='flat', cursor='hand2', state='disabled',
+                           bd=0, highlightthickness=0, activebackground='#ff7777')
         self.btn_big_close.pack(padx=5)
         # Мини-логи правее кнопок — делаем дочерним элементом manual_container
         mini_logs_frame = customtkinter.CTkFrame(manual_container, height=800, width=520, fg_color="#1a1a1a")
@@ -1235,8 +1224,7 @@ class BazaApp:
             except Exception:
                 valid = False
 
-            if hasattr(self, 'btn_open_trade'):
-                self.btn_open_trade.config(state='normal' if valid else 'disabled')
+            # Маленькая кнопка удалена - используем только большие кнопки
             if hasattr(self, 'btn_open_quick'):
                 self.btn_open_quick.config(state='normal' if valid else 'disabled')
             if hasattr(self, 'btn_big_open'):
@@ -1849,57 +1837,66 @@ class BazaApp:
         btn_frame = tk.Frame(control, bg='#2a2a2a')
         btn_frame.pack(pady=15)
         
+        # Улучшенный дизайн кнопки СТАРТ с градиентным эффектом
         self.btn_start = tk.Button(btn_frame, text="▶ СТАРТ", 
                                    command=self.start_bot,
-                                   font=('Arial', 11, 'bold'),
-                                   bg='#00d4aa', fg='black',
-                                   width=12, height=2,
-                                   relief='flat', cursor='hand2')
-        self.btn_start.pack(side='left', padx=5)
+                                   font=('Arial', 12, 'bold'),
+                                   bg='#00d4aa', fg='#ffffff',
+                                   width=14, height=2,
+                                   relief='flat', cursor='hand2',
+                                   bd=0, activebackground='#00ffcc')
+        self.btn_start.pack(side='left', padx=8)
         
+        # Улучшенный дизайн кнопки ПАУЗА
         self.btn_pause = tk.Button(btn_frame, text="⏸ ПАУЗА",
                                    command=self.pause_bot,
-                                   font=('Arial', 11, 'bold'),
-                                   bg='#f39c12', fg='black',
-                                   width=12, height=2,
+                                   font=('Arial', 12, 'bold'),
+                                   bg='#f39c12', fg='#ffffff',
+                                   width=14, height=2,
                                    relief='flat', cursor='hand2',
-                                   state='disabled')
-        self.btn_pause.pack(side='left', padx=5)
+                                   state='disabled',
+                                   bd=0, activebackground='#ffb347')
+        self.btn_pause.pack(side='left', padx=8)
         
+        # Улучшенный дизайн кнопки СТОП
         self.btn_stop = tk.Button(btn_frame, text="⏹ СТОП",
                                   command=self.stop_bot,
-                                  font=('Arial', 11, 'bold'),
-                                  bg='#ff4757', fg='white',
-                                  width=12, height=2,
+                                  font=('Arial', 12, 'bold'),
+                                  bg='#ff4757', fg='#ffffff',
+                                  width=14, height=2,
                                   relief='flat', cursor='hand2',
-                                  state='disabled')
-        self.btn_stop.pack(side='left', padx=5)
+                                  state='disabled',
+                                  bd=0, activebackground='#ff6b7a')
+        self.btn_stop.pack(side='left', padx=8)
         
-        # Кнопка активации
+        # Улучшенная кнопка активации с современным дизайном
         self.btn_activate = tk.Button(btn_frame, text="🔑 Ключ",
                                       command=self.show_activation_dialog,
-                                      font=('Arial', 10),
-                                      bg='#3a3a3a', fg='white',
-                                      width=8, height=2,
-                                      relief='flat', cursor='hand2')
-        self.btn_activate.pack(side='left', padx=20)
+                                      font=('Arial', 11, 'bold'),
+                                      bg='#6c63ff', fg='white',
+                                      width=10, height=2,
+                                      relief='flat', cursor='hand2',
+                                      bd=0, activebackground='#8a82ff')
+        self.btn_activate.pack(side='left', padx=15)
         
-        # Кнопка MT5
+        # Улучшенная кнопка MT5
         self.btn_mt5 = tk.Button(btn_frame, text="[MT5] MT5",
                                  command=self.show_mt5_dialog,
-                                 font=('Arial', 10),
-                                 bg='#5a5a5a', fg='white',
-                                 width=8, height=2,
-                                 relief='flat', cursor='hand2')
+                                 font=('Arial', 11, 'bold'),
+                                 bg='#34495e', fg='white',
+                                 width=10, height=2,
+                                 relief='flat', cursor='hand2',
+                                 bd=0, activebackground='#4a6278')
         self.btn_mt5.pack(side='left', padx=5)
         
-        # Кнопка настроек
+        # Улучшенная кнопка настроек
         self.btn_settings = tk.Button(btn_frame, text="⚙ Настройки",
                                       command=self.show_settings_dialog,
-                                      font=('Arial', 10),
-                                      bg='#4a4a4a', fg='white',
-                                      width=10, height=2,
-                                      relief='flat', cursor='hand2')
+                                      font=('Arial', 11, 'bold'),
+                                      bg='#34495e', fg='white',
+                                      width=12, height=2,
+                                      relief='flat', cursor='hand2',
+                                      bd=0, activebackground='#4a6278')
         self.btn_settings.pack(side='left', padx=5)
         
         # Режим (фиксирован на Live)
@@ -1989,15 +1986,17 @@ class BazaApp:
             print(f"Error inserting log message: {e}")
     
     def create_stat_card(self, parent, title, value):
-        """Создание карточки статистики."""
-        card = tk.Frame(parent, bg='#2a2a2a', relief='flat')
+        """Создание карточки статистики с улучшенным дизайном."""
+        card = tk.Frame(parent, bg='#2d3e50', relief='flat', bd=0)
         
-        tk.Label(card, text=title, font=('Arial', 10),
-                bg='#2a2a2a', fg='#888888').pack(pady=(10, 0))
+        # Заголовок с градиентным цветом
+        tk.Label(card, text=title, font=('Arial', 11, 'bold'),
+                bg='#2d3e50', fg='#95a5a6').pack(pady=(12, 0))
         
+        # Значение - более крупный и контрастный шрифт
         value_label = tk.Label(card, text=value, font=('Arial', 18, 'bold'),
-                              bg='#2a2a2a', fg='white')
-        value_label.pack(pady=(0, 10))
+                              bg='#2d3e50', fg='#ecf0f1')
+        value_label.pack(pady=(0, 12))
         
         card.value_label = value_label
         return card
@@ -2081,9 +2080,7 @@ class BazaApp:
             self.status_dot.config(fg='#f39c12')
             self.status_label.config(text='Пауза')
             self.btn_pause.config(text='▶ ПРОДОЛЖИТЬ')
-            # Блокируем manual trading
-            if hasattr(self, 'btn_open_trade'):
-                self.btn_open_trade.config(state='disabled')
+            # Блокируем manual trading (маленькая кнопка удалена)
             if hasattr(self, 'btn_predict'):
                 self.btn_predict.config(state='disabled')
         else:
@@ -2093,8 +2090,7 @@ class BazaApp:
             self.btn_pause.config(state='disabled', text='⏸ ПАУЗА')
             self.btn_stop.config(state='disabled')
             # Разблокируем manual trading
-            if hasattr(self, 'btn_open_trade'):
-                self.btn_open_trade.config(state='normal')
+            # Маленькая кнопка удалена
             if hasattr(self, 'btn_predict'):
                 self.btn_predict.config(state='normal')
     
