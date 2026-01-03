@@ -10,8 +10,9 @@ import argparse
 import sys
 from dotenv import load_dotenv
 
-# Настройка UTF-8 для консоли
-sys.stdout.reconfigure(encoding='utf-8')
+# Настройка UTF-8 для консоли (только если stdout доступен)
+if sys.stdout is not None:
+    sys.stdout.reconfigure(encoding='utf-8')
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -24,7 +25,7 @@ def main():
     args = parser.parse_args()
     
     if args.backtest:
-        # Бэктест
+        # Бэктест - полная реальная логика стратегии
         from src.backtest.portfolio_backtester import run_backtest
         run_backtest(args.year)
     else:

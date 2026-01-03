@@ -32,6 +32,9 @@ def build():
         '--hidden-import=src.strategies',
         '--hidden-import=src.ml',
         '--hidden-import=src.ai',
+        '--hidden-import=src.ai.news_fetcher',
+        '--hidden-import=requests',
+        '--hidden-import=urllib3',
         '--clean',
     ]
 

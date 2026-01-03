@@ -1,10 +1,25 @@
-# 🤖 BAZA Trading Bot v1.0
+# 🤖 BAZA Trading Bot v1.2.0
 
 Автоматическая торговая система на основе Smart Money Concepts (SMC).
 
 ![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)
 ![License](https://img.shields.io/badge/License-Proprietary-red.svg)
-![Status](https://img.shields.io/badge/Status-Ready%20for%20Demo-brightgreen.svg)
+![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen.svg)
+![Version](https://img.shields.io/badge/Version-1.2.0-blue.svg)
+
+---
+
+## 📚 Документация
+
+**📖 [Полная документация](docs/README.md)** - структурированная документация всего проекта
+
+### Быстрые ссылки:
+- 🚀 [Установка и запуск](#-запуск)
+- 📊 [Результаты бэктеста](#-результаты-бэктеста-2023-2025)
+- 🤖 [AI функции](docs/QUICKSTART_SCREENSHOT.md)
+- 💼 [Ручная торговля](MANUAL_TRADING_README.md)
+- 🏗️ [Архитектура](ARCHITECTURE_2.0.md)
+- 🐛 [История изменений](docs/BUGFIXES.md)
 
 ---
 
@@ -74,6 +89,21 @@ pip install -r requirements.txt
 
 GPT фильтр проверяет экономические новости перед открытием сделок.
 
+### 🆕 NEW: AI Analyst с анализом скриншотов! 📸
+
+**Загружайте скриншоты графиков MT5 прямо в чат с AI аналитиком!**
+
+- 📊 Детальный технический анализ графиков
+- 🎯 Определение трендов и паттернов
+- 📈 Рекомендации по точкам входа/выхода
+- ⚠️ Оценка рисков
+
+**Подробнее:** [AI_SCREENSHOT_ANALYSIS.md](AI_SCREENSHOT_ANALYSIS.md)
+
+---
+
+### Настройка GPT
+
 1. **Получите API ключ OpenAI:**
    - Перейдите на [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)
    - Создайте новый API ключ
@@ -89,7 +119,9 @@ GPT фильтр проверяет экономические новости п
    pip install openai python-dotenv
    ```
 
-**Стоимость:** ~$0.001 за запрос (GPT-4o-mini модель)
+**Стоимость:** 
+- GPT-4o-mini (фильтр новостей): ~$0.001 за запрос
+- GPT-4o (анализ скриншотов): ~$0.01-0.03 за запрос
 
 ## 🎮 Использование
 

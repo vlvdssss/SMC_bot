@@ -6,13 +6,12 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[('config', 'config'), ('src', 'src')],
-    hiddenimports=['src.gui.app', 'src.live.live_trader', 'src.strategies', 'src.ml', 'src.ai'],
+    hiddenimports=['src.gui.app', 'src.live.live_trader', 'src.strategies', 'src.ml', 'src.ai', 'src.ai.news_fetcher', 'requests', 'urllib3'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
     noarchive=False,
-    optimize=0,
 )
 pyz = PYZ(a.pure)
 

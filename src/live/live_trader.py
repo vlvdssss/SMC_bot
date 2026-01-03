@@ -24,17 +24,17 @@ except ImportError:
     ML_AVAILABLE = False
 
 class LiveTrader:
-    def __init__(self, config_dir: str = 'config', enable_trading: bool = False, enable_gpt: bool = True):
+    def __init__(self, config_dir: str = 'config', enable_trading: bool = False, enable_gpt: bool = True) -> None:
         """
         Args:
             config_dir: Путь к папке с конфигами
             enable_trading: True = реальная торговля, False = только мониторинг
             enable_gpt: True = использовать GPT фильтр, False = отключить
         """
-        self.config_dir = config_dir
-        self.enable_trading = enable_trading
-        self.enable_gpt = enable_gpt
-        self.connected = False
+        self.config_dir: str = config_dir
+        self.enable_trading: bool = enable_trading
+        self.enable_gpt: bool = enable_gpt
+        self.connected: bool = False
         
         # Загрузка конфигов
         self.load_configs()
@@ -52,11 +52,11 @@ class LiveTrader:
         from src.core.executor import Executor
         self.executor = Executor(mt5_connector=self.mt5_connector)
     
-    def start(self):
+    def start(self) -> None:
         """Запуск трейдера (для совместимости)."""
         pass
     
-    def load_configs(self):
+    def load_configs(self) -> None:
         """Загрузка конфигурационных файлов."""
         config_path = Path(self.config_dir)
         

@@ -55,29 +55,34 @@ class AppState:
 
         logger.info("AppState initialized")
 
-    def update_mt5_status(self, connected: bool, account_info: dict = None):
+    def update_mt5_status(self, connected: bool, account_info: Optional[Dict[str, Any]] = None) -> None:
         """Обновление статуса MT5."""
         self.mt5_connected = connected
-        # account_info может быть dict с деталями или иногда простым login (int)
-        if account_info:
-            if isinstance(account_info, dict):
-                self.mt5_account_info = account_info
-                # безопасно получить баланс
-                try:
-                    self.stats['balance'] = float(account_info.get('balance', self.stats.get('balance', 100.0)))
-                except Exception:
-                    # если balance некорректен — не перезаписываем
-                    pass
-            else:
-                # если пришёл простой идентификатор (login), положим его в account_info как словарь
-                try:
-                    self.mt5_account_info = {'login': int(account_info)}
-                except Exception:
-                    self.mt5_account_info = {'info': str(account_info)}
+        
+        # Безопасная обработка account_info с различными типами входных данных
+        if account_info is None:
+            self.mt5_account_info = {}
+        elif isinstance(account_info, dict):
+            self.mt5_account_info = account_info.copy()  # Создаём копию для безопасности
+            # Безопасно получаем и обновляем баланс
+            try:
+                balance = account_info.get('balance')
+                if balance is not None:
+                    self.stats['balance'] = float(balance)
+            except (TypeError, ValueError) as e:
+                logger.warning(f"Invalid balance value in account_info: {e}")
+        elif isinstance(account_info, (int, str)):
+            # Если пришёл простой идентификатор (login), создаём словарь
+            try:
+                self.mt5_account_info = {'login': int(account_info)}
+            except (TypeError, ValueError) as e:
+                logger.warning(f"Cannot convert account_info to login: {e}")
+                self.mt5_account_info = {'info': str(account_info)}
         else:
+            logger.error(f"Invalid account_info type: {type(account_info)}")
             self.mt5_account_info = {}
 
-        logger.info(f"MT5 status updated: connected={connected}")
+        logger.info(f"MT5 status updated: connected={connected}, account={self.mt5_account_info.get('login', 'N/A')}")
 
     def is_mt5_ready(self) -> bool:
         """Проверка готовности MT5."""

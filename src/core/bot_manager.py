@@ -185,21 +185,24 @@ class BotManager:
             self.log(f"Error: {str(e)}")
             self.status = BotStatus.STOPPED
     
-    def log(self, message: str):
-        """Добавление лога."""
+    def log(self, message: str) -> None:
+        """Добавление сообщения в лог с автоматической очисткой старых записей."""
         timestamp = datetime.now().strftime("%H:%M:%S")
         log_entry = {
             'time': timestamp,
             'message': message
         }
         
+        # Добавляем запись
         self.logs.append(log_entry)
         
-        # Ограничиваем количество логов
+        # Обрезаем лог СРАЗУ при превышении лимита (исправление memory leak)
         if len(self.logs) > self.max_logs:
-            self.logs = self.logs[-self.max_logs:]
+            # Удаляем старые записи, оставляем только последние max_logs
+            excess = len(self.logs) - self.max_logs
+            self.logs = self.logs[excess:]
         
-        # Выводим в консоль тоже
+        # Выводим в консоль
         print(f"[{timestamp}] {message}")
     
     def add_trade(self, trade: dict):

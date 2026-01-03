@@ -102,11 +102,38 @@ class Executor:
                 "type_filling": self.mt5.ORDER_FILLING_IOC,
             }
 
+            # Отправляем ордер и проверяем результат
             result = self.mt5.order_send(request)
-            return result.retcode == self.mt5.TRADE_RETCODE_DONE
+            
+            if result is None:
+                print(f"[ERROR] order_send returned None for {symbol}")
+                return False
+            
+            # Проверяем код возврата
+            if result.retcode == self.mt5.TRADE_RETCODE_DONE:
+                print(f"[OK] Order executed: {symbol} {direction} {lot_size} lots at {price}")
+                return True
+            else:
+                # Логируем детали ошибки
+                error_desc = {
+                    self.mt5.TRADE_RETCODE_REJECT: "Request rejected",
+                    self.mt5.TRADE_RETCODE_CANCEL: "Request canceled",
+                    self.mt5.TRADE_RETCODE_INVALID: "Invalid request",
+                    self.mt5.TRADE_RETCODE_INVALID_VOLUME: "Invalid volume",
+                    self.mt5.TRADE_RETCODE_INVALID_PRICE: "Invalid price",
+                    self.mt5.TRADE_RETCODE_NO_MONEY: "Not enough money",
+                }.get(result.retcode, f"Unknown error code: {result.retcode}")
+                
+                print(f"[ERROR] Order failed: {error_desc}. Comment: {result.comment}")
+                return False
 
+        except AttributeError as e:
+            print(f"[ERROR] MT5 attribute error (check if MT5 is initialized): {e}")
+            return False
         except Exception as e:
-            print(f"Live trade execution error: {e}")
+            print(f"[ERROR] Live trade execution error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def open_position(self, signal: dict, lot_size: float, current_price: float,

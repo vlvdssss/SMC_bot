@@ -13,14 +13,13 @@ import sys
 import os
 
 # Add src to path if running standalone
-if __name__ == '__main__':
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from strategies.xauusd_strategy import StrategyXAUUSD
-from strategies.eurusd_strategy import StrategyEURUSD_SMC_Retracement
-from core.data_loader import DataLoader
-from core.broker_sim import BrokerSim
-from core.executor import Executor
+from src.strategies.xauusd_strategy import StrategyXAUUSD
+from src.strategies.eurusd_strategy import StrategyEURUSD_SMC_Retracement
+from src.core.data_loader import DataLoader
+from src.core.broker_sim import BrokerSim
+from src.core.executor import Executor
 
 
 class PortfolioBacktester:
@@ -84,6 +83,31 @@ class PortfolioBacktester:
                 'total_profit': 0,
                 'max_dd_amount': 0
             }
+
+
+def run_backtest(year: int):
+    """Wrapper function to run backtest for specified year"""
+    backtester = PortfolioBacktester()
+    start_date = f'{year}-01-01'
+    end_date = f'{year}-12-31'
+    
+    print(f"\n{'='*60}")
+    print(f"Running Portfolio Backtest for {year}")
+    print(f"{'='*60}\n")
+    
+    result = backtester.run_backtest(start_date, end_date)
+    
+    print(f"\n{'='*60}")
+    print(f"BACKTEST RESULTS FOR {year}")
+    print(f"{'='*60}")
+    print(f"Initial Balance: ${result['initial_balance']:.2f}")
+    print(f"Final Balance: ${result['final_balance']:.2f}")
+    print(f"Total Profit: ${result['total_profit']:.2f}")
+    print(f"ROI: {result['roi']:.2f}%")
+    print(f"Total Trades: {result['trades']}")
+    print(f"Win Rate: {result['win_rate']:.2f}%")
+    print(f"Max Drawdown: {result['max_dd']:.2f}% (${result['max_dd_amount']:.2f})")
+    print(f"{'='*60}\n")
 
 
 if __name__ == '__main__':

@@ -82,7 +82,7 @@ class RiskManager:
         
         return self.can_open_position(signal.get('instrument', 'UNKNOWN'), lot_size, account_balance)
     
-    def update_daily_stats(self, pnl: float):
+    def update_daily_stats(self, pnl: float) -> None:
         """Обновление дневной статистики"""
         today = datetime.now().date()
         
@@ -93,11 +93,11 @@ class RiskManager:
         self.daily_trades[today] += 1
         self.daily_pnl[today] += pnl
     
-    def position_opened(self):
+    def position_opened(self) -> None:
         """Уведомление об открытии позиции"""
         self.open_positions += 1
     
-    def position_closed(self):
+    def position_closed(self) -> None:
         """Уведомление о закрытии позиции"""
         self.open_positions = max(0, self.open_positions - 1)
     

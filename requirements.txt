@@ -1,15 +1,19 @@
-# Core
+# Core dependencies
 MetaTrader5>=5.0.45
 pandas>=2.0.0
 numpy>=1.24.0
 pyyaml>=6.0
 python-dateutil>=2.8.2
-AI/ML
+requests>=2.31.0
+
+# AI/ML
 openai>=1.0.0
 python-dotenv>=1.0.0
 lightgbm>=4.0.0
 scikit-learn>=1.3.0
-GUI (встроен в Python, не нужно устанавливать)
-tkinter
-Сборка exe
+
+# GUI
+customtkinter>=5.0.0
+
+# Build
 pyinstaller>=6.0.0

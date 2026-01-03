@@ -168,8 +168,8 @@ class BazaApp:
         except Exception as e:
             print(f"GUI logging error: {e}")
     
-    def _init_mt5_manager(self):
-        """Инициализация MT5 Manager."""
+    def _init_mt5_manager(self) -> None:
+        """Инициализация MT5 Manager с улучшенной обработкой ошибок."""
         try:
             self.app_state.mt5_manager = MT5Manager()
             
@@ -183,17 +183,23 @@ class BazaApp:
                 else:
                     app_logger.warning(f"[WARNING] Failed to initialize MT5 with path: {terminal_path}, trying without path")
                     if not self.app_state.mt5_manager.initialize():
-                        app_logger.error("[ERROR] Failed to initialize MT5")
+                        app_logger.error("[ERROR] Failed to initialize MT5 without path")
                         self.app_state.mt5_manager = None
             else:
+                if terminal_path:
+                    app_logger.warning(f"[WARNING] Terminal path not found: {terminal_path}")
+                
                 if self.app_state.mt5_manager.initialize():
-                    app_logger.info("[OK] MT5 initialized without path")
+                    app_logger.info("[OK] MT5 initialized without path (auto-detect)")
                 else:
-                    app_logger.error("[ERROR] Failed to initialize MT5")
+                    app_logger.error("[ERROR] Failed to initialize MT5 - check if MetaTrader 5 is installed")
                     self.app_state.mt5_manager = None
                     
+        except ImportError as e:
+            app_logger.error(f"[ERROR] MetaTrader5 library not found: {e}")
+            self.app_state.mt5_manager = None
         except Exception as e:
-            app_logger.error(f"[ERROR] Failed to initialize MT5 Manager: {e}")
+            app_logger.error(f"[ERROR] Failed to initialize MT5 Manager: {e}", exc_info=True)
             self.app_state.mt5_manager = None
     
     def _start_mt5_monitoring(self):
@@ -1386,12 +1392,15 @@ class BazaApp:
             self.log(f"[OK] AI forecast received: {prediction.market_bias}, confidence {prediction.confidence}")
     
     def open_ai_chat(self):
-        """Open a simple AI chat window for analyst/assistant consultations."""
+        """Open a simple AI chat window for analyst/assistant consultations with screenshot support."""
         try:
             win = tk.Toplevel(self.root)
             win.title("AI Analyst Chat")
-            win.geometry("600x400")
+            win.geometry("700x500")
             win.configure(bg='#1a1a1a')
+
+            # Переменная для хранения изображения
+            current_image = {'path': None, 'base64': None}
 
             # Use grid so input area is always visible at bottom
             win.grid_rowconfigure(0, weight=1)
@@ -1401,6 +1410,7 @@ class BazaApp:
             chat_box = tk.Text(win, bg='#0f0f0f', fg='white', font=('Consolas', 11))
             chat_box.grid(row=0, column=0, sticky='nsew', padx=10, pady=(10, 5))
             chat_box.insert('end', "AI Analyst chat initialized. Type a question below and press Send.\n")
+            chat_box.insert('end', "\n📸 Tip: Click 'Attach Screenshot' to upload MT5 chart for visual analysis.\n")
             chat_box.config(state='disabled')
 
             entry_frame = tk.Frame(win, bg='#1a1a1a')
@@ -1415,6 +1425,38 @@ class BazaApp:
             entry.focus_force()
             entry.lift()
             entry.bind('<Return>', lambda e: send_message())
+
+            def attach_screenshot():
+                """Загрузка скриншота графика MT5 для анализа."""
+                from tkinter import filedialog
+                import base64
+                
+                file_path = filedialog.askopenfilename(
+                    title="Select MT5 Screenshot",
+                    filetypes=[("Image files", "*.png *.jpg *.jpeg *.bmp"), ("All files", "*.*")]
+                )
+                
+                if file_path:
+                    try:
+                        # Читаем и кодируем изображение в base64
+                        with open(file_path, 'rb') as image_file:
+                            image_data = base64.b64encode(image_file.read()).decode('utf-8')
+                        
+                        current_image['path'] = file_path
+                        current_image['base64'] = image_data
+                        
+                        # Отображаем в чате
+                        chat_box.config(state='normal')
+                        filename = file_path.split('/')[-1].split('\\')[-1]
+                        chat_box.insert('end', f"\n📸 Screenshot attached: {filename}\n", 'image_tag')
+                        chat_box.tag_config('image_tag', foreground='#00d4aa')
+                        chat_box.config(state='disabled')
+                        chat_box.see('end')
+                        
+                        self.log(f"[OK] Screenshot attached: {filename}")
+                    except Exception as e:
+                        self.log(f"[ERROR] Failed to load screenshot: {e}")
+                        messagebox.showerror("Error", f"Failed to load image: {e}")
 
             def send_message():
                 msg = entry_var.get().strip()
@@ -1438,6 +1480,26 @@ class BazaApp:
                     # Prefer controller AI prediction if available
                     response_text = None
                     try:
+                        # Получаем актуальные новости
+                        news_context = ""
+                        try:
+                            from src.ai.news_fetcher import get_news_fetcher
+                            news_fetcher = get_news_fetcher()
+                            
+                            # Определяем инструмент из контекста
+                            instrument = context.get('symbol', 'ALL')
+                            if 'XAU' in instrument.upper() or 'GOLD' in instrument.upper():
+                                instrument = 'XAUUSD'
+                            elif 'EUR' in instrument.upper():
+                                instrument = 'EURUSD'
+                            
+                            news_summary = news_fetcher.get_news_summary(instrument)
+                            news_context = f"\n\n📰 АКТУАЛЬНЫЕ НОВОСТИ:\n{news_summary}\n"
+                            logger.info(f"[OK] News context added to AI query")
+                        except Exception as e:
+                            logger.warning(f"Failed to fetch news: {e}")
+                            news_context = "\n\n📰 АКТУАЛЬНАЯ ИНФОРМАЦИЯ:\nСегодня " + datetime.now().strftime('%d.%m.%Y') + ". Актуальное время UTC: " + datetime.now().strftime('%H:%M') + "\n"
+                        
                         # If there is an LLM client configured, call it directly for free-form chat
                         llm = None
                         if getattr(self, 'manual_controller', None) and getattr(self.manual_controller, 'llm_client', None):
@@ -1454,15 +1516,53 @@ class BazaApp:
                                 if not model:
                                     model = 'gpt-4o-mini'
 
-                                # Build messages
-                                messages = [
-                                    {"role": "system", "content": "You are an experienced trading analyst. Answer concisely and helpfully."},
-                                    {"role": "user", "content": msg}
-                                ]
+                                # Build messages - check if we have an image
+                                if current_image['base64']:
+                                    # Use vision model for image analysis
+                                    model = 'gpt-4o'  # GPT-4 Vision support
+                                    
+                                    # Добавляем новости в контекст для анализа графика
+                                    chart_prompt = msg if msg else "Проанализируй этот график MT5. Дай технический анализ: тренд, уровни поддержки/сопротивления, паттерны, точки входа/выхода и оценку риска."
+                                    if news_context:
+                                        chart_prompt += news_context + "\nУчти эти новости в своем анализе графика."
+                                    
+                                    messages = [
+                                        {"role": "system", "content": f"You are an expert trading analyst with access to real-time market news. Today is {datetime.now().strftime('%d.%m.%Y %H:%M UTC')}. Analyze MT5 chart screenshots and provide detailed technical analysis including: trend direction, key support/resistance levels, chart patterns, entry/exit points, risk assessment, and consider economic news impact. Answer in Russian."},
+                                        {
+                                            "role": "user",
+                                            "content": [
+                                                {
+                                                    "type": "text",
+                                                    "text": chart_prompt
+                                                },
+                                                {
+                                                    "type": "image_url",
+                                                    "image_url": {
+                                                        "url": f"data:image/png;base64,{current_image['base64']}"
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                    # Clear image after sending
+                                    current_image['path'] = None
+                                    current_image['base64'] = None
+                                else:
+                                    # Normal text-only message with news context
+                                    system_prompt = f"You are an experienced trading analyst with access to real-time market data. Today is {datetime.now().strftime('%d.%m.%Y, %H:%M UTC')}. Provide accurate, helpful analysis based on current market conditions and economic events. Answer concisely in Russian."
+                                    
+                                    user_message = msg
+                                    if news_context and any(keyword in msg.lower() for keyword in ['новост', 'событи', 'календар', 'today', 'сегодн', 'что происходит', 'что сейчас']):
+                                        user_message += news_context
+                                    
+                                    messages = [
+                                        {"role": "system", "content": system_prompt},
+                                        {"role": "user", "content": user_message}
+                                    ]
 
                                 # Try OpenAI-like SDK call used elsewhere in project
                                 try:
-                                    resp = llm.chat.completions.create(model=model, messages=messages, max_tokens=800)
+                                    resp = llm.chat.completions.create(model=model, messages=messages, max_tokens=1500)
                                     content = None
                                     try:
                                         content = resp.choices[0].message.content
@@ -1516,6 +1616,11 @@ class BazaApp:
                 # return focus to entry when background thread completes
                 entry.focus_force()
 
+            # Кнопка для прикрепления скриншота
+            attach_btn = tk.Button(entry_frame, text='📸 Attach Screenshot', command=attach_screenshot, 
+                                  font=('Arial', 10), bg='#444444', fg='white', relief='raised', bd=2)
+            attach_btn.pack(side='left', padx=(0, 5))
+            
             send_btn = tk.Button(entry_frame, text='Send', command=send_message, font=('Arial', 11, 'bold'), bg='#00d4aa', fg='black')
             send_btn.pack(side='right')
 
