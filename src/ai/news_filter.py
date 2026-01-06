@@ -10,6 +10,7 @@ from openai import OpenAI
 from datetime import datetime
 from typing import Tuple
 from dotenv import load_dotenv
+from src.core.logger import logger
 
 # Загружаем переменные окружения из .env файла
 load_dotenv()
@@ -108,7 +109,7 @@ REASON: Сегодня заседание FOMC в 18:00 UTC, ожидаем вы
 
         except Exception as e:
             # Если ошибка API — разрешаем торговлю (fail-safe)
-            print(f"[GPT Filter] Error: {e}")
+            logger.error(f"GPT Filter Error: {e}")
             return (True, "UNKNOWN", f"API error: {str(e)}")
 
     def should_reduce_risk(self, instrument: str) -> Tuple[bool, float]:

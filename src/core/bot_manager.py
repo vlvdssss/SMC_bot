@@ -11,6 +11,15 @@ from datetime import datetime
 from typing import Optional, Callable
 import json
 from pathlib import Path
+from src.core.logger import logger
+
+# Мониторинг
+try:
+    from src.monitoring import TelegramNotifier, AlertManager
+    MONITORING_AVAILABLE = True
+except ImportError:
+    MONITORING_AVAILABLE = False
+    logger.warning("Monitoring modules not available")
 
 
 class BotStatus(Enum):
@@ -63,8 +72,56 @@ class BotManager:
         # Callback для обновления UI
         self.on_update: Optional[Callable] = None
         
+        # Система мониторинга
+        self.telegram = None
+        self.alert_manager = None
+        if MONITORING_AVAILABLE:
+            self._init_monitoring()
+        
         # Загружаем историю
         self.load_stats()
+    
+    def _init_monitoring(self):
+        """Инициализация системы мониторинга."""
+        try:
+            import yaml
+            config_path = Path('config/telegram.yaml')
+            
+            if not config_path.exists():
+                logger.info("Telegram config not found, notifications disabled")
+                return
+            
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            tg_config = config.get('telegram', {})
+            if tg_config.get('enabled', False):
+                self.telegram = TelegramNotifier(
+                    token=tg_config.get('bot_token'),
+                    chat_id=tg_config.get('chat_id')
+                )
+                self.notify_config = tg_config.get('notify', {})
+                logger.info("Telegram notifications enabled")
+                
+                # Инициализация AlertManager
+                self.alert_manager = AlertManager()
+                
+                # Связываем AlertManager с Telegram
+                def telegram_alert_handler(alert):
+                    if self.telegram and self.notify_config.get('alerts', True):
+                        min_level = tg_config.get('alert_min_level', 'WARNING')
+                        if alert.level.value in ['WARNING', 'ERROR', 'CRITICAL']:
+                            self.telegram.send_alert(
+                                alert_type=alert.type.value,
+                                message=alert.message,
+                                level=alert.level.value
+                            )
+                
+                self.alert_manager.add_handler(telegram_alert_handler)
+                logger.info("AlertManager linked to Telegram")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize monitoring: {e}")
     
     def start(self, mode: str = 'demo'):
         """Запуск бота."""
@@ -85,6 +142,12 @@ class BotManager:
         self.bot_thread.start()
         
         self.log(f"Bot started in {mode.upper()} mode")
+        
+        # Telegram уведомление
+        if self.telegram and self.notify_config.get('startup', True):
+            instruments = list(self.stats.get('instruments', ['XAUUSD', 'EURUSD']))
+            self.telegram.send_startup(mode=mode.upper(), instruments=instruments)
+        
         return True
     
     def stop(self):
@@ -100,6 +163,11 @@ class BotManager:
             self.bot_thread.join(timeout=5)
         
         self.log("Bot stopped")
+        
+        # Telegram уведомление
+        if self.telegram and self.notify_config.get('shutdown', True):
+            self.telegram.send_shutdown(stats=self.stats)
+        
         return True
     
     def pause(self):
@@ -138,36 +206,20 @@ class BotManager:
         try:
             # Импортируем необходимые компоненты
             from src.live.live_trader import LiveTrader
-            from src.mt5.connector import MT5Connector
-            from src.strategies.xauusd_strategy import StrategyXAUUSD
-            from src.strategies.eurusd_strategy import StrategyEURUSD_SMC_Retracement
-            from src.core.broker_sim import BrokerSim
-            import yaml
             
+            # Определяем режим торговли
             enable_trading = (mode == 'live')
             
-            # Загрузка конфига MT5
-            try:
-                with open('config/mt5.yaml', 'r', encoding='utf-8') as f:
-                    config = yaml.safe_load(f)
-                mt5_config = config['mt5']
-            except Exception as e:
-                self.log(f"Error loading MT5 config: {e}")
-                self.status = BotStatus.STOPPED
-                return
+            # Инициализация LiveTrader
+            # LiveTrader сам загружает конфиги, подключается к MT5, 
+            # инициализирует стратегии и создает executor
+            trader = LiveTrader(
+                config_dir='config',
+                enable_trading=enable_trading,
+                enable_gpt=True  # GPT фильтр включен
+            )
             
-            # Инициализация стратегий
-            strategies = {
-                'XAUUSD': StrategyXAUUSD(),
-                'EURUSD': StrategyEURUSD_SMC_Retracement()
-            }
-            
-            # Инициализация компонентов
-            mt5_connector = MT5Connector(mt5_config)
-            executor = BrokerSim()  # Пока используем симулятор
-            
-            # Инициализация LiveTrader с правильными аргументами
-            trader = LiveTrader(strategies, executor, mt5_connector)
+            self.log(f"LiveTrader initialized (trading={'ON' if enable_trading else 'OFF'})")
             
             while not self.stop_event.is_set():
                 # Проверяем паузу
@@ -175,8 +227,14 @@ class BotManager:
                     self.stop_event.wait(1)
                     continue
                 
-                # Один цикл проверки
-                trader.check_signals()
+                # Один цикл проверки сигналов
+                try:
+                    signals = trader.check_signals()
+                    if signals:
+                        for signal_msg in signals:
+                            self.log(f"Signal: {signal_msg}")
+                except Exception as e:
+                    self.log(f"Error checking signals: {e}")
                 
                 # Ждём перед следующей проверкой
                 self.stop_event.wait(60)  # 60 секунд
@@ -202,8 +260,8 @@ class BotManager:
             excess = len(self.logs) - self.max_logs
             self.logs = self.logs[excess:]
         
-        # Выводим в консоль
-        print(f"[{timestamp}] {message}")
+        # Выводим в лог через logger
+        logger.info(message)
     
     def add_trade(self, trade: dict):
         """Добавление сделки."""
@@ -224,6 +282,20 @@ class BotManager:
         today = datetime.now().strftime('%Y-%m-%d')
         if trade.get('date') == today:
             self.stats['today_pnl'] += pnl
+        
+        # Проверки алертов (если включены)
+        if self.alert_manager:
+            # Проверка дневного убытка
+            if self.stats.get('today_pnl', 0) < 0:
+                starting_balance = self.stats.get('starting_balance', self.stats.get('balance', 10000))
+                self.alert_manager.check_daily_loss(self.stats['today_pnl'], starting_balance)
+            
+            # Проверка винрейта
+            total = self.stats.get('total_trades', 0)
+            if total >= 20:  # Минимум 20 сделок для статистики
+                wins = self.stats.get('wins', 0)
+                winrate = (wins / total) * 100 if total > 0 else 0
+                self.alert_manager.check_winrate_drop(winrate, min_trades=total)
         
         # Сохраняем в файл
         self.save_trade(trade)

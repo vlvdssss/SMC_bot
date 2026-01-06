@@ -1,0 +1,16 @@
+telegram:
+  enabled: True  # true для активации
+  bot_token: "8531407014:AAFsKnKlt5w05cL4zRv5771ZbuZJY1gmQHU"   # Токен от @BotFather
+  chat_id: "543258309"     # Ваш Chat ID от @userinfobot
+  
+  # Какие события отправлять
+  notify:
+    startup: true           # Запуск бота
+    shutdown: true          # Остановка бота
+    trade_opened: true      # Открытие сделки
+    trade_closed: true      # Закрытие сделки
+    daily_report: true      # Дневной отчет (23:55)
+    alerts: true            # Алерты (drawdown, losses и т.д.)
+    
+  # Минимальный уровень для алертов (INFO, WARNING, ERROR, CRITICAL)
+  alert_min_level: "WARNING"

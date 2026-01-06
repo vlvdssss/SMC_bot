@@ -65,3 +65,11 @@ desktop.ini
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+.hypothesis/

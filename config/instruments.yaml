@@ -1,5 +1,5 @@
-# Instruments Configuration
-# Add new instruments here without changing core code
+# Instruments Configuration - XAUUSD Only
+# Trading Bot optimized for Gold trading with SMC strategy
 
 instruments:
   XAUUSD:
@@ -17,65 +17,19 @@ instruments:
     price_decimals: 2           # Display format (2150.45)
     
     # Risk management
-    risk_per_trade: 0.75        # % of balance
-    max_trades_per_day: 3
+    risk_per_trade: 2.0         # % of balance
+    max_trades_per_day: 3       # Maximum trades per day
     
     # Strategy
     strategy_class: "StrategyXAUUSD"
-    strategy_version: "Phase 2 Baseline v1.0 FROZEN"
+    strategy_version: "Phase 2 Baseline v1.1 (Fixed Entry)"
     
-    # Performance (3-year baseline)
+    # Performance (backtest 2024)
     baseline_performance:
-      win_rate: 60.8
-      max_dd: 11.5
-      avg_roi: 952.0
-      avg_trades_per_year: 148
-
-  EURUSD:
-    name: "Euro/US Dollar"
-    type: "Forex"
-    enabled: true
-    
-    # Contract specifications
-    contract_size: 100000       # 100,000 units per lot
-    pip_value: 10.0             # $10 per pip (0.0001) per lot
-    pip_size: 0.0001
-    spread_points: 1.5          # 1.5 pips
-    spread_multiplier: 0.0001
-    commission_per_lot: 0.0     # Usually no commission on forex
-    price_decimals: 5           # Display format (1.17220)
-    
-    # Risk management
-    risk_per_trade: 0.5         # % of balance
-    max_trades_per_day: 2
-    
-    # Strategy
-    strategy_class: "StrategyEURUSD_SMC_Retracement"
-    strategy_version: "SMC Retracement v1.0 FROZEN"
-    
-    # Performance (3-year baseline)
-    baseline_performance:
-      win_rate: 70.7
-      max_dd: 5.4
-      avg_roi: 324.0
-      avg_trades_per_year: 176
-
-  # Template for new instruments
-  # GBPUSD:
-  #   name: "British Pound/US Dollar"
-  #   type: "Forex"
-  #   enabled: false
-  #   contract_size: 100000
-  #   pip_value: 10.0
-  #   pip_size: 0.0001
-  #   spread_points: 2.0
-  #   spread_multiplier: 0.0001
-  #   commission_per_lot: 0.0
-  #   price_decimals: 5
-  #   risk_per_trade: 0.5
-  #   max_trades_per_day: 2
-  #   strategy_class: "StrategyGBPUSD"
-  #   strategy_version: "Baseline v1.0"
+      win_rate: 52.6
+      max_dd: 9.43
+      roi: 243.52
+      total_trades: 97
 
 # Global settings
 global_settings:

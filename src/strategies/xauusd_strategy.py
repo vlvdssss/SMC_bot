@@ -36,9 +36,9 @@ class StrategyXAUUSD:
     FIXED: Теперь сигнал на close → вход на next open (как в live торговле)
     """
     
-    def __init__(self):
+    def __init__(self, symbol=None):
         """Инициализация стратегии для XAUUSD"""
-        self.instrument = "XAUUSD"
+        self.instrument = symbol or "XAUUSD"
         self.name = "XAUUSD Phase 2 Baseline"
         self.version = "v1.1 (Fixed Entry)"
         self.htf_timeframe = "H1"
@@ -457,3 +457,43 @@ class StrategyXAUUSD:
                         return ob_high, ob_low
         
         return None, None
+
+    def check_signal(self, h1_data: pd.DataFrame, m15_data: pd.DataFrame) -> dict:
+        """
+        Проверка сигнала для мониторинга (live trading).
+        
+        Args:
+            h1_data: H1 DataFrame
+            m15_data: M15 DataFrame
+            
+        Returns:
+            dict: Сигнал или {'valid': False}
+        """
+        try:
+            # Загружаем данные
+            self.load_data(h1_data, m15_data)
+            
+            # Получаем текущие индексы
+            current_m15_idx = len(m15_data) - 1
+            current_h1_idx = len(h1_data) - 1
+            
+            # Получаем цены для анализа
+            if current_m15_idx < 0:
+                return {'valid': False}
+                
+            analysis_price = m15_data.iloc[current_m15_idx]['close']
+            entry_price = m15_data.iloc[current_m15_idx]['open']  # Для следующей свечи
+            
+            # Получаем сигнал
+            signal = self.generate_signal(
+                current_m15_idx=current_m15_idx,
+                analysis_price=analysis_price,
+                entry_price=entry_price,
+                current_h1_idx=current_h1_idx
+            )
+            
+            return signal
+            
+        except Exception as e:
+            logger.error(f"Error in XAUUSD check_signal: {e}")
+            return {'valid': False}

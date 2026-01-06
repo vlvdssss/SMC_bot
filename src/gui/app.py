@@ -17,7 +17,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from src.core.license import license_manager
+# License system removed - free version
 from src.core.app_state import AppState
 from src.core.mt5_manager import MT5Manager
 from src.core.bot_manager import bot_manager
@@ -36,6 +36,14 @@ try:
     MANUAL_TRADING_AVAILABLE = True
 except ImportError:
     MANUAL_TRADING_AVAILABLE = False
+
+# AI Analysis imports
+try:
+    from src.ai.analyst_scheduler import get_scheduler, init_scheduler
+    from src.ai.signal_manager import AISignalManager
+    AI_ANALYSIS_AVAILABLE = True
+except ImportError:
+    AI_ANALYSIS_AVAILABLE = False
 
 
 class BazaApp:
@@ -116,6 +124,18 @@ class BazaApp:
         self.market_data_updater.start()
         # Интервал опроса MT5 в секундах (можно настроить)
         self.mt5_poll_interval = 1.0
+        
+        # Инициализация AI Analysis
+        self.ai_scheduler = None
+        self.ai_signal_manager = None
+        self.ai_signals_data = []  # Store full signal data for details
+        if AI_ANALYSIS_AVAILABLE:
+            try:
+                self.ai_scheduler = init_scheduler(callback=self._on_ai_analysis_update)
+                self.ai_signal_manager = AISignalManager()
+                app_logger.info("[OK] AI Analysis system initialized")
+            except Exception as e:
+                app_logger.error(f"[ERROR] AI Analysis init failed: {e}")
         
         # Создание интерфейса
         self.create_ui()
@@ -370,12 +390,8 @@ class BazaApp:
             return {}
     
     def check_license_on_start(self):
-        """Проверка лицензии при запуске."""
-        valid, message = license_manager.is_valid()
-        
-        if not valid:
-            # Показываем окно активации
-            self.show_activation_dialog()
+        """License removed - free version."""
+        pass  # No license check needed
     
     def show_activation_dialog(self):
         """Окно активации."""
@@ -416,7 +432,7 @@ class BazaApp:
                 result_label.config(text="[ERROR] Enter key", fg='#ff4757')
                 return
                 
-            success, msg = license_manager.activate(key)
+            success, msg = True, "License system removed - free version"
             
             if success:
                 if save:
@@ -430,7 +446,7 @@ class BazaApp:
         # Тест без кнопки: просто используем activate(save=False) при необходимости
         
         def on_close():
-            valid, _ = license_manager.is_valid()
+            valid, _ = True, "Free version"
             if not valid:
                 if messagebox.askyesno("Выход", "Без активации бот не будет работать.\nВыйти?"):
                     self.root.destroy()
@@ -891,24 +907,47 @@ class BazaApp:
     
     def create_manual_trading_section(self):
         """Создание секции ручной торговли."""
+        # Контейнер
+        container = tk.Frame(self.root, bg='#1a1a1a')
+        container.pack(fill='x', padx=20, pady=10)
+        
+        # Заголовок с кнопкой collapse/expand
+        header = tk.Frame(container, bg='#2a2a2a')
+        header.pack(fill='x', pady=(0, 5))
+        
+        self.manual_expanded = tk.BooleanVar(value=False)  # Скрыто по умолчанию
+        
+        def toggle_manual():
+            if self.manual_expanded.get():
+                self.manual_expanded.set(False)
+                manual_content.pack_forget()
+                self.btn_toggle_manual.config(text="▶ MANUAL TRADING")
+            else:
+                self.manual_expanded.set(True)
+                manual_content.pack(fill='both', expand=True, pady=5)
+                self.btn_toggle_manual.config(text="▼ MANUAL TRADING")
+        
+        self.btn_toggle_manual = tk.Button(header, text="▶ MANUAL TRADING",
+                                          command=toggle_manual,
+                                          font=('Arial', 13, 'bold'),
+                                          bg='#2a2a2a', fg='#ff9500',
+                                          relief='flat', cursor='hand2',
+                                          anchor='w')
+        self.btn_toggle_manual.pack(fill='x', padx=10, pady=10)
+        
+        # Контент (скрыт по умолчанию)
+        manual_content = tk.Frame(container, bg='#1a1a1a')
+        
         # Контейнер с двумя колонками: слева - manual controls, справа - мини-логи
-        manual_container = tk.Frame(self.root, bg='#1a1a1a')
-        manual_container.pack(fill='both', expand=True, padx=20, pady=10)
+        manual_container = tk.Frame(manual_content, bg='#1a1a1a')
+        manual_container.pack(fill='both', expand=True)
 
         manual_frame = tk.Frame(manual_container, bg='#1a1a1a')
         manual_frame.pack(side='left', fill='both', expand=True)
 
-        # Заголовок
-        header = tk.Frame(manual_frame, bg='#2a2a2a')
-        header.pack(fill='x', pady=(0, 10))
-
-        tk.Label(header, text="[MANUAL] MANUAL TRADING (EXPERIMENTAL)",
-                font=('Arial', 14, 'bold'),
-                bg='#2a2a2a', fg='#00ffcc').pack(pady=10)
-
         # Основная форма
         form_frame = tk.Frame(manual_frame, bg='#1a1a1a')
-        form_frame.pack(fill='x')
+        form_frame.pack(fill='x', pady=10)
 
         # Левая колонка - параметры
         left_frame = tk.Frame(form_frame, bg='#1a1a1a')
@@ -950,10 +989,6 @@ class BazaApp:
         # Direction
         direction_frame = tk.Frame(left_frame, bg='#2a2a2a', relief='flat')
         direction_frame.pack(fill='x', pady=5)
-        
-        tk.Label(direction_frame, text="Направление:",
-                font=('Arial', 10, 'bold'),
-                bg='#2a2a2a', fg='white').pack(anchor='w', padx=10, pady=5)
         
         tk.Label(direction_frame, text="Направление:",
                 font=('Arial', 10, 'bold'),
@@ -1041,9 +1076,9 @@ class BazaApp:
 
         # RR as numeric ratio (e.g. 2.0 for 2:1)
         initial_rr = getattr(state, 'risk_reward_ratio', 1.0) or 1.0
-        self.manual_rr_ratio = tk.DoubleVar(value=initial_rr)
+        self.manual_rr = tk.DoubleVar(value=initial_rr)
         rr_spin = tk.Spinbox(rr_frame, from_=0.1, to=10.0, increment=0.1,
-                     textvariable=self.manual_rr_ratio, format="%.1f",
+                     textvariable=self.manual_rr, format="%.1f",
                      font=('Arial', 10), bg='#0f0f0f', fg='white',
                      insertbackground='white', buttonbackground='#2a2a2a',
                      command=self._on_rr_change)
@@ -1131,6 +1166,446 @@ class BazaApp:
                                      font=('Consolas', 9),
                                      relief='flat', state='disabled')
         self.ai_result_text.pack(fill='x', pady=(10, 0))
+    
+    def create_backtest_optimization_section(self):
+        """Создание секции бэктестинга и оптимизации."""
+        app_logger.info("[OK] Creating Backtest & Optimization section...")
+        
+        # Контейнер
+        container = tk.Frame(self.root, bg='#1a1a1a')
+        container.pack(fill='x', padx=20, pady=10)
+        
+        # Заголовок с кнопкой collapse/expand
+        header = tk.Frame(container, bg='#2a2a2a')
+        header.pack(fill='x', pady=(0, 5))
+        
+        self.backtest_expanded = tk.BooleanVar(value=True)  # Раскрыто по умолчанию
+        
+        def toggle_backtest():
+            if self.backtest_expanded.get():
+                self.backtest_expanded.set(False)
+                self.backtest_content_frame.pack_forget()
+                self.btn_toggle_backtest.config(text="▶ BACKTEST & OPTIMIZATION")
+            else:
+                self.backtest_expanded.set(True)
+                self.backtest_content_frame.pack(fill='x', pady=5)
+                self.btn_toggle_backtest.config(text="▼ BACKTEST & OPTIMIZATION")
+        
+        self.btn_toggle_backtest = tk.Button(header, text="▼ BACKTEST & OPTIMIZATION",  # Показываем стрелку вниз
+                                            command=toggle_backtest,
+                                            font=('Arial', 13, 'bold'),
+                                            bg='#2a2a2a', fg='#ff9500',
+                                            relief='flat', cursor='hand2',
+                                            anchor='w')
+        self.btn_toggle_backtest.pack(fill='x', padx=10, pady=10)
+        
+        # Контент (показываем по умолчанию)
+        self.backtest_content_frame = tk.Frame(container, bg='#1a1a1a')
+        self.backtest_content_frame.pack(fill='x', pady=5)  # Сразу показываем
+        
+        # Две колонки: слева - backtest, справа - optimization
+        left_col = tk.Frame(self.backtest_content_frame, bg='#2d3e50')
+        left_col.pack(side='left', fill='both', expand=True, padx=(0, 5))
+        
+        right_col = tk.Frame(self.backtest_content_frame, bg='#2d3e50')
+        right_col.pack(side='right', fill='both', expand=True, padx=(5, 0))
+        
+        # === ЛЕВАЯ КОЛОНКА: BACKTEST ===
+        tk.Label(left_col, text="📊 Backtest", font=('Arial', 12, 'bold'),
+                bg='#2d3e50', fg='#00d4aa').pack(pady=10)
+        
+        # Параметры
+        params_frame = tk.Frame(left_col, bg='#2d3e50')
+        params_frame.pack(fill='x', padx=10, pady=5)
+        
+        tk.Label(params_frame, text="Symbol:", font=('Arial', 10),
+                bg='#2d3e50', fg='white').grid(row=0, column=0, sticky='w', padx=5, pady=3)
+        
+        self.backtest_symbol = tk.StringVar(value='XAUUSD')
+        symbol_combo = ttk.Combobox(params_frame, textvariable=self.backtest_symbol,
+                                   values=['XAUUSD', 'EURUSD', 'Portfolio'],
+                                   state='readonly', width=15)
+        symbol_combo.grid(row=0, column=1, padx=5, pady=3)
+        
+        tk.Label(params_frame, text="Year:", font=('Arial', 10),
+                bg='#2d3e50', fg='white').grid(row=1, column=0, sticky='w', padx=5, pady=3)
+        
+        self.backtest_year = tk.StringVar(value='2024')
+        year_combo = ttk.Combobox(params_frame, textvariable=self.backtest_year,
+                                 values=['2023', '2024', '2025'],
+                                 state='readonly', width=15)
+        year_combo.grid(row=1, column=1, padx=5, pady=3)
+        
+        # Кнопка запуска
+        btn_run_backtest = tk.Button(left_col, text="▶ Run Backtest",
+                                     command=self.run_backtest_async,
+                                     font=('Arial', 11, 'bold'),
+                                     bg='#00d4aa', fg='white',
+                                     relief='flat', cursor='hand2',
+                                     width=20, height=2)
+        btn_run_backtest.pack(pady=10)
+        
+        # Результаты
+        results_frame = tk.Frame(left_col, bg='#1e1e1e')
+        results_frame.pack(fill='both', expand=True, padx=10, pady=(0, 10))
+        
+        self.backtest_results_text = tk.Text(results_frame, font=('Consolas', 9),
+                                             bg='#1e1e1e', fg='#00ff00',
+                                             height=8, wrap='word')
+        self.backtest_results_text.pack(fill='both', expand=True, padx=5, pady=5)
+        self.backtest_results_text.insert('1.0', 'Нажмите "Run Backtest" для запуска...')
+        self.backtest_results_text.config(state='disabled')
+        
+        # === ПРАВАЯ КОЛОНКА: OPTIMIZATION ===
+        tk.Label(right_col, text="🔍 Optimization", font=('Arial', 12, 'bold'),
+                bg='#2d3e50', fg='#ff9500').pack(pady=10)
+        
+        # Параметры оптимизации
+        opt_params_frame = tk.Frame(right_col, bg='#2d3e50')
+        opt_params_frame.pack(fill='x', padx=10, pady=5)
+        
+        tk.Label(opt_params_frame, text="Method:", font=('Arial', 10),
+                bg='#2d3e50', fg='white').grid(row=0, column=0, sticky='w', padx=5, pady=3)
+        
+        self.opt_method = tk.StringVar(value='Grid Search')
+        method_combo = ttk.Combobox(opt_params_frame, textvariable=self.opt_method,
+                                   values=['Grid Search', 'Random Search'],
+                                   state='readonly', width=15)
+        method_combo.grid(row=0, column=1, padx=5, pady=3)
+        
+        tk.Label(opt_params_frame, text="Metric:", font=('Arial', 10),
+                bg='#2d3e50', fg='white').grid(row=1, column=0, sticky='w', padx=5, pady=3)
+        
+        self.opt_metric = tk.StringVar(value='combined')
+        metric_combo = ttk.Combobox(opt_params_frame, textvariable=self.opt_metric,
+                                   values=['combined', 'sharpe', 'profit', 'winrate'],
+                                   state='readonly', width=15)
+        metric_combo.grid(row=1, column=1, padx=5, pady=3)
+        
+        tk.Label(opt_params_frame, text="Iterations:", font=('Arial', 10),
+                bg='#2d3e50', fg='white').grid(row=2, column=0, sticky='w', padx=5, pady=3)
+        
+        self.opt_iterations = tk.IntVar(value=50)
+        iter_spinbox = tk.Spinbox(opt_params_frame, from_=10, to=500, increment=10,
+                                 textvariable=self.opt_iterations, width=17)
+        iter_spinbox.grid(row=2, column=1, padx=5, pady=3)
+        
+        # Кнопка запуска
+        btn_run_opt = tk.Button(right_col, text="🔍 Run Optimization",
+                               command=self.run_optimization_async,
+                               font=('Arial', 11, 'bold'),
+                               bg='#ff9500', fg='white',
+                               relief='flat', cursor='hand2',
+                               width=20, height=2)
+        btn_run_opt.pack(pady=10)
+        
+        # Прогресс-бар
+        self.opt_progress = ttk.Progressbar(right_col, mode='determinate', length=200)
+        self.opt_progress.pack(pady=5)
+        
+        self.opt_progress_label = tk.Label(right_col, text="0 / 0",
+                                          font=('Arial', 9),
+                                          bg='#2d3e50', fg='#888888')
+        self.opt_progress_label.pack()
+        
+        # Результаты
+        opt_results_frame = tk.Frame(right_col, bg='#1e1e1e')
+        opt_results_frame.pack(fill='both', expand=True, padx=10, pady=(10, 10))
+        
+        self.opt_results_text = tk.Text(opt_results_frame, font=('Consolas', 9),
+                                       bg='#1e1e1e', fg='#ff9500',
+                                       height=8, wrap='word')
+        self.opt_results_text.pack(fill='both', expand=True, padx=5, pady=5)
+        self.opt_results_text.insert('1.0', 'Нажмите "Run Optimization" для поиска лучших параметров...')
+        self.opt_results_text.config(state='disabled')
+        
+        # Кнопка применения лучшей конфигурации
+        self.btn_apply_best = tk.Button(right_col, text="✓ Применить лучшую конфигурацию",
+                                       command=self.apply_best_config,
+                                       font=('Arial', 10, 'bold'),
+                                       bg='#00d4aa', fg='white',
+                                       relief='flat', cursor='hand2',
+                                       width=25, height=1,
+                                       state='disabled')
+        self.btn_apply_best.pack(pady=(5, 10))
+        
+        # Переменная для хранения последних результатов оптимизации
+        self.last_optimization_results = None
+    
+    def run_backtest_async(self):
+        """Запуск бэктеста в фоновом потоке."""
+        symbol = self.backtest_symbol.get()
+        year = self.backtest_year.get()
+        
+        # Очищаем результаты
+        self.backtest_results_text.config(state='normal')
+        self.backtest_results_text.delete('1.0', 'end')
+        self.backtest_results_text.insert('1.0', f'⏳ Запуск бэктеста {symbol} за {year}...\n')
+        self.backtest_results_text.config(state='disabled')
+        
+        def run_backtest():
+            try:
+                # Импортируем здесь, чтобы не нагружать старт приложения
+                from src.backtest.portfolio_backtester import PortfolioBacktester
+                import pandas as pd
+                
+                self.root.after(0, lambda: self._update_backtest_text(f'📊 Загрузка данных...\n', append=True))
+                
+                # Загружаем данные
+                data_path = f"data/backtest/{symbol}_H1_2023_2025.csv"
+                if symbol == 'Portfolio':
+                    # Для портфолио запускаем специальный бектест
+                    backtester = PortfolioBacktester()
+                    
+                    start_date = f"{year}-01-01"
+                    end_date = f"{int(year)+1}-01-01"
+                    
+                    self.root.after(0, lambda: self._update_backtest_text(f'🔄 Запуск портфолио бэктеста...\n', append=True))
+                    result = backtester.run_backtest(start_date=start_date, end_date=end_date)
+                    
+                    # Преобразуем ключи Portfolio в стандартные
+                    metrics = {
+                        'total_return': result.get('roi', 0),
+                        'win_rate': result.get('win_rate', 0),
+                        'sharpe_ratio': 0,  # Portfolio не возвращает Sharpe
+                        'max_drawdown': result.get('max_dd', 0),
+                        'profit_factor': 0,  # Portfolio не возвращает PF
+                        'total_trades': result.get('trades', 0)
+                    }
+                else:
+                    # Одиночный инструмент
+                    data = pd.read_csv(data_path)
+                    data['time'] = pd.to_datetime(data['time'])
+                    
+                    # Фильтруем по году
+                    data = data[(data['time'] >= f'{year}-01-01') & (data['time'] < f'{int(year)+1}-01-01')]
+                    
+                    self.root.after(0, lambda: self._update_backtest_text(f'📈 Данных: {len(data)} свечей\n', append=True))
+                    self.root.after(0, lambda: self._update_backtest_text(f'🔄 Запуск бэктеста...\n', append=True))
+                    
+                    # Используем StrategyBacktester с настоящей стратегией
+                    from src.backtest.strategy_backtester import StrategyBacktester
+                    try:
+                        from src.strategies.xauusd_strategy import StrategyXAUUSD
+                        # EURUSD strategy removed - only XAUUSD remains
+                    except ImportError:
+                        from strategies.xauusd_strategy import StrategyXAUUSD
+                        # EURUSD strategy removed - only XAUUSD remains
+                    
+                    # Создаем настоящую стратегию (только XAUUSD)
+                    strategy = StrategyXAUUSD(symbol=symbol)
+                    
+                    backtester = StrategyBacktester(strategy=strategy, initial_balance=100)
+                    result = backtester.run_backtest(start_date=f'{year}-01-01', end_date=f'{int(year)+1}-01-01')
+                    
+                    # Преобразуем ключи в стандартные
+                    metrics = {
+                        'total_return': result.get('roi', 0),
+                        'win_rate': result.get('win_rate', 0),
+                        'sharpe_ratio': 0,  # TODO: добавить расчет Sharpe
+                        'max_drawdown': result.get('max_dd', 0),
+                        'profit_factor': 0,  # TODO: добавить расчет PF
+                        'total_trades': result.get('trades', 0)
+                    }
+                
+                # Форматируем результаты
+                result_text = f"\n{'='*40}\n✅ РЕЗУЛЬТАТЫ БЭКТЕСТА\n{'='*40}\n\n"
+                result_text += f"📊 Symbol: {symbol}\n"
+                result_text += f"📅 Period: {year}\n\n"
+                result_text += f"💰 Total Return: {metrics.get('total_return', 0):.2f}%\n"
+                result_text += f"🎯 Win Rate: {metrics.get('win_rate', 0):.2f}%\n"
+                result_text += f"📈 Sharpe Ratio: {metrics.get('sharpe_ratio', 0):.2f}\n"
+                result_text += f"📉 Max Drawdown: {metrics.get('max_drawdown', 0):.2f}%\n"
+                result_text += f"💵 Profit Factor: {metrics.get('profit_factor', 0):.2f}\n"
+                result_text += f"🔢 Total Trades: {metrics.get('total_trades', 0)}\n"
+                result_text += f"\n✅ Бэктест завершен!\n"
+                
+                self.root.after(0, lambda: self._update_backtest_text(result_text, append=False))
+                
+            except Exception as e:
+                error_text = f"\n❌ ОШИБКА: {str(e)}\n"
+                self.root.after(0, lambda: self._update_backtest_text(error_text, append=True))
+        
+        # Запускаем в фоновом потоке
+        threading.Thread(target=run_backtest, daemon=True).start()
+    
+    def _update_backtest_text(self, text, append=False):
+        """Обновить текст результатов бэктеста."""
+        self.backtest_results_text.config(state='normal')
+        if not append:
+            self.backtest_results_text.delete('1.0', 'end')
+        self.backtest_results_text.insert('end', text)
+        self.backtest_results_text.see('end')
+        self.backtest_results_text.config(state='disabled')
+    
+    def run_optimization_async(self):
+        """Запуск оптимизации в фоновом потоке."""
+        symbol = self.backtest_symbol.get()
+        year = self.backtest_year.get()
+        method = self.opt_method.get()
+        metric = self.opt_metric.get()
+        iterations = self.opt_iterations.get()
+        
+        if symbol == 'Portfolio':
+            self._update_opt_text('❌ Оптимизация портфолио пока не поддерживается.\nВыберите XAUUSD или EURUSD.', append=False)
+            return
+        
+        # Очищаем результаты
+        self._update_opt_text(f'⏳ Запуск оптимизации {symbol} ({method})...\n', append=False)
+        self.opt_progress['value'] = 0
+        self.opt_progress_label.config(text='0 / 0')
+        
+        def run_optimization():
+            try:
+                from src.backtest.optimizer import StrategyOptimizer
+                import pandas as pd
+                
+                self.root.after(0, lambda: self._update_opt_text('📊 Запуск оптимизации...\n', append=True))
+                
+                # Создаем оптимизатор (без загрузки данных - это сделает StrategyBacktester)
+                optimizer = StrategyOptimizer(
+                    symbol=symbol, 
+                    start_date=f'{year}-01-01', 
+                    end_date=f'{int(year)+1}-01-01',
+                    initial_balance=100
+                )
+                
+                # Callback для прогресса
+                def progress_callback(current, total):
+                    percent = int(current / total * 100)
+                    self.root.after(0, lambda: self.opt_progress.config(value=percent))
+                    self.root.after(0, lambda: self.opt_progress_label.config(text=f'{current} / {total}'))
+                
+                # Запускаем оптимизацию
+                if method == 'Grid Search':
+                    # Уменьшенное пространство для быстроты
+                    param_space = {
+                        'atr_period': [14, 20],
+                        'atr_multiplier': [1.5, 2.0, 2.5],
+                        'risk_percent': [0.01, 0.02],
+                        'min_rr': [1.5, 2.0]
+                    }
+                    top_configs = optimizer.optimize_grid_search(
+                        param_space=param_space,
+                        metric=metric,
+                        top_n=3,
+                        progress_callback=progress_callback
+                    )
+                else:  # Random Search
+                    top_configs = optimizer.optimize_random_search(
+                        n_iterations=iterations,
+                        metric=metric,
+                        top_n=3,
+                        progress_callback=progress_callback
+                    )
+                
+                # Форматируем результаты
+                result_text = f"\n{'='*40}\n🏆 ТОП-3 КОНФИГУРАЦИИ\n{'='*40}\n\n"
+                
+                for idx, config in enumerate(top_configs[:3], 1):
+                    params = config['params']
+                    metrics = config['metrics']
+                    score = config['score']
+                    
+                    result_text += f"#{idx} | Score: {score:.4f}\n"
+                    result_text += f"Parameters:\n"
+                    for k, v in params.items():
+                        result_text += f"  {k}: {v}\n"
+                    result_text += f"Metrics:\n"
+                    result_text += f"  Return: {metrics.get('total_return', 0):.2f}%\n"
+                    result_text += f"  Win Rate: {metrics.get('win_rate', 0):.2f}%\n"
+                    result_text += f"  Sharpe: {metrics.get('sharpe_ratio', 0):.2f}\n"
+                    result_text += f"  Max DD: {metrics.get('max_drawdown', 0):.2f}%\n"
+                    result_text += f"\n"
+                
+                result_text += "✅ Оптимизация завершена!\n"
+                
+                self.root.after(0, lambda: self._update_opt_text(result_text, append=False))
+                
+                # Сохраняем лучшие результаты
+                self.last_optimization_results = top_configs
+                
+                # Активируем кнопку применения
+                self.root.after(0, lambda: self.btn_apply_best.config(state='normal'))
+                
+                # Сохраняем результаты в файл
+                optimizer.save_results()
+                
+            except Exception as e:
+                error_text = f"\n❌ ОШИБКА: {str(e)}\n"
+                self.root.after(0, lambda: self._update_opt_text(error_text, append=True))
+                import traceback
+                traceback.print_exc()
+        
+        # Запускаем в фоновом потоке
+        threading.Thread(target=run_optimization, daemon=True).start()
+    
+    def apply_best_config(self):
+        """Применить лучшую конфигурацию из оптимизации."""
+        if not self.last_optimization_results:
+            messagebox.showwarning("Внимание", "Нет результатов оптимизации для применения!")
+            return
+        
+        best_config = self.last_optimization_results[0]
+        params = best_config['params']
+        metrics = best_config['metrics']
+        score = best_config['score']
+        symbol = self.backtest_symbol.get()
+        
+        # Формируем сообщение с подтверждением
+        msg = f"Применить лучшую конфигурацию?\n\n"
+        msg += f"Symbol: {symbol}\n"
+        msg += f"Score: {score:.4f}\n\n"
+        msg += "Параметры:\n"
+        for k, v in params.items():
+            msg += f"  • {k}: {v}\n"
+        msg += f"\nМетрики:\n"
+        msg += f"  • Return: {metrics.get('total_return', 0):.2f}%\n"
+        msg += f"  • Win Rate: {metrics.get('win_rate', 0):.2f}%\n"
+        msg += f"  • Sharpe: {metrics.get('sharpe_ratio', 0):.2f}\n"
+        msg += f"  • Max DD: {metrics.get('max_drawdown', 0):.2f}%\n\n"
+        msg += "⚠️ Это обновит конфигурацию стратегии!"
+        
+        if not messagebox.askyesno("Подтверждение", msg):
+            return
+        
+        try:
+            # Сохраняем в файл конфигурации
+            config_path = Path(f"config/{symbol.lower()}_optimized.json")
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            config_data = {
+                'timestamp': datetime.now().isoformat(),
+                'symbol': symbol,
+                'score': score,
+                'parameters': params,
+                'metrics': metrics
+            }
+            
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config_data, f, indent=2, ensure_ascii=False)
+            
+            messagebox.showinfo("Успех", 
+                              f"✅ Конфигурация сохранена!\n\n"
+                              f"Файл: {config_path}\n\n"
+                              f"Для применения перезапустите бота или обновите параметры стратегии вручную.\n\n"
+                              f"Параметры:\n" + 
+                              "\n".join([f"  {k}: {v}" for k, v in params.items()]))
+            
+            self.log(f"[OK] Лучшая конфигурация применена: {symbol}, Score: {score:.4f}")
+            
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось сохранить конфигурацию:\n{e}")
+            self.log(f"[ERROR] Failed to apply config: {e}")
+    
+    def _update_opt_text(self, text, append=False):
+        """Обновить текст результатов оптимизации."""
+        self.opt_results_text.config(state='normal')
+        if not append:
+            self.opt_results_text.delete('1.0', 'end')
+        self.opt_results_text.insert('end', text)
+        self.opt_results_text.see('end')
+        self.opt_results_text.config(state='disabled')
     
     def update_manual_calculations(self):
         """Расчет лота и RR с полной валидацией."""
@@ -1470,9 +1945,9 @@ class BazaApp:
                             
                             news_summary = news_fetcher.get_news_summary(instrument)
                             news_context = f"\n\n📰 АКТУАЛЬНЫЕ НОВОСТИ:\n{news_summary}\n"
-                            logger.info(f"[OK] News context added to AI query")
+                            app_logger.info(f"[OK] News context added to AI query")
                         except Exception as e:
-                            logger.warning(f"Failed to fetch news: {e}")
+                            app_logger.warning(f"Failed to fetch news: {e}")
                             news_context = "\n\n📰 АКТУАЛЬНАЯ ИНФОРМАЦИЯ:\nСегодня " + datetime.now().strftime('%d.%m.%Y') + ". Актуальное время UTC: " + datetime.now().strftime('%H:%M') + "\n"
                         
                         # If there is an LLM client configured, call it directly for free-form chat
@@ -1663,8 +2138,8 @@ class BazaApp:
                 self.log(f"[OK] Manual trade opened: {message}")
                 messagebox.showinfo("Успех", f"Сделка открыта!\n{message}")
                 try:
-                    if hasattr(self, 'btn_big_close'):
-                        self.btn_big_close.config(state='normal')
+                    if hasattr(self, 'btn_close_trade'):
+                        self.btn_close_trade.config(state='normal')
                 except Exception:
                     pass
             else:
@@ -1739,8 +2214,8 @@ class BazaApp:
 
             # Update buttons
             try:
-                if hasattr(self, 'btn_big_close'):
-                    self.btn_big_close.config(state='disabled')
+                if hasattr(self, 'btn_close_trade'):
+                    self.btn_close_trade.config(state='disabled')
             except Exception:
                 pass
 
@@ -1778,13 +2253,13 @@ class BazaApp:
                        bg='#1a1a1a', fg='white')
         logo.pack(side='left')
         
-        # Лицензия
-        license_info = license_manager.get_license_info()
-        license_text = f"[LICENSE] {license_info.get('type', '').upper() or 'N/A'}" if license_info['valid'] else "[LOCKED] Not activated"
+        # Лицензия (removed - free version)
+        license_info = {"status": "Free Version", "expires": "Never", "valid": True, "type": "Free"}
+        license_text = f"[LICENSE] {license_info.get('type', '').upper() or 'FREE'}"
         
         self.license_label = tk.Label(header, text=license_text,
                                      font=('Arial', 10),
-                                     bg='#1a1a1a', fg='#00d4aa' if license_info['valid'] else '#ff4757')
+                                     bg='#1a1a1a', fg='#00d4aa')
         self.license_label.pack(side='right', padx=10)
         
         # Статус бота
@@ -1914,35 +2389,11 @@ class BazaApp:
         if self.manual_controller and self.manual_controller.is_enabled():
             self.create_manual_trading_section()
         
-        # ===== LOGS =====
-        logs_title = customtkinter.CTkLabel(self.root, text="[LOGS] Системные логи", 
-                                           font=customtkinter.CTkFont(size=16, weight="bold"), 
-                                           text_color="#00FFFF")
-        logs_title.pack(pady=(20, 5), padx=20, anchor="w")
+        # ===== AI ANALYSIS =====
+        self.create_ai_analysis_section()
         
-        # Большой фрейм для логов
-        self.logs_frame = customtkinter.CTkFrame(self.root, height=300, fg_color="#1e1e1e")
-        self.logs_frame.pack(fill="both", expand=True, padx=20, pady=(0, 10))
-        self.logs_frame.pack_propagate(False)  # Важно! Чтобы height не сжимался
-        
-        # Текстовое поле
-        self.log_text = customtkinter.CTkTextbox(self.logs_frame, font=("Consolas", 11), wrap="none")
-        self.log_text.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # Скроллбар
-        scrollbar = customtkinter.CTkScrollbar(self.logs_frame, command=self.log_text.yview)
-        scrollbar.pack(side="right", fill="y")
-        self.log_text.configure(yscrollcommand=scrollbar.set)
-        
-        # Цветные теги с контрастными фонами для лучшей читаемости
-        try:
-            self.log_text.tag_config("info", foreground="#ffffff", background="#1e1e1e")
-            self.log_text.tag_config("warning", foreground="#ffff00", background="#333300")
-            self.log_text.tag_config("error", foreground="#ff4444", background="#330000")
-            self.log_text.tag_config("critical", foreground="#ff0000", background="#220000")
-        except Exception:
-            # Some CTkTextbox versions may not support tag_config fully — ignore if fails
-            pass
+        # Создаем заглушку для log_text (используем только мини-логи в Manual Trading)
+        self.log_text = None
         
         # ===== FOOTER =====
         footer = tk.Frame(self.root, bg='#1a1a1a')
@@ -1961,16 +2412,16 @@ class BazaApp:
             print(f"GUI logging error: {e}")
 
     def _insert_log_message(self, message: str, level: str):
-        """Вставка сообщения в лог с цветом."""
-        if not hasattr(self, 'log_text') or not self.log_text:
-            return
-        
-        try:
-            # Вставляем текст с тегом
-            self.log_text.insert('end', message + '\n', level.lower())
-            self.log_text.see('end')
-        except Exception as e:
-            print(f"Error inserting log message: {e}")
+        """Вставка сообщения в лог с цветом - только в мини-логи Manual Trading."""
+        # Пишем только в мини-логи Manual Trading
+        if hasattr(self, 'mini_logs_text') and self.mini_logs_text:
+            try:
+                self.mini_logs_text.config(state='normal')
+                self.mini_logs_text.insert('end', message + '\n', level.lower())
+                self.mini_logs_text.see('end')
+                self.mini_logs_text.config(state='disabled')
+            except Exception as e:
+                print(f"Error inserting mini log message: {e}")
     
     def create_stat_card(self, parent, title, value):
         """Создание карточки статистики с улучшенным дизайном."""
@@ -2084,7 +2535,7 @@ class BazaApp:
     def start_bot(self):
         """Запуск бота."""
         # Проверка лицензии
-        valid, msg = license_manager.is_valid()
+        valid, msg = True, "Free version"
         if not valid:
             messagebox.showerror("Ошибка", f"Лицензия недействительна: {msg}")
             return
@@ -2310,7 +2761,7 @@ class BazaApp:
         if not state:
             return
         try:
-            rr = float(self.manual_rr_ratio.get())
+            rr = float(self.manual_rr.get())
         except Exception:
             return
         if rr <= 0:
@@ -2633,6 +3084,337 @@ class BazaApp:
                             pass
             except Exception as e:
                 print(f"Mini logs error: {e}")
+    
+    # ========== AI ANALYSIS SECTION ==========
+    
+    def create_ai_analysis_section(self):
+        """Create AI Market Analysis section."""
+        if not AI_ANALYSIS_AVAILABLE or not self.ai_scheduler:
+            return
+        
+        # Main container
+        ai_container = tk.Frame(self.root, bg='#1a1a1a')
+        ai_container.pack(fill='both', expand=False, padx=20, pady=10)
+        
+        # Header
+        header_frame = tk.Frame(ai_container, bg='#1a1a1a')
+        header_frame.pack(fill='x', pady=(0, 10))
+        
+        tk.Label(header_frame, text="🤖 AI Market Analyst", 
+                font=('Arial', 16, 'bold'), bg='#1a1a1a', fg='#FFFFFF').pack(side='left')
+        
+        # Manual trigger button
+        self.ai_analyze_button = tk.Button(
+            header_frame, text="▶️ Analyze Now", command=self._trigger_ai_analysis,
+            bg='#4CAF50', fg='white', font=('Arial', 10, 'bold'),
+            relief='flat', cursor='hand2', padx=15, pady=5
+        )
+        self.ai_analyze_button.pack(side='right', padx=5)
+        
+        # Status label
+        self.ai_status_label = tk.Label(
+            header_frame, text="● Idle", font=('Arial', 10),
+            bg='#1a1a1a', fg='#888888'
+        )
+        self.ai_status_label.pack(side='right', padx=10)
+        
+        # Content frame (2 columns)
+        content_frame = tk.Frame(ai_container, bg='#1a1a1a')
+        content_frame.pack(fill='both', expand=False)
+        
+        # LEFT: Analysis summary
+        left_frame = tk.Frame(content_frame, bg='#2b2b2b', relief='solid', bd=1)
+        left_frame.pack(side='left', fill='both', expand=True, padx=(0, 5))
+        
+        tk.Label(left_frame, text="📊 Analysis Summary", 
+                font=('Arial', 11, 'bold'), bg='#2b2b2b', fg='#FFFFFF').pack(pady=5)
+        
+        # Sentiment
+        sentiment_frame = tk.Frame(left_frame, bg='#2b2b2b')
+        sentiment_frame.pack(fill='x', padx=10, pady=3)
+        tk.Label(sentiment_frame, text="Sentiment:", 
+                font=('Arial', 9), bg='#2b2b2b', fg='#888888').pack(side='left')
+        self.ai_sentiment_label = tk.Label(
+            sentiment_frame, text="N/A", font=('Arial', 9, 'bold'),
+            bg='#2b2b2b', fg='#FFFFFF'
+        )
+        self.ai_sentiment_label.pack(side='right')
+        
+        # Confidence
+        conf_frame = tk.Frame(left_frame, bg='#2b2b2b')
+        conf_frame.pack(fill='x', padx=10, pady=3)
+        tk.Label(conf_frame, text="Confidence:", 
+                font=('Arial', 9), bg='#2b2b2b', fg='#888888').pack(side='left')
+        self.ai_confidence_label = tk.Label(
+            conf_frame, text="0%", font=('Arial', 9, 'bold'),
+            bg='#2b2b2b', fg='#FFFFFF'
+        )
+        self.ai_confidence_label.pack(side='right')
+        
+        # Block status
+        block_frame = tk.Frame(left_frame, bg='#2b2b2b')
+        block_frame.pack(fill='x', padx=10, pady=3)
+        tk.Label(block_frame, text="Trading:", 
+                font=('Arial', 9), bg='#2b2b2b', fg='#888888').pack(side='left')
+        self.ai_block_label = tk.Label(
+            block_frame, text="✓ Allowed", font=('Arial', 9, 'bold'),
+            bg='#2b2b2b', fg='#4CAF50'
+        )
+        self.ai_block_label.pack(side='right')
+        
+        # Risk multiplier
+        risk_frame = tk.Frame(left_frame, bg='#2b2b2b')
+        risk_frame.pack(fill='x', padx=10, pady=3)
+        tk.Label(risk_frame, text="Risk Factor:", 
+                font=('Arial', 9), bg='#2b2b2b', fg='#888888').pack(side='left')
+        self.ai_risk_label = tk.Label(
+            risk_frame, text="1.0x", font=('Arial', 9, 'bold'),
+            bg='#2b2b2b', fg='#FFFFFF'
+        )
+        self.ai_risk_label.pack(side='right')
+        
+        # Last update
+        time_frame = tk.Frame(left_frame, bg='#2b2b2b')
+        time_frame.pack(fill='x', padx=10, pady=3)
+        tk.Label(time_frame, text="Updated:", 
+                font=('Arial', 9), bg='#2b2b2b', fg='#888888').pack(side='left')
+        self.ai_time_label = tk.Label(
+            time_frame, text="Never", font=('Arial', 8),
+            bg='#2b2b2b', fg='#666666'
+        )
+        self.ai_time_label.pack(side='right')
+        
+        # RIGHT: Active signals
+        right_frame = tk.Frame(content_frame, bg='#2b2b2b', relief='solid', bd=1)
+        right_frame.pack(side='right', fill='both', expand=True, padx=(5, 0))
+        
+        tk.Label(right_frame, text="📍 Active Signals", 
+                font=('Arial', 11, 'bold'), bg='#2b2b2b', fg='#FFFFFF').pack(pady=5)
+        
+        # Signals list with scrollbar
+        signals_container = tk.Frame(right_frame, bg='#2b2b2b')
+        signals_container.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        scrollbar = tk.Scrollbar(signals_container, bg='#3b3b3b')
+        scrollbar.pack(side='right', fill='y')
+        
+        self.ai_signals_listbox = tk.Listbox(
+            signals_container, yscrollcommand=scrollbar.set,
+            bg='#1a1a1a', fg='#FFFFFF', font=('Consolas', 8),
+            selectmode='single', height=5, relief='flat', bd=0
+        )
+        self.ai_signals_listbox.pack(side='left', fill='both', expand=True)
+        scrollbar.config(command=self.ai_signals_listbox.yview)
+        
+        # Bind click event to show signal details
+        self.ai_signals_listbox.bind('<<ListboxSelect>>', self._on_signal_selected)
+        
+        # Initial update
+        self._update_ai_display()
+    
+    def _trigger_ai_analysis(self):
+        """Trigger AI analysis manually."""
+        if not self.ai_scheduler:
+            messagebox.showwarning("AI Unavailable", "AI Analysis system not initialized")
+            return
+        
+        self.ai_status_label.config(text="● Running...", fg='#FFA500')
+        self.ai_analyze_button.config(state='disabled')
+        
+        def run():
+            try:
+                result = self.ai_scheduler.run_now()
+                self.root.after(0, lambda: self._on_ai_analysis_complete(result))
+            except Exception as e:
+                self.root.after(0, lambda: self._on_ai_analysis_error(str(e)))
+        
+        threading.Thread(target=run, daemon=True).start()
+    
+    def _on_ai_analysis_update(self, analysis: dict):
+        """Callback when scheduled analysis completes."""
+        self.root.after(0, lambda: self._on_ai_analysis_complete(analysis))
+    
+    def _on_ai_analysis_complete(self, analysis: dict):
+        """Handle completed analysis."""
+        self.ai_analyze_button.config(state='normal')
+        self.ai_status_label.config(text="● Ready", fg='#4CAF50')
+        
+        # Force update display with latest data
+        self.root.after(100, self._update_ai_display)
+        
+        # Log summary
+        signals = analysis.get('signals', [])
+        self.log(f"[AI] ═══════════ ANALYSIS COMPLETE ═══════════")
+        self.log(f"[AI] Signals detected: {len(signals)}")
+        
+        # Log sentiment and blocks
+        summary = analysis.get('summary', {})
+        sentiment = summary.get('sentiment', 'N/A')
+        confidence = summary.get('confidence', 0)
+        self.log(f"[AI] Market Sentiment: {sentiment.upper()} | Confidence: {confidence}%")
+        
+        # Log block details from analysis
+        blocks = analysis.get('trading_blocks', {})
+        block_type_from_gpt = blocks.get('block_type', 'none')
+        block_reason_from_gpt = blocks.get('reason', 'Not specified')
+        
+        self.log(f"[AI] ─────────────────────────────────────")
+        self.log(f"[AI] GPT Analysis:")
+        self.log(f"[AI]   Block Type: {block_type_from_gpt.upper()}")
+        self.log(f"[AI]   Reason: {block_reason_from_gpt}")
+        
+        # Check actual permission from SignalManager
+        if self.ai_signal_manager:
+            allowed, multiplier, reason = self.ai_signal_manager.get_trading_permission("XAUUSD")
+            block_type_actual = self.ai_signal_manager.block_type.value if self.ai_signal_manager.block_type else "none"
+            
+            self.log(f"[AI] ─────────────────────────────────────")
+            self.log(f"[AI] SignalManager Decision:")
+            self.log(f"[AI]   Block Type: {block_type_actual.upper()}")
+            self.log(f"[AI]   Status: {'✅ ALLOWED' if allowed else '🚫 BLOCKED'}")
+            self.log(f"[AI]   Risk Multiplier: {multiplier:.2f}x")
+            self.log(f"[AI]   Reason: {reason}")
+            
+            # Warn if mismatch
+            if block_type_from_gpt != block_type_actual:
+                self.log(f"[AI] ⚠️  WARNING: Block type mismatch!")
+                self.log(f"[AI]   GPT said: {block_type_from_gpt}")
+                self.log(f"[AI]   Manager has: {block_type_actual}")
+        
+        self.log(f"[AI] ─────────────────────────────────────")
+        
+        # Log each signal with reasoning
+        for i, signal in enumerate(signals, 1):
+            sig_type = signal.get('type', 'N/A').upper()
+            entry = signal.get('entry_price', 0)
+            sl = signal.get('stop_loss', 0)
+            tp = signal.get('take_profit', 0)
+            conf = signal.get('confidence', 0)
+            reasoning = signal.get('reasoning', 'No reasoning provided')
+            
+            self.log(f"[AI] Signal #{i}: {sig_type} @ {entry:.2f} (SL:{sl:.2f} TP:{tp:.2f}) Conf:{conf}%")
+            self.log(f"[AI] └─ Reason: {reasoning}")
+        
+        self.log(f"[AI] ═══════════════════════════════════════")
+    
+    def _on_ai_analysis_error(self, error: str):
+        """Handle analysis error."""
+        self.ai_analyze_button.config(state='normal')
+        self.ai_status_label.config(text="● Error", fg='#F44336')
+        self.log(f"[AI] Analysis failed: {error}")
+    
+    def _update_ai_display(self):
+        """Update AI display with current state."""
+        if not self.ai_signal_manager:
+            return
+        
+        try:
+            # Get current state
+            allowed, multiplier, reason = self.ai_signal_manager.get_trading_permission("XAUUSD")
+            signals = self.ai_signal_manager.get_active_signals("XAUUSD")
+            block_type = self.ai_signal_manager.block_type.value if self.ai_signal_manager.block_type else "none"
+            
+            # Update sentiment
+            sentiment_map = {
+                "none": ("✓ Clear", "#4CAF50"),
+                "bias": ("↗ Bullish Bias", "#2196F3"),
+                "warning": ("⚠ Caution", "#FFA500"),
+                "soft_block": ("⛔ Soft Block", "#FF5722"),
+                "hard_block": ("🚫 Hard Block", "#F44336")
+            }
+            sentiment, color = sentiment_map.get(block_type, ("N/A", "#888888"))
+            self.ai_sentiment_label.config(text=sentiment, fg=color)
+            
+            # Update confidence (from latest signal or 0)
+            if signals:
+                conf = max(s['confidence'] for s in signals)
+                self.ai_confidence_label.config(text=f"{conf}%")
+            else:
+                self.ai_confidence_label.config(text="0%")
+            
+            # Update block status
+            if allowed:
+                self.ai_block_label.config(text="✓ Allowed", fg='#4CAF50')
+            else:
+                self.ai_block_label.config(text=f"⛔ {reason}", fg='#F44336')
+            
+            # Update risk multiplier
+            self.ai_risk_label.config(text=f"{multiplier:.1f}x")
+            
+            # Update time
+            if self.ai_signal_manager.latest_analysis_time:
+                try:
+                    if isinstance(self.ai_signal_manager.latest_analysis_time, str):
+                        dt = datetime.fromisoformat(self.ai_signal_manager.latest_analysis_time)
+                        time_str = dt.strftime("%H:%M")
+                    else:
+                        time_str = self.ai_signal_manager.latest_analysis_time.strftime("%H:%M")
+                    self.ai_time_label.config(text=time_str)
+                except:
+                    pass
+            
+            # Update signals list
+            self.ai_signals_listbox.delete(0, 'end')
+            self.ai_signals_data = []  # Clear old data
+            if signals:
+                for sig in signals:
+                    # Store full signal data
+                    self.ai_signals_data.append(sig)
+                    
+                    # Calculate confidence with decay
+                    created_at = datetime.fromisoformat(sig['created_at'])
+                    expires_at = datetime.fromisoformat(sig['expires_at'])
+                    lifetime = (expires_at - created_at).total_seconds()
+                    age = (datetime.now() - created_at).total_seconds()
+                    decay_factor = 1.0 - (age / lifetime) * 0.5 if lifetime > 0 else 1.0
+                    decay_factor = max(0.5, min(1.0, decay_factor))
+                    conf_with_decay = sig['confidence'] * decay_factor
+                    
+                    line = f"{sig['type'].upper():4} @ {sig['entry_price']:.2f} | SL:{sig['stop_loss']:.2f} TP:{sig['take_profit']:.2f} | {conf_with_decay:.0f}%"
+                    self.ai_signals_listbox.insert('end', line)
+            else:
+                self.ai_signals_listbox.insert('end', "No active signals")
+        
+        except Exception as e:
+            app_logger.error(f"[AI] Display update failed: {e}")
+    
+    def _on_signal_selected(self, event):
+        """Handle signal selection - show reasoning in logs."""
+        try:
+            selection = self.ai_signals_listbox.curselection()
+            if not selection:
+                return
+            
+            idx = selection[0]
+            if idx >= len(self.ai_signals_data):
+                return
+            
+            signal = self.ai_signals_data[idx]
+            
+            # Log full signal details
+            self.log(f"[AI] ═══════════════════════════════════════")
+            self.log(f"[AI] Signal Details #{idx + 1}:")
+            self.log(f"[AI] Type: {signal['type'].upper()}")
+            self.log(f"[AI] Entry: {signal['entry_price']:.2f}")
+            self.log(f"[AI] Stop Loss: {signal['stop_loss']:.2f}")
+            self.log(f"[AI] Take Profit: {signal['take_profit']:.2f}")
+            self.log(f"[AI] Confidence: {signal['confidence']}%")
+            self.log(f"[AI] Risk/Reward: {signal.get('risk_reward', 'N/A')}")
+            
+            # Log trigger time if present
+            trigger_time = signal.get('trigger_time')
+            if trigger_time:
+                self.log(f"[AI] Trigger Time: {trigger_time}")
+            
+            # Log reasoning
+            reasoning = signal.get('reasoning', 'No reasoning provided')
+            self.log(f"[AI] ─────────────────────────────────────")
+            self.log(f"[AI] REASONING:")
+            self.log(f"[AI] {reasoning}")
+            self.log(f"[AI] ═══════════════════════════════════════")
+            
+        except Exception as e:
+            app_logger.error(f"[AI] Signal selection error: {e}")
 
 
 def main():

@@ -5,6 +5,7 @@ ML Predictor для оценки вероятности успеха сделк�
 """
 
 import os
+from src.core.logger import logger
 import pickle
 import numpy as np
 import pandas as pd
@@ -16,7 +17,7 @@ try:
     LIGHTGBM_AVAILABLE = True
 except ImportError:
     LIGHTGBM_AVAILABLE = False
-    print("[!] LightGBM not installed. ML predictions disabled.")
+    logger.warning("LightGBM not installed. ML predictions disabled.")
 
 from .features import FeatureExtractor
 
@@ -70,7 +71,7 @@ class TradePredictor:
             return (proba, confidence)
 
         except Exception as e:
-            print(f"[ML] Prediction error: {e}")
+            logger.error(f"ML Prediction error: {e}")
             return (0.5, 'ERROR')
 
     def should_take_trade(self, probability: float, min_probability: float = 0.55) -> bool:
@@ -86,10 +87,10 @@ class TradePredictor:
             features_data: DataFrame с фичами для каждой сделки
         """
         if not LIGHTGBM_AVAILABLE:
-            print("[!] Cannot train: LightGBM not installed")
+            logger.error("Cannot train: LightGBM not installed")
             return
 
-        print("[ML] Training model...")
+        logger.info("ML: Training model...")
 
         # Подготовка данных
         X = features_data
@@ -118,8 +119,8 @@ class TradePredictor:
         train_acc = self.model.score(X_train, y_train)
         test_acc = self.model.score(X_test, y_test)
 
-        print(f"[ML] Training accuracy: {train_acc:.2%}")
-        print(f"[ML] Test accuracy: {test_acc:.2%}")
+        logger.info(f"ML: Training accuracy: {train_acc:.2%}")
+        logger.info(f"ML: Test accuracy: {test_acc:.2%}")
 
         # Feature importance
         importance = pd.DataFrame({
@@ -127,8 +128,8 @@ class TradePredictor:
             'importance': self.model.feature_importances_
         }).sort_values('importance', ascending=False)
 
-        print("\n[ML] Top 10 features:")
-        print(importance.head(10).to_string(index=False))
+        logger.info("ML: Top 10 features:")
+        logger.info(importance.head(10).to_string(index=False))
 
         self.is_trained = True
         self.save_model()
@@ -146,7 +147,7 @@ class TradePredictor:
                 'is_trained': self.is_trained
             }, f)
 
-        print(f"[ML] Model saved to {self.model_path}")
+        logger.info(f"ML: Model saved to {self.model_path}")
 
     def load_model(self):
         """Загружает модель."""
@@ -159,6 +160,6 @@ class TradePredictor:
                 self.feature_names = data['feature_names']
                 self.is_trained = data['is_trained']
 
-                print(f"[ML] Model loaded from {self.model_path}")
+                logger.info(f"ML: Model loaded from {self.model_path}")
             except Exception as e:
-                print(f"[ML] Failed to load model: {e}")
+                logger.error(f"ML: Failed to load model: {e}")

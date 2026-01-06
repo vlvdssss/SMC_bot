@@ -14,21 +14,27 @@
 ### 🛠️ Разработка
 4. **[CONTRIBUTING.md](../CONTRIBUTING.md)** - Как внести свой вклад
 5. **[BUGFIXES.md](BUGFIXES.md)** - История исправлений багов
-6. **[IMPROVEMENTS_SUMMARY.md](IMPROVEMENTS_SUMMARY.md)** - Сводка улучшений
+6. **[LOGGING_IMPROVEMENTS.md](LOGGING_IMPROVEMENTS.md)** - Улучшение системы логирования (NEW ✨)
+7. **[IMPROVEMENTS_SUMMARY.md](IMPROVEMENTS_SUMMARY.md)** - Сводка улучшений
+8. **[API.md](API.md)** - API документация (NEW ✨)
+9. **[CI_CD.md](CI_CD.md)** - CI/CD и современная конфигурация (NEW ✨)
+10. **[MONITORING.md](MONITORING.md)** - Мониторинг и уведомления (NEW ✨)
+11. **[TELEGRAM_SETUP.md](TELEGRAM_SETUP.md)** - Быстрая настройка Telegram (NEW ✨)
 
 ### ✨ Новые функции
-7. **[AI_SCREENSHOT_ANALYSIS.md](AI_SCREENSHOT_ANALYSIS.md)** - Анализ скриншотов MT5 через GPT-4 Vision
-8. **[QUICKSTART_SCREENSHOT.md](QUICKSTART_SCREENSHOT.md)** - Быстрый старт работы со скриншотами
-9. **[NEWS_FIX.md](NEWS_FIX.md)** - Интеграция актуальных новостей
+10. **[AI_SCREENSHOT_ANALYSIS.md](AI_SCREENSHOT_ANALYSIS.md)** - Анализ скриншотов MT5 через GPT-4 Vision
+11. **[QUICKSTART_SCREENSHOT.md](QUICKSTART_SCREENSHOT.md)** - Быстрый старт работы со скриншотами
+12. **[NEWS_FIX.md](NEWS_FIX.md)** - Интеграция актуальных новостей
 
 ### 📊 Торговля
-10. **[MANUAL_TRADING_README.md](../MANUAL_TRADING_README.md)** - Руководство по ручной торговле
+13. **[MANUAL_TRADING_README.md](../MANUAL_TRADING_README.md)** - Руководство по ручной торговле
 
 ### 🧪 Тестирование
-11. **[TESTING_CHECKLIST.md](TESTING_CHECKLIST.md)** - Чеклист тестирования
+14. **[TESTING_CHECKLIST.md](TESTING_CHECKLIST.md)** - Чеклист тестирования
+15. **[TESTING_GUIDE.md](TESTING_GUIDE.md)** - Руководство по тестированию (NEW ✨)
 
 ### 🗑️ Обслуживание
-12. **[CLEANUP_LIST.md](CLEANUP_LIST.md)** - Список файлов для очистки
+16. **[CLEANUP_LIST.md](CLEANUP_LIST.md)** - Список файлов для очистки
 
 ---
 
@@ -42,8 +48,11 @@
 
 ### Для разработчиков:
 - **Архитектура:** [ARCHITECTURE_2.0.md](../ARCHITECTURE_2.0.md)
+- **API документация:** [API.md](API.md) ⭐
+- **CI/CD:** [CI_CD.md](CI_CD.md) 🚀
+- **Мониторинг:** [MONITORING.md](MONITORING.md) 🔔
 - **История изменений:** [BUGFIXES.md](BUGFIXES.md)
-- **Тестирование:** [TESTING_CHECKLIST.md](TESTING_CHECKLIST.md)
+- **Тестирование:** [TESTING_GUIDE.md](TESTING_GUIDE.md)
 - **Вклад в проект:** [CONTRIBUTING.md](../CONTRIBUTING.md)
 
 ---

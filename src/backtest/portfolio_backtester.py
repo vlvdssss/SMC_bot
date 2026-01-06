@@ -16,7 +16,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.strategies.xauusd_strategy import StrategyXAUUSD
-from src.strategies.eurusd_strategy import StrategyEURUSD_SMC_Retracement
+# EURUSD strategy removed - only XAUUSD remains
 from src.core.data_loader import DataLoader
 from src.core.broker_sim import BrokerSim
 from src.core.executor import Executor
@@ -40,17 +40,8 @@ class PortfolioBacktester:
                 'slippage_max': 0.40,
                 'risk_pct': 0.75,
                 'price_decimals': 2
-            },
-            'eurusd': {
-                'strategy_class': StrategyEURUSD_SMC_Retracement,
-                'contract_size': 100000,
-                'spread': 0.00015,
-                'commission': 0.0,
-                'slippage_min': 0.00015,
-                'slippage_max': 0.00030,
-                'risk_pct': 0.5,
-                'price_decimals': 5
             }
+            # EURUSD removed - only XAUUSD strategy remains
         }
 
     def run_backtest(self, start_date: str, end_date: str) -> Dict[str, Any]:

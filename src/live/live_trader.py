@@ -9,6 +9,7 @@ from typing import Dict, Tuple
 import threading
 import json
 from pathlib import Path
+from src.core.logger import logger
 
 # Добавить импорт
 try:
@@ -18,10 +19,22 @@ except ImportError:
     GPT_AVAILABLE = False
 
 try:
+    from src.ai.signal_manager import AISignalManager
+    AI_SIGNAL_MANAGER_AVAILABLE = True
+except ImportError:
+    AI_SIGNAL_MANAGER_AVAILABLE = False
+
+try:
     from src.ml.predictor import TradePredictor
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False
+
+try:
+    from src.monitoring import TelegramNotifier, AlertManager
+    MONITORING_AVAILABLE = True
+except ImportError:
+    MONITORING_AVAILABLE = False
 
 class LiveTrader:
     def __init__(self, config_dir: str = 'config', enable_trading: bool = False, enable_gpt: bool = True) -> None:
@@ -51,6 +64,22 @@ class LiveTrader:
         # Инициализация executor
         from src.core.executor import Executor
         self.executor = Executor(mt5_connector=self.mt5_connector)
+        
+        # Инициализация AI Signal Manager
+        self.ai_signal_manager = None
+        if AI_SIGNAL_MANAGER_AVAILABLE:
+            try:
+                self.ai_signal_manager = AISignalManager()
+                logger.info("[LiveTrader] AI Signal Manager initialized")
+            except Exception as e:
+                logger.error(f"[LiveTrader] Failed to init AI Signal Manager: {e}")
+        
+        # Инициализация мониторинга
+        self.telegram = None
+        self.alert_manager = None
+        self.notify_config = {}
+        if MONITORING_AVAILABLE:
+            self._init_monitoring()
     
     def start(self) -> None:
         """Запуск трейдера (для совместимости)."""
@@ -151,20 +180,65 @@ class LiveTrader:
         
         for symbol, config in instruments.items():
             if config.get('enabled', False):
-                strategy_name = config.get('strategy', 'eurusd_strategy')
+                # Получаем имя класса стратегии из конфига
+                strategy_class = config.get('strategy_class', 'StrategyXAUUSD')
                 
                 try:
-                    if strategy_name == 'eurusd_strategy':
-                        from src.strategies.eurusd_strategy import StrategyEURUSD_SMC_Retracement as EURUSDStrategy
-                        self.strategies[symbol] = EURUSDStrategy()
-                    elif strategy_name == 'xauusd_strategy':
-                        from src.strategies.xauusd_strategy import XAUUSDStrategy
-                        self.strategies[symbol] = XAUUSDStrategy(symbol, config)
+                    # Only XAUUSD strategy remains (EURUSD removed)
+                    if strategy_class == 'StrategyXAUUSD' or symbol == 'XAUUSD':
+                        from src.strategies.xauusd_strategy import StrategyXAUUSD
+                        self.strategies[symbol] = StrategyXAUUSD()
+                    else:
+                        logger.warning(f"Unknown strategy class: {strategy_class} for {symbol}")
+                        continue
                     
-                    print(f"[✓] Strategy loaded: {symbol} -> {strategy_name}")
+                    logger.info(f"Strategy loaded: {symbol} -> {strategy_class}")
                     
                 except Exception as e:
-                    print(f"[!] Failed to load strategy for {symbol}: {e}")
+                    logger.error(f"Failed to load strategy for {symbol}: {e}")
+                    # Алерт об ошибке стратегии
+                    if self.alert_manager:
+                        self.alert_manager.alert_strategy_error(strategy_class, str(e))
+    
+    def _init_monitoring(self):
+        """Инициализация системы мониторинга."""
+        try:
+            import yaml
+            config_path = Path('config/telegram.yaml')
+            
+            if not config_path.exists():
+                logger.info("Telegram config not found")
+                return
+            
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            tg_config = config.get('telegram', {})
+            if tg_config.get('enabled', False):
+                self.telegram = TelegramNotifier(
+                    token=tg_config.get('bot_token'),
+                    chat_id=tg_config.get('chat_id')
+                )
+                self.notify_config = tg_config.get('notify', {})
+                logger.info("Telegram notifications enabled in LiveTrader")
+                
+                # AlertManager
+                self.alert_manager = AlertManager()
+                
+                # Связываем с Telegram
+                def telegram_alert_handler(alert):
+                    if self.telegram and self.notify_config.get('alerts', True):
+                        if alert.level.value in ['WARNING', 'ERROR', 'CRITICAL']:
+                            self.telegram.send_alert(
+                                alert_type=alert.type.value,
+                                message=alert.message,
+                                level=alert.level.value
+                            )
+                
+                self.alert_manager.add_handler(telegram_alert_handler)
+                
+        except Exception as e:
+            logger.error(f"Failed to init monitoring in LiveTrader: {e}")
     
     def init_filters(self):
         """Инициализация фильтров."""
@@ -173,13 +247,13 @@ class LiveTrader:
         if self.enable_gpt and GPT_AVAILABLE:
             try:
                 self.gpt_filter = GPTNewsFilter()
-                print("[✓] GPT News Filter initialized")
+                logger.info("GPT News Filter initialized")
             except Exception as e:
-                print(f"[!] GPT Filter disabled: {e}")
+                logger.warning(f"GPT Filter disabled: {e}")
         elif not self.enable_gpt:
-            print("[!] GPT Filter disabled by user setting")
+            logger.info("GPT Filter disabled by user setting")
         else:
-            print("[!] GPT Filter not available (missing dependencies)")
+            logger.warning("GPT Filter not available (missing dependencies)")
         
         # Инициализация ML предиктора
         self.ml_predictor = None
@@ -187,13 +261,16 @@ class LiveTrader:
             try:
                 self.ml_predictor = TradePredictor()
                 if self.ml_predictor.is_trained:
-                    print("[✓] ML Predictor loaded")
+                    logger.info("ML Predictor loaded")
                 else:
-                    print("[!] ML Predictor not trained yet")
+                    logger.warning("ML Predictor not trained yet")
             except Exception as e:
-                print(f"[!] ML Predictor disabled: {e}")
+                logger.warning(f"ML Predictor disabled: {e}")
+                # Алерт об ошибке ML
+                if self.alert_manager:
+                    self.alert_manager.alert_ml_error(str(e))
         else:
-            print("[!] ML Predictor not available (missing dependencies)")
+            logger.warning("ML Predictor not available (missing dependencies)")
     
     def check_signals(self):
         """Проверка сигналов для всех стратегий."""
@@ -201,6 +278,11 @@ class LiveTrader:
         
         for symbol, strategy in self.strategies.items():
             try:
+                # Check AI permission first
+                if not self._should_trade_allowed(symbol):
+                    logger.info(f"[LiveTrader] Trading blocked by AI for {symbol}")
+                    continue
+                
                 # Получаем данные
                 h1_data, m15_data = self.load_market_data(symbol)
                 
@@ -215,6 +297,9 @@ class LiveTrader:
                     filtered_signal = self.process_signal(symbol, signal, h1_data, m15_data, len(m15_data)-1)
                     
                     if filtered_signal:
+                        # Apply AI risk multiplier
+                        filtered_signal = self._apply_ai_risk_multiplier(symbol, filtered_signal)
+                        
                         signals.append(f"{symbol}: {filtered_signal}")
                         
                         # Если разрешена торговля, открываем сделку
@@ -222,7 +307,7 @@ class LiveTrader:
                             self.execute_trade(symbol, filtered_signal)
             
             except Exception as e:
-                print(f"[!] Error checking {symbol}: {e}")
+                logger.error(f"Error checking {symbol}: {e}")
         
         return signals
     
@@ -237,7 +322,7 @@ class LiveTrader:
             return h1_data, m15_data
             
         except Exception as e:
-            print(f"[!] Failed to load data for {symbol}: {e}")
+            logger.error(f"Failed to load data for {symbol}: {e}")
             return None, None
     
     def process_signal(self, instrument: str, signal: dict, h1_data=None, m15_data=None, m15_idx=None):
@@ -282,7 +367,7 @@ class LiveTrader:
             
             return True, prediction
         except Exception as e:
-            print(f"[!] ML filter error: {e}")
+            logger.error(f"ML filter error: {e}")
             return True, 0.5
     
     def check_gpt_filter(self, instrument: str) -> Tuple[bool, str]:
@@ -298,7 +383,7 @@ class LiveTrader:
             
             return True, reason
         except Exception as e:
-            print(f"[!] GPT filter error: {e}")
+            logger.error(f"GPT filter error: {e}")
             return True, "GPT filter error"
     
     def execute_trade(self, symbol: str, signal: dict):
@@ -307,10 +392,10 @@ class LiveTrader:
             result = self.executor.execute_signal(symbol, signal)
             
             if result:
-                print(f"[TRADE] {symbol}: {result}")
+                logger.info(f"Trade executed for {symbol}: {result}")
                 
         except Exception as e:
-            print(f"[!] Trade execution failed for {symbol}: {e}")
+            logger.error(f"Trade execution failed for {symbol}: {e}")
     
     def save_trade(self, trade: dict):
         """Сохраняет сделку в историю."""
@@ -329,3 +414,45 @@ class LiveTrader:
         
         with open(trades_file, 'w') as f:
             json.dump(trades, f, indent=2)
+    
+    # ========== AI Integration Methods ==========
+    
+    def _should_trade_allowed(self, symbol: str) -> bool:
+        """Check if AI allows trading for symbol."""
+        if not self.ai_signal_manager:
+            return True  # AI not available, allow trading
+        
+        try:
+            allowed, multiplier, reason = self.ai_signal_manager.get_trading_permission(symbol)
+            
+            if not allowed:
+                logger.warning(f"[AI] Trading blocked for {symbol}: {reason}")
+            
+            return allowed
+        except Exception as e:
+            logger.error(f"[AI] Permission check failed: {e}")
+            return True  # Fail-safe: allow trading on error
+    
+    def _apply_ai_risk_multiplier(self, symbol: str, signal: dict) -> dict:
+        """Apply AI risk multiplier to signal position size."""
+        if not self.ai_signal_manager:
+            return signal
+        
+        try:
+            allowed, multiplier, reason = self.ai_signal_manager.get_trading_permission(symbol)
+            
+            if multiplier != 1.0:
+                logger.info(f"[AI] Applying risk multiplier {multiplier:.2f}x for {symbol}: {reason}")
+                
+                # Reduce position size
+                if 'volume' in signal:
+                    signal['volume'] = signal['volume'] * multiplier
+                
+                # Store original and modified for logging
+                signal['ai_risk_multiplier'] = multiplier
+                signal['ai_risk_reason'] = reason
+            
+            return signal
+        except Exception as e:
+            logger.error(f"[AI] Risk multiplier failed: {e}")
+            return signal  # Fail-safe: return original signal

@@ -56,3 +56,31 @@ class BrokerSim:
         free_margin = equity - used_margin
 
         return free_margin >= margin_required
+    
+    def calculate_pnl(self, entry_price: float, exit_price: float, direction: str, lot_size: float) -> float:
+        """
+        Calculate P&L for a trade.
+        
+        Args:
+            entry_price: Entry price
+            exit_price: Exit price
+            direction: 'BUY' or 'SELL'
+            lot_size: Lot size
+            
+        Returns:
+            P&L in account currency (USD)
+        """
+        # Calculate price difference
+        if direction == 'BUY':
+            price_diff = exit_price - entry_price
+        else:  # SELL
+            price_diff = entry_price - exit_price
+        
+        # P&L = price_diff * lot_size * contract_size
+        gross_pnl = price_diff * lot_size * self.contract_size
+        
+        # Subtract commission (round turn)
+        commission = self.calculate_commission(lot_size)
+        net_pnl = gross_pnl - commission
+        
+        return net_pnl

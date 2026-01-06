@@ -1,0 +1,101 @@
+# Конфигурация системы мониторинга
+# Копируйте в config/monitoring.yaml и настройте
+
+# Telegram уведомления
+telegram:
+  enabled: false
+  bot_token: "YOUR_BOT_TOKEN_FROM_BOTFATHER"  # Получить у @BotFather
+  chat_id: "YOUR_CHAT_ID"  # Ваш Telegram Chat ID
+  
+  # Какие события отправлять
+  notify_on:
+    trade_opened: true
+    trade_closed: true
+    daily_report: true
+    alerts: true
+    startup: true
+    shutdown: true
+
+# Email уведомления
+email:
+  enabled: false
+  smtp_server: "smtp.gmail.com"
+  smtp_port: 587
+  email_from: "your.email@gmail.com"
+  email_password: "your_app_password"  # Для Gmail используйте App Password
+  email_to:
+    - "recipient1@example.com"
+    - "recipient2@example.com"
+  
+  # Какие события отправлять (только критические)
+  notify_on:
+    critical_alerts: true
+    daily_report: true
+    high_drawdown: true
+    connection_errors: true
+
+# Настройки алертов
+alerts:
+  # Пороги срабатывания
+  thresholds:
+    max_drawdown_pct: 20.0          # Максимальная просадка в %
+    daily_loss_pct: 5.0             # Максимальный дневной убыток в %
+    max_position_size: 10.0         # Максимальный размер позиции в лотах
+    consecutive_losses: 5           # Количество убытков подряд
+    min_margin_level: 200.0         # Минимальный уровень маржи в %
+  
+  # Cooldown между одинаковыми алертами (минуты)
+  cooldown_minutes: 60
+  
+  # Уровни для отправки (INFO, WARNING, ERROR, CRITICAL)
+  telegram_min_level: "WARNING"     # Минимальный уровень для Telegram
+  email_min_level: "ERROR"          # Минимальный уровень для Email
+
+# Сбор метрик
+metrics:
+  enabled: true
+  save_to_file: true
+  data_directory: "data/metrics"
+  
+  # Автоматическое сохранение
+  auto_save_interval_minutes: 60
+  
+  # Экспорт
+  export_csv_daily: true
+  export_directory: "data/exports"
+
+# Дневные отчеты
+daily_reports:
+  enabled: true
+  time: "23:55"  # Время отправки (HH:MM)
+  
+  # Что включать в отчет
+  include:
+    balance: true
+    profit: true
+    trades_summary: true
+    winrate: true
+    drawdown: true
+    top_trades: true
+    worst_trades: true
+
+# Логирование мониторинга
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  log_to_file: true
+  log_file: "logs/monitoring.log"
+
+# Интеграции (будущее расширение)
+integrations:
+  discord:
+    enabled: false
+    webhook_url: ""
+  
+  slack:
+    enabled: false
+    webhook_url: ""
+  
+  webhook:
+    enabled: false
+    url: ""
+    method: "POST"

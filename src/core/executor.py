@@ -144,6 +144,15 @@ class Executor:
         Returns:
             True if opened, False if rejected
         """
+        # Проверка размера позиции через AlertManager
+        try:
+            from src.core.bot_manager import BotManager
+            bot_manager = BotManager()
+            if bot_manager.alert_manager:
+                bot_manager.alert_manager.check_position_size(lot_size)
+        except Exception:
+            pass
+        
         # Check if can open
         if not self.broker.can_open_position(balance, equity, used_margin, lot_size, current_price):
             return False
@@ -173,6 +182,9 @@ class Executor:
             self.position.instrument = signal.get('symbol') or signal.get('instrument') or None
         except Exception:
             self.position.instrument = None
+        
+        # Telegram уведомление об открытии
+        self._notify_position_opened(signal, lot_size, entry_price)
 
         return True
 
@@ -230,6 +242,47 @@ class Executor:
             current_profit = self.position.entry_price - current_price
 
         return current_profit / risk
+    
+    def _notify_position_opened(self, signal: dict, lot_size: float, entry_price: float):
+        """Уведомление о открытии позиции."""
+        try:
+            # Получаем telegram из BotManager
+            from src.core.bot_manager import BotManager
+            bot_manager = BotManager()
+            
+            if bot_manager.telegram and bot_manager.notify_config.get('trade_opened', True):
+                symbol = signal.get('symbol', signal.get('instrument', 'UNKNOWN'))
+                direction = "BUY" if signal['direction'] == 'long' else "SELL"
+                
+                bot_manager.telegram.send_trade_opened(
+                    symbol=symbol,
+                    direction=direction,
+                    lot=lot_size,
+                    entry=entry_price,
+                    sl=signal['sl'],
+                    tp=signal['tp']
+                )
+        except Exception as e:
+            from src.core.logger import logger
+            logger.debug(f"Failed to send telegram notification: {e}")
+    
+    def _notify_position_closed(self, symbol: str, direction: str, profit: float, pips: float, duration_str: str):
+        """Уведомление о закрытии позиции."""
+        try:
+            from src.core.bot_manager import BotManager
+            bot_manager = BotManager()
+            
+            if bot_manager.telegram and bot_manager.notify_config.get('trade_closed', True):
+                bot_manager.telegram.send_trade_closed(
+                    symbol=symbol,
+                    direction=direction,
+                    profit=profit,
+                    pips=pips,
+                    duration=duration_str
+                )
+        except Exception as e:
+            from src.core.logger import logger
+            logger.debug(f"Failed to send telegram notification: {e}")
 
     def _close_position(self, exit_price: float, exit_time, reason: str) -> float:
         """Close position and calculate PnL."""
@@ -272,6 +325,34 @@ class Executor:
         except Exception:
             # bot_manager not available or import failed — ignore
             pass
+
+        # Telegram уведомление
+        try:
+            symbol = self.position.instrument or "UNKNOWN"
+            direction = "BUY" if self.position.direction == 'long' else "SELL"
+            pips = abs(exit_price - self.position.entry_price) * (10000 if 'JPY' not in symbol else 100)
+            duration = exit_time - self.position.entry_time
+            duration_str = str(duration).split('.')[0]  # Убираем микросекунды
+            
+            self._notify_position_closed(symbol, direction, pnl, pips, duration_str)
+            
+            # Проверка серии убытков
+            if pnl < 0:
+                from src.core.bot_manager import BotManager
+                bot_manager = BotManager()
+                if bot_manager.alert_manager and hasattr(bot_manager, 'stats'):
+                    # Подсчитываем серию убытков
+                    consecutive_losses = 0
+                    recent_trades = bot_manager.stats.get('recent_trades', [])
+                    for trade in reversed(recent_trades[-10:]):  # Последние 10 сделок
+                        if trade.get('pnl', 0) < 0:
+                            consecutive_losses += 1
+                        else:
+                            break
+                    bot_manager.alert_manager.check_consecutive_losses(consecutive_losses)
+        except Exception as e:
+            from src.core.logger import logger
+            logger.debug(f"Failed to send telegram notification: {e}")
 
         # Clear position
         self.position = None
