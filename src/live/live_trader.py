@@ -187,7 +187,28 @@ class LiveTrader:
                     # Only XAUUSD strategy remains (EURUSD removed)
                     if strategy_class == 'StrategyXAUUSD' or symbol == 'XAUUSD':
                         from src.strategies.xauusd_strategy import StrategyXAUUSD
-                        self.strategies[symbol] = StrategyXAUUSD()
+                        strategy = StrategyXAUUSD()
+                        
+                        # Применяем пользовательские настройки из config.json
+                        try:
+                            config_file = Path('data/config.json')
+                            if config_file.exists():
+                                import json
+                                with open(config_file, 'r') as f:
+                                    user_config = json.load(f)
+                                    strategy_settings = user_config.get('strategy', {})
+                                    if strategy_settings:
+                                        strategy.max_daily_trades = strategy_settings.get('max_daily_trades', strategy.max_daily_trades)
+                                        strategy.max_daily_loss = strategy_settings.get('max_daily_loss', strategy.max_daily_loss)
+                                        strategy.min_atr_threshold = strategy_settings.get('min_atr_threshold', strategy.min_atr_threshold)
+                                        strategy.max_atr_threshold = strategy_settings.get('max_atr_threshold', strategy.max_atr_threshold)
+                                        logger.info(f"[Strategy] Applied custom settings: trades={strategy.max_daily_trades}, "
+                                                  f"loss={strategy.max_daily_loss}%, min_atr={strategy.min_atr_threshold}, "
+                                                  f"max_atr={strategy.max_atr_threshold}")
+                        except Exception as e:
+                            logger.warning(f"[Strategy] Failed to load custom settings: {e}")
+                        
+                        self.strategies[symbol] = strategy
                     else:
                         logger.warning(f"Unknown strategy class: {strategy_class} for {symbol}")
                         continue
@@ -276,6 +297,12 @@ class LiveTrader:
         """Проверка сигналов для всех стратегий."""
         signals = []
         
+        # Проверяем AI сигналы если доступны
+        if self.ai_signal_manager:
+            ai_signals = self._check_ai_signals()
+            if ai_signals:
+                signals.extend(ai_signals)
+        
         for symbol, strategy in self.strategies.items():
             try:
                 # Check AI permission first
@@ -287,14 +314,22 @@ class LiveTrader:
                 h1_data, m15_data = self.load_market_data(symbol)
                 
                 if h1_data is None or m15_data is None:
+                    logger.debug(f"[LiveTrader] No market data for {symbol}")
                     continue
                 
                 # Проверяем сигналы стратегии
+                logger.debug(f"[LiveTrader] Checking strategy signals for {symbol}...")
                 signal = strategy.check_signal(h1_data, m15_data)
                 
                 if signal and signal.get('valid', False):
+                    logger.info(f"[LiveTrader] ✅ Valid signal from strategy: {signal.get('direction')} @ {signal.get('entry')}")
                     # Применяем фильтры
                     filtered_signal = self.process_signal(symbol, signal, h1_data, m15_data, len(m15_data)-1)
+                else:
+                    if signal:
+                        logger.info(f"[LiveTrader] ❌ Strategy signal NOT valid for {symbol}: {signal}")
+                    else:
+                        logger.debug(f"[LiveTrader] No strategy signal for {symbol}")
                     
                     if filtered_signal:
                         # Apply AI risk multiplier
@@ -416,6 +451,77 @@ class LiveTrader:
             json.dump(trades, f, indent=2)
     
     # ========== AI Integration Methods ==========
+    
+    def _check_ai_signals(self) -> list:
+        """
+        Проверка и исполнение AI сигналов.
+        
+        Returns:
+            List of triggered AI signals ready for execution
+        """
+        if not self.ai_signal_manager:
+            return []
+        
+        triggered_signals = []
+        
+        try:
+            import MetaTrader5 as mt5
+            current_time = datetime.now()
+            
+            # Проверяем каждый символ
+            for symbol in ['XAUUSD', 'EURUSD']:
+                # Получаем текущую цену
+                tick = mt5.symbol_info_tick(symbol)
+                if not tick:
+                    continue
+                
+                current_price = (tick.bid + tick.ask) / 2
+                
+                # Проверяем триггеры
+                signals = self.ai_signal_manager.check_triggers(
+                    current_price=current_price,
+                    symbol=symbol,
+                    current_time=current_time
+                )
+                
+                if signals:
+                    for ai_signal in signals:
+                        # Конвертируем AI сигнал в формат стратегии
+                        strategy_signal = self._convert_ai_signal_to_strategy(ai_signal)
+                        triggered_signals.append(strategy_signal)
+                        
+                        logger.info(
+                            f"[AI-Signal] Triggered: {symbol} {ai_signal.type} "
+                            f"@ {ai_signal.entry_price} (conf: {ai_signal.confidence}%)"
+                        )
+        
+        except Exception as e:
+            logger.error(f"[AI] Signal check failed: {e}")
+        
+        return triggered_signals
+    
+    def _convert_ai_signal_to_strategy(self, ai_signal) -> dict:
+        """
+        Конвертация AI сигнала в формат стратегии.
+        
+        Args:
+            ai_signal: AISignal объект
+        
+        Returns:
+            Dict в формате стратегии
+        """
+        return {
+            'symbol': ai_signal.symbol,
+            'direction': 'long' if ai_signal.type.upper() == 'BUY' else 'short',
+            'entry_price': ai_signal.entry_price,
+            'sl': ai_signal.stop_loss,
+            'tp': ai_signal.take_profit,
+            'confidence': ai_signal.confidence / 100.0,  # 0-1 scale
+            'reasoning': ai_signal.reasoning,
+            'source': 'AI-GPT',
+            'ai_signal_id': ai_signal.id,
+            'timestamp': datetime.now().isoformat()
+        }
     
     def _should_trade_allowed(self, symbol: str) -> bool:
         """Check if AI allows trading for symbol."""

@@ -53,6 +53,9 @@ class BotManager:
         self.stop_event = threading.Event()
         self.pause_event = threading.Event()
         
+        # MT5 Manager (устанавливается извне)
+        self.mt5_manager = None
+        
         # Логи для веб-интерфейса
         self.logs: list = []
         self.max_logs = 100
@@ -80,6 +83,25 @@ class BotManager:
         
         # Загружаем историю
         self.load_stats()
+    
+    def set_mt5_manager(self, mt5_manager):
+        """Установка MT5 Manager для получения реальной статистики."""
+        self.mt5_manager = mt5_manager
+        logger.info("MT5 Manager connected to BotManager")
+    
+    def _update_stats_from_mt5(self):
+        """Обновление статистики из MT5."""
+        if self.mt5_manager and self.mt5_manager.is_connected():
+            try:
+                account_info = self.mt5_manager.get_account_info()
+                if account_info:
+                    self.stats['balance'] = account_info.get('balance', self.stats['balance'])
+                    self.stats['equity'] = account_info.get('equity', account_info.get('balance', 0))
+                    logger.info(f"Stats updated from MT5: balance=${self.stats['balance']:.2f}")
+                    return True
+            except Exception as e:
+                logger.error(f"Failed to update stats from MT5: {e}")
+        return False
     
     def _init_monitoring(self):
         """Инициализация системы мониторинга."""
@@ -143,6 +165,9 @@ class BotManager:
         
         self.log(f"Bot started in {mode.upper()} mode")
         
+        # Обновляем статистику из MT5 перед отправкой уведомления
+        self._update_stats_from_mt5()
+        
         # Telegram уведомление
         if self.telegram and self.notify_config.get('startup', True):
             instruments = list(self.stats.get('instruments', ['XAUUSD', 'EURUSD']))
@@ -163,6 +188,9 @@ class BotManager:
             self.bot_thread.join(timeout=5)
         
         self.log("Bot stopped")
+        
+        # Обновляем статистику из MT5 перед отправкой уведомления
+        self._update_stats_from_mt5()
         
         # Telegram уведомление
         if self.telegram and self.notify_config.get('shutdown', True):

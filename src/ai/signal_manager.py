@@ -112,6 +112,43 @@ class AISignalManager:
         
         logger.info("[AI-Signal] Manager v2.0 initialized")
     
+    def _is_trading_time_allowed(self, test_time: Optional[datetime] = None) -> Tuple[bool, str]:
+        """
+        Check if current time allows trading.
+        
+        Args:
+            test_time: Optional datetime for testing (default: now)
+        
+        Returns:
+            (allowed, reason)
+        """
+        now = test_time or datetime.now()
+        current_hour = now.hour
+        current_weekday = now.weekday()  # 0=Monday, 6=Sunday
+        
+        # Night block: 22:00 - 02:00
+        if current_hour >= 22 or current_hour < 2:
+            return False, "Night time block (22:00-02:00)"
+        
+        # Weekend block: Friday 22:00 - Monday 02:00
+        # Friday after 22:00
+        if current_weekday == 4 and current_hour >= 22:
+            return False, "Weekend block starting (Friday 22:00)"
+        
+        # Saturday (all day)
+        if current_weekday == 5:
+            return False, "Weekend block (Saturday)"
+        
+        # Sunday (all day)
+        if current_weekday == 6:
+            return False, "Weekend block (Sunday)"
+        
+        # Monday before 02:00
+        if current_weekday == 0 and current_hour < 2:
+            return False, "Weekend block ending (Monday 02:00)"
+        
+        return True, "OK"
+    
     def process_analysis(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process AI analysis and create signals.
@@ -237,6 +274,139 @@ class AISignalManager:
         
         return True
     
+    def is_duplicate_signal(
+        self,
+        symbol: str,
+        signal_type: str,
+        entry_price: float,
+        tolerance: float = 0.001  # 0.1% tolerance
+    ) -> bool:
+        """
+        Проверка на дубликат сигнала.
+        
+        Args:
+            symbol: Торговый символ
+            signal_type: BUY или SELL
+            entry_price: Цена входа
+            tolerance: Допуск для сравнения цен (0.001 = 0.1%)
+        
+        Returns:
+            True если сигнал дубликат, False если новый
+        """
+        with self._lock:
+            for existing_signal in self.active_signals:
+                # Проверяем только активные сигналы
+                if existing_signal.status not in ["pending", "triggered"]:
+                    continue
+                
+                # Проверяем symbol и type
+                if existing_signal.symbol != symbol:
+                    continue
+                if existing_signal.type.upper() != signal_type.upper():
+                    continue
+                
+                # Проверяем entry price с допуском ±0.1%
+                price_diff = abs(existing_signal.entry_price - entry_price)
+                price_tolerance = existing_signal.entry_price * tolerance
+                
+                if price_diff <= price_tolerance:
+                    logger.info(
+                        f"[AI-Signal] Duplicate signal detected: "
+                        f"{symbol} {signal_type} @ {entry_price} "
+                        f"(existing: {existing_signal.entry_price})"
+                    )
+                    return True
+        
+        return False
+    
+    def create_signal_from_analysis(
+        self,
+        symbol: str,
+        analysis: Dict,
+        signal_data: Dict
+    ) -> Optional[AISignal]:
+        """
+        Создание сигнала из анализа с проверкой на дубликаты.
+        
+        Args:
+            symbol: Торговый символ
+            analysis: Полный анализ от MarketAnalyst
+            signal_data: Данные конкретного сигнала
+        
+        Returns:
+            AISignal или None если дубликат
+        """
+        try:
+            # Проверяем валидность
+            if not self._validate_signal(signal_data):
+                return None
+            
+            # Проверяем дубликаты
+            if self.is_duplicate_signal(
+                symbol=symbol,
+                signal_type=signal_data["type"],
+                entry_price=signal_data["entry_price"]
+            ):
+                # Проверяем, может обновить существующий если уверенность выше
+                self._try_update_signal(symbol, signal_data)
+                return None
+            
+            # Создаем новый сигнал
+            version = analysis.get("analysis_version", "2.0")
+            signal = self._create_signal(symbol, signal_data, version)
+            
+            with self._lock:
+                self.active_signals.append(signal)
+                
+                # Log to history
+                self.signal_history.append({
+                    "action": "created",
+                    "signal_id": signal.id,
+                    "timestamp": datetime.now().isoformat()
+                })
+                
+                logger.info(
+                    f"[AI-Signal] Created: {signal.type} @ {signal.entry_price} "
+                    f"(conf: {signal.confidence}%, RR: {signal.risk_reward:.2f})"
+                )
+                
+                # Save state
+                self._save_state()
+            
+            return signal
+            
+        except Exception as e:
+            logger.error(f"[AI-Signal] Failed to create signal: {e}")
+            return None
+    
+    def _try_update_signal(self, symbol: str, new_signal_data: Dict):
+        """Попытка обновить существующий сигнал если новый лучше."""
+        with self._lock:
+            for existing in self.active_signals:
+                if existing.symbol != symbol:
+                    continue
+                if existing.type.upper() != new_signal_data["type"].upper():
+                    continue
+                
+                # Проверяем entry price
+                price_diff = abs(existing.entry_price - new_signal_data["entry_price"])
+                if price_diff <= existing.entry_price * 0.001:
+                    # Обновляем если уверенность выше
+                    new_confidence = new_signal_data["confidence"]
+                    if new_confidence > existing.confidence:
+                        existing.confidence = new_confidence
+                        existing.stop_loss = new_signal_data["stop_loss"]
+                        existing.take_profit = new_signal_data["take_profit"]
+                        existing.reasoning = new_signal_data.get("reasoning", existing.reasoning)
+                        
+                        logger.info(
+                            f"[AI-Signal] Updated signal {existing.id}: "
+                            f"confidence {existing.confidence}% → {new_confidence}%"
+                        )
+                        
+                        self._save_state()
+                    break
+    
     def _create_signal(self, symbol: str, signal_data: Dict, version: str) -> AISignal:
         """Create AISignal with TTL."""
         signal_id = f"{symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -354,6 +524,11 @@ class AISignalManager:
         Returns:
             (allowed: bool, risk_multiplier: float, reason: str)
         """
+        # Check time restrictions first
+        time_allowed, time_reason = self._is_trading_time_allowed()
+        if not time_allowed:
+            return False, 0.0, time_reason
+        
         # Check if block expired
         if self.block_until:
             try:

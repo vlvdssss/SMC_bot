@@ -7,7 +7,7 @@ Real-time News Fetcher для BAZA Trading Bot
 
 import requests
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 import logging
 
 logger = logging.getLogger(__name__)
@@ -196,6 +196,45 @@ class RealTimeNewsFetcher:
                     high_impact.append(event)
         
         return high_impact
+    
+    def get_relevant_news(self, symbol: str = "XAUUSD", hours: int = 24) -> List[Dict[str, Any]]:
+        """
+        Получает релевантные новости для символа.
+        
+        Args:
+            symbol: Торговый символ
+            hours: Часов вперед
+        
+        Returns:
+            List[Dict]: Список новостей в формате dict
+        """
+        events = self.fetch_todays_events()
+        high_impact = self.get_high_impact_events(hours_ahead=hours//4)  # Конвертируем в часы
+        
+        # Определяем релевантные валюты
+        relevant_currencies = []
+        if "XAU" in symbol or "GOLD" in symbol:
+            relevant_currencies = ["USD"]
+        elif "EUR" in symbol:
+            relevant_currencies = ["EUR", "USD"]
+        elif "GBP" in symbol:
+            relevant_currencies = ["GBP", "USD"]
+        else:
+            relevant_currencies = ["USD"]
+        
+        # Конвертируем в dict формат
+        news_list = []
+        for event in events:
+            if event.currency in relevant_currencies:
+                news_list.append({
+                    "title": event.title,
+                    "time": event.time,
+                    "impact": event.impact.lower(),
+                    "currency": event.currency,
+                    "summary": f"{event.currency} {event.title} at {event.time}"
+                })
+        
+        return news_list
     
     def get_news_summary(self, instrument: str = "ALL") -> str:
         """

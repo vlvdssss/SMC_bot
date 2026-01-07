@@ -129,6 +129,18 @@ class BazaApp:
         self.ai_scheduler = None
         self.ai_signal_manager = None
         self.ai_signals_data = []  # Store full signal data for details
+        
+        # Инициализация Pure AI Trader
+        self.pure_ai_trader = None
+        try:
+            from src.ai.pure_ai_trader import PureAITrader
+            api_key = os.getenv('OPENAI_API_KEY')
+            if api_key:
+                self.pure_ai_trader = PureAITrader(api_key=api_key)
+                app_logger.info("[OK] Pure AI Trader initialized")
+        except Exception as e:
+            app_logger.error(f"[ERROR] Pure AI Trader init failed: {e}")
+        
         if AI_ANALYSIS_AVAILABLE:
             try:
                 self.ai_scheduler = init_scheduler(callback=self._on_ai_analysis_update)
@@ -152,6 +164,10 @@ class BazaApp:
         
         # Загрузка статистики
         self.load_stats()
+        
+        # Start AI display auto-update (every 5 seconds)
+        if AI_ANALYSIS_AVAILABLE and self.ai_signal_manager:
+            self._schedule_ai_update()
     
     def _on_market_data_update(self):
         """Callback при обновлении рыночных данных."""
@@ -214,6 +230,11 @@ class BazaApp:
                 else:
                     app_logger.error("[ERROR] Failed to initialize MT5 - check if MetaTrader 5 is installed")
                     self.app_state.mt5_manager = None
+            
+            # Передаем MT5 Manager в BotManager для получения реальной статистики
+            if self.app_state.mt5_manager and self.bot_manager:
+                self.bot_manager.set_mt5_manager(self.app_state.mt5_manager)
+                app_logger.info("[OK] MT5 Manager connected to BotManager")
                     
         except ImportError as e:
             app_logger.error(f"[ERROR] MetaTrader5 library not found: {e}")
@@ -476,15 +497,15 @@ class BazaApp:
         """Диалог настроек."""
         dialog = tk.Toplevel(self.root)
         dialog.title("Настройки BAZA")
-        dialog.geometry("500x400")
+        dialog.geometry("550x650")  # Увеличено для новых настроек
         dialog.configure(bg='#1a1a1a')
         dialog.transient(self.root)
         dialog.grab_set()
         
         # Центрируем
         dialog.geometry("+%d+%d" % (
-            self.root.winfo_screenwidth() / 2 - 250,
-            self.root.winfo_screenheight() / 2 - 200
+            self.root.winfo_screenwidth() / 2 - 275,
+            self.root.winfo_screenheight() / 2 - 325
         ))
         
         tk.Label(dialog, text="⚙ Настройки BAZA Trading Bot",
@@ -565,36 +586,60 @@ class BazaApp:
                  width=15, height=1,
                  relief='flat', cursor='hand2').pack(pady=(0, 10))
         
-        # Раздел лицензии
-        license_frame = tk.Frame(dialog, bg='#2a2a2a', relief='flat')
-        license_frame.pack(fill='x', padx=20, pady=10)
+        # Раздел настроек стратегии
+        strategy_frame = tk.Frame(dialog, bg='#2a2a2a', relief='flat')
+        strategy_frame.pack(fill='x', padx=20, pady=10)
         
-        tk.Label(license_frame, text="🔐 Лицензия (для тестирования)",
+        tk.Label(strategy_frame, text="⚙️ Настройки стратегии XAUUSD",
                 font=('Arial', 11, 'bold'),
                 bg='#2a2a2a', fg='white').pack(anchor='w', pady=(10, 5))
         
-        def reset_license():
-            """Сброс лицензии для тестирования."""
-            try:
-                license_path = Path('data/license.json')
-                if license_path.exists():
-                    license_path.unlink()
-                    status_label.config(text="[OK] License reset! Restart the program.", fg='#00d4aa')
-                else:
-                    status_label.config(text="ℹ️ Лицензия не найдена", fg='#f39c12')
-            except Exception as e:
-                status_label.config(text=f"[ERROR] Reset error: {e}", fg='#ff4757')
+        # Получаем текущие параметры стратегии
+        strategy_config = current_config.get('strategy', {})
         
-        tk.Button(license_frame, text="[RESET] Reset license",
-                 font=('Arial', 10, 'bold'),
-                 bg='#ff4757', fg='white',
-                 command=reset_license,
-                 width=15, height=1,
-                 relief='flat', cursor='hand2').pack(pady=(0, 10))
+        # Максимум сделок в день
+        trades_frame = tk.Frame(strategy_frame, bg='#2a2a2a')
+        trades_frame.pack(fill='x', pady=5)
+        tk.Label(trades_frame, text="Макс. сделок в день:",
+                font=('Arial', 10), bg='#2a2a2a', fg='#cccccc', width=22, anchor='w').pack(side='left')
+        max_trades_var = tk.IntVar(value=strategy_config.get('max_daily_trades', 1))
+        tk.Spinbox(trades_frame, from_=1, to=10, textvariable=max_trades_var,
+                  font=('Arial', 10), bg='#0f0f0f', fg='white', width=10,
+                  buttonbackground='#2a2a2a', insertbackground='white').pack(side='left', padx=5)
         
-        tk.Label(license_frame, text="[WARNING] After reset, restart the program for activation testing",
+        # Максимальная дневная потеря (%)
+        loss_frame = tk.Frame(strategy_frame, bg='#2a2a2a')
+        loss_frame.pack(fill='x', pady=5)
+        tk.Label(loss_frame, text="Макс. потеря в день (%):",
+                font=('Arial', 10), bg='#2a2a2a', fg='#cccccc', width=22, anchor='w').pack(side='left')
+        max_loss_var = tk.DoubleVar(value=strategy_config.get('max_daily_loss', 1.0))
+        tk.Spinbox(loss_frame, from_=0.5, to=5.0, increment=0.5, textvariable=max_loss_var,
+                  font=('Arial', 10), bg='#0f0f0f', fg='white', width=10,
+                  buttonbackground='#2a2a2a', insertbackground='white', format="%.1f").pack(side='left', padx=5)
+        
+        # Минимальный ATR (% от среднего)
+        min_atr_frame = tk.Frame(strategy_frame, bg='#2a2a2a')
+        min_atr_frame.pack(fill='x', pady=5)
+        tk.Label(min_atr_frame, text="Мин. волатильность ATR:",
+                font=('Arial', 10), bg='#2a2a2a', fg='#cccccc', width=22, anchor='w').pack(side='left')
+        min_atr_var = tk.DoubleVar(value=strategy_config.get('min_atr_threshold', 0.7))
+        tk.Spinbox(min_atr_frame, from_=0.3, to=1.0, increment=0.1, textvariable=min_atr_var,
+                  font=('Arial', 10), bg='#0f0f0f', fg='white', width=10,
+                  buttonbackground='#2a2a2a', insertbackground='white', format="%.1f").pack(side='left', padx=5)
+        
+        # Максимальный ATR (% от среднего)
+        max_atr_frame = tk.Frame(strategy_frame, bg='#2a2a2a')
+        max_atr_frame.pack(fill='x', pady=5)
+        tk.Label(max_atr_frame, text="Макс. волатильность ATR:",
+                font=('Arial', 10), bg='#2a2a2a', fg='#cccccc', width=22, anchor='w').pack(side='left')
+        max_atr_var = tk.DoubleVar(value=strategy_config.get('max_atr_threshold', 1.5))
+        tk.Spinbox(max_atr_frame, from_=1.0, to=3.0, increment=0.1, textvariable=max_atr_var,
+                  font=('Arial', 10), bg='#0f0f0f', fg='white', width=10,
+                  buttonbackground='#2a2a2a', insertbackground='white', format="%.1f").pack(side='left', padx=5)
+        
+        tk.Label(strategy_frame, text="ℹ️ Настройки применяются сразу при сохранении",
                 font=('Arial', 8),
-                bg='#2a2a2a', fg='#888888').pack(anchor='w', pady=(0, 10))
+                bg='#2a2a2a', fg='#888888').pack(anchor='w', pady=(10, 10))
         
         # Кнопки
         btn_frame = tk.Frame(dialog, bg='#1a1a1a')
@@ -603,6 +648,14 @@ class BazaApp:
         def save_settings():
             key = api_entry.get().strip()
             gpt_enabled_val = gpt_enabled.get()
+            
+            # Получаем значения стратегии
+            strategy_settings = {
+                'max_daily_trades': max_trades_var.get(),
+                'max_daily_loss': max_loss_var.get(),
+                'min_atr_threshold': min_atr_var.get(),
+                'max_atr_threshold': max_atr_var.get()
+            }
             
             if key:
                 # Сохраняем в переменную окружения для текущей сессии
@@ -635,7 +688,7 @@ class BazaApp:
                 if 'OPENAI_API_KEY' in os.environ:
                     del os.environ['OPENAI_API_KEY']
             
-            # Сохраняем настройку GPT
+            # Сохраняем настройку GPT и стратегии
             config_file = Path('data/config.json')
             config_file.parent.mkdir(exist_ok=True)
             try:
@@ -645,12 +698,39 @@ class BazaApp:
                         config = json.load(f)
                 
                 config['enable_gpt'] = gpt_enabled_val
+                config['strategy'] = strategy_settings  # Добавляем настройки стратегии
                 
                 with open(config_file, 'w') as f:
                     json.dump(config, f, indent=2)
                 
                 # Обновляем настройку в классе
                 self.enable_gpt = gpt_enabled_val
+                
+                # Применяем настройки к работающей стратегии
+                if hasattr(self, 'bot_manager') and self.bot_manager:
+                    try:
+                        # Получаем активную стратегию через bot_manager
+                        if hasattr(self.bot_manager, 'live_trader') and self.bot_manager.live_trader:
+                            live_trader = self.bot_manager.live_trader
+                            # Получаем стратегию XAUUSD из словаря стратегий
+                            if hasattr(live_trader, 'strategies') and 'XAUUSD' in live_trader.strategies:
+                                strategy = live_trader.strategies['XAUUSD']
+                                # Применяем новые параметры
+                                strategy.max_daily_trades = strategy_settings['max_daily_trades']
+                                strategy.max_daily_loss = strategy_settings['max_daily_loss']
+                                strategy.min_atr_threshold = strategy_settings['min_atr_threshold']
+                                strategy.max_atr_threshold = strategy_settings['max_atr_threshold']
+                                app_logger.info(f"[Settings] Strategy parameters updated: {strategy_settings}")
+                                status_label.config(text="[OK] Настройки применены! Бот использует новые значения.", fg='#00d4aa')
+                            else:
+                                status_label.config(text="[OK] Настройки сохранены (применятся при запуске бота)", fg='#00d4aa')
+                        else:
+                            status_label.config(text="[OK] Настройки сохранены (применятся при запуске бота)", fg='#00d4aa')
+                    except Exception as e:
+                        app_logger.error(f"[Settings] Failed to apply strategy settings: {e}")
+                        status_label.config(text="[OK] Настройки сохранены (применятся при перезапуске)", fg='#f39c12')
+                else:
+                    status_label.config(text="[OK] Настройки сохранены!", fg='#00d4aa')
 
                 # Если ключ указан — попробуем инициализировать AI-анализатор в рантайме
                 if key and openai is not None:
@@ -815,6 +895,11 @@ class BazaApp:
                 success, message = self.app_state.mt5_manager.connect(login, password, server)
                 
                 if success:
+                    # Обновляем связь с BotManager после подключения
+                    if self.bot_manager:
+                        self.bot_manager.set_mt5_manager(self.app_state.mt5_manager)
+                        self.log("[OK] MT5 Manager reconnected to BotManager")
+                    
                     # Предлагаем сохранить настройки
                     if messagebox.askyesno("Сохранение", "Сохранить учётные данные MT5 для автоматической загрузки?"):
                         try:
@@ -953,38 +1038,14 @@ class BazaApp:
         left_frame = tk.Frame(form_frame, bg='#1a1a1a')
         left_frame.pack(side='left', fill='y', padx=(0, 10))
 
-        # Symbol selector
-        symbol_frame = tk.Frame(left_frame, bg='#2a2a2a', relief='flat')
-        symbol_frame.pack(fill='x', pady=5)
-
-        tk.Label(symbol_frame, text="Инструмент:",
-                font=('Arial', 10, 'bold'),
-                bg='#2a2a2a', fg='white').pack(anchor='w', padx=10, pady=5)
-
+        # Direction (инструмент и таймфрейм удалены - только XAUUSD M15)
         state = self.app_state.manual_trade_state
-        self.manual_symbol = tk.StringVar(value=state.symbol)
-        symbol_combo = ttk.Combobox(symbol_frame, textvariable=self.manual_symbol,
-                                   values=['EURUSD', 'XAUUSD'],
-                                   state='readonly', font=('Arial', 10))
-        symbol_combo.pack(padx=10, pady=(0, 10))
-        symbol_combo.configure(background='#0f0f0f', foreground='white')
-        symbol_combo.bind('<<ComboboxSelected>>', self._on_symbol_change)
-
-        # Timeframe selector
-        timeframe_frame = tk.Frame(left_frame, bg='#2a2a2a', relief='flat')
-        timeframe_frame.pack(fill='x', pady=5)
-
-        tk.Label(timeframe_frame, text="Таймфрейм:",
-                font=('Arial', 10, 'bold'),
-                bg='#2a2a2a', fg='white').pack(anchor='w', padx=10, pady=5)
-
-        self.manual_timeframe = tk.StringVar(value=state.timeframe)
-        tf_combo = ttk.Combobox(timeframe_frame, textvariable=self.manual_timeframe,
-                               values=['M15', 'H1', 'H4', 'D1'],
-                               state='readonly', font=('Arial', 10))
-        tf_combo.pack(padx=10, pady=(0, 10))
-        tf_combo.configure(background='#0f0f0f', foreground='white')
-        tf_combo.bind('<<ComboboxSelected>>', self._on_timeframe_change)
+        # Hardcode values
+        self.manual_symbol = tk.StringVar(value='XAUUSD')
+        self.manual_timeframe = tk.StringVar(value='M15')
+        # Обновляем state напрямую
+        state.symbol = 'XAUUSD'
+        state.timeframe = 'M15'
         
         # Direction
         direction_frame = tk.Frame(left_frame, bg='#2a2a2a', relief='flat')
@@ -2361,6 +2422,54 @@ class BazaApp:
                                       bd=0, activebackground='#4a6278')
         self.btn_settings.pack(side='left', padx=5)
         
+        # ===== TRADING MODE TOGGLE =====
+        # Добавляем переключатель режима торговли
+        mode_toggle_frame = tk.Frame(control, bg='#2a2a2a', relief='flat')
+        mode_toggle_frame.pack(pady=15)
+        
+        tk.Label(mode_toggle_frame, text="🎯 Режим торговли:",
+                font=('Arial', 12, 'bold'),
+                bg='#2a2a2a', fg='white').pack(side='left', padx=10)
+        
+        # Переменная для хранения режима
+        self.trading_mode = tk.StringVar(value="strategy")  # "strategy" или "pure_ai"
+        
+        # Radio buttons с улучшенным дизайном
+        strategy_radio = tk.Radiobutton(
+            mode_toggle_frame,
+            text="⚡ Strategy + AI  (Стратегия + GPT фильтр)",
+            variable=self.trading_mode,
+            value="strategy",
+            font=('Arial', 11, 'bold'),
+            bg='#2a2a2a', fg='#00d4aa',
+            selectcolor='#1a1a1a',
+            activebackground='#2a2a2a',
+            activeforeground='#00ffcc',
+            command=self._on_trading_mode_change
+        )
+        strategy_radio.pack(side='left', padx=10)
+        
+        pure_ai_radio = tk.Radiobutton(
+            mode_toggle_frame,
+            text="🤖 Pure AI Trading  (Только GPT сигналы)",
+            variable=self.trading_mode,
+            value="pure_ai",
+            font=('Arial', 11, 'bold'),
+            bg='#2a2a2a', fg='#5b7dff',
+            selectcolor='#1a1a1a',
+            activebackground='#2a2a2a',
+            activeforeground='#7a96ff',
+            command=self._on_trading_mode_change
+        )
+        pure_ai_radio.pack(side='left', padx=10)
+        
+        # Индикатор текущего режима
+        self.mode_indicator = tk.Label(mode_toggle_frame, 
+                                       text="[Активен]",
+                                       font=('Arial', 10, 'bold'),
+                                       bg='#2a2a2a', fg='#00d4aa')
+        self.mode_indicator.pack(side='left', padx=10)
+        
         # Режим (фиксирован на Live)
         mode_frame = tk.Frame(control, bg='#2a2a2a')
         mode_frame.pack(pady=5)
@@ -2548,15 +2657,29 @@ class BazaApp:
                 "Будут открываться РЕАЛЬНЫЕ сделки!"):
             return
         
-        self.stop_event.clear()
-        self.bot_thread = threading.Thread(target=self.run_bot, args=(mode,), daemon=True)
-        self.bot_thread.start()
-        
-        self.update_status(True, False)
-        self.log(f"[LAUNCH] Bot started in {mode.upper()} mode")
+        # Используем bot_manager для старта (с telegram уведомлением)
+        if self.bot_manager:
+            success = self.bot_manager.start(mode=mode)
+            if success:
+                self.update_status(True, False)
+                self.log(f"[LAUNCH] Bot started in {mode.upper()} mode")
+            else:
+                messagebox.showerror("Ошибка", "Не удалось запустить бота")
+        else:
+            # Fallback если bot_manager недоступен
+            self.stop_event.clear()
+            self.bot_thread = threading.Thread(target=self.run_bot, args=(mode,), daemon=True)
+            self.bot_thread.start()
+            
+            self.update_status(True, False)
+            self.log(f"[LAUNCH] Bot started in {mode.upper()} mode")
     
     def stop_bot(self):
         """Остановка бота."""
+        # Используем bot_manager для остановки (с telegram уведомлением)
+        if self.bot_manager:
+            self.bot_manager.stop()
+        
         self.stop_event.set()
         self.update_status(False)
         self.app_state.update_mt5_status(False)
@@ -2573,6 +2696,69 @@ class BazaApp:
             self.bot_paused = True
             self.update_status(True, True)
             self.log("⏸️ Бот на паузе")
+    
+    def _on_trading_mode_change(self):
+        """Обработчик переключения режима торговли."""
+        mode = self.trading_mode.get()
+        
+        if mode == "strategy":
+            # Режим Strategy + AI
+            self.log("=" * 60)
+            self.log("[MODE] ⚡ Переключено на режим: Strategy + AI")
+            self.log("[MODE] Бот торгует по стратегии с GPT фильтрацией")
+            self.log("=" * 60)
+            
+            # Останавливаем Pure AI Trader если запущен
+            if self.pure_ai_trader and hasattr(self.pure_ai_trader, 'running') and self.pure_ai_trader.running:
+                self.pure_ai_trader.stop()
+                self.log("[PureAI] Pure AI Trader остановлен")
+            
+            # Обновляем индикатор
+            if hasattr(self, 'mode_indicator'):
+                self.mode_indicator.config(text="[Активен]", fg='#00d4aa')
+        
+        elif mode == "pure_ai":
+            # Режим Pure AI Trading
+            self.log("=" * 60)
+            self.log("[MODE] 🤖 Переключено на режим: Pure AI Trading")
+            self.log("[MODE] Бот торгует только по сигналам GPT (каждые 2 часа)")
+            self.log("[MODE] Символы: XAUUSD, EURUSD | Таймфрейм: 15M")
+            self.log("=" * 60)
+            
+            # Проверяем доступность
+            if not self.pure_ai_trader:
+                self.log("[ERROR] Pure AI Trader не инициализирован!")
+                self.log("[ERROR] Проверьте OPENAI_API_KEY в настройках")
+                messagebox.showerror("Ошибка", 
+                    "Pure AI Trader недоступен!\n\n"
+                    "Убедитесь что:\n"
+                    "1. Установлен OPENAI_API_KEY\n"
+                    "2. Модуль src/ai/pure_ai_trader.py доступен")
+                # Возвращаем на Strategy mode
+                self.trading_mode.set("strategy")
+                return
+            
+            # Запускаем Pure AI Trader если бот активен
+            if self.bot_running and not self.bot_paused:
+                # Устанавливаем executor если доступен
+                if hasattr(self, 'trader') and hasattr(self.trader, 'executor'):
+                    self.pure_ai_trader.executor = self.trader.executor
+                    self.log("[PureAI] Executor подключен")
+                
+                # Запускаем
+                self.pure_ai_trader.start()
+                self.log("[PureAI] ✅ Pure AI Trader запущен")
+                
+                # Выводим статус
+                status = self.pure_ai_trader.get_status()
+                self.log(f"[PureAI] Интервал анализа: {status['analysis_interval']}")
+                self.log(f"[PureAI] Макс. сделок в день: {status['max_trades_per_day']}")
+            else:
+                self.log("[PureAI] Будет активирован при запуске бота")
+            
+            # Обновляем индикатор
+            if hasattr(self, 'mode_indicator'):
+                self.mode_indicator.config(text="[Активен]", fg='#5b7dff')
     
     def run_bot(self, mode):
         """Основной цикл бота."""
@@ -2616,6 +2802,12 @@ class BazaApp:
                 return
             
             self.log("[MONITOR] Starting market monitoring...")
+            
+            # Запускаем Pure AI Trader если выбран соответствующий режим
+            if self.trading_mode.get() == "pure_ai" and self.pure_ai_trader:
+                self.pure_ai_trader.executor = self.trader.executor
+                self.pure_ai_trader.start()
+                self.log("[PureAI] ✅ Pure AI Trader started in background")
             
             while not self.stop_event.is_set():
                 if self.bot_paused:
@@ -3239,8 +3431,8 @@ class BazaApp:
         self.ai_analyze_button.config(state='normal')
         self.ai_status_label.config(text="● Ready", fg='#4CAF50')
         
-        # Force update display with latest data
-        self.root.after(100, self._update_ai_display)
+        # Force immediate update
+        self._update_ai_display()
         
         # Log summary
         signals = analysis.get('signals', [])
@@ -3262,6 +3454,27 @@ class BazaApp:
         self.log(f"[AI] GPT Analysis:")
         self.log(f"[AI]   Block Type: {block_type_from_gpt.upper()}")
         self.log(f"[AI]   Reason: {block_reason_from_gpt}")
+        
+        # Display detailed structured analysis (7 sections in Russian)
+        analysis_sections = analysis.get('analysis', {})
+        if isinstance(analysis_sections, dict) and len(analysis_sections) > 0:
+            self.log(f"[AI] ─────────────────────────────────────")
+            self.log(f"[AI] Подробный анализ (7 разделов):")
+            
+            if 'trend' in analysis_sections:
+                self.log(f"[AI] {analysis_sections['trend']}")
+            if 'support_resistance' in analysis_sections:
+                self.log(f"[AI] {analysis_sections['support_resistance']}")
+            if 'patterns' in analysis_sections:
+                self.log(f"[AI] {analysis_sections['patterns']}")
+            if 'entry_exit' in analysis_sections:
+                self.log(f"[AI] {analysis_sections['entry_exit']}")
+            if 'risk_assessment' in analysis_sections:
+                self.log(f"[AI] {analysis_sections['risk_assessment']}")
+            if 'news_impact' in analysis_sections:
+                self.log(f"[AI] {analysis_sections['news_impact']}")
+            if 'recommendation' in analysis_sections:
+                self.log(f"[AI] {analysis_sections['recommendation']}")
         
         # Check actual permission from SignalManager
         if self.ai_signal_manager:
@@ -3374,9 +3587,18 @@ class BazaApp:
                     self.ai_signals_listbox.insert('end', line)
             else:
                 self.ai_signals_listbox.insert('end', "No active signals")
-        
         except Exception as e:
             app_logger.error(f"[AI] Display update failed: {e}")
+    
+    def _schedule_ai_update(self):
+        """Schedule periodic AI display update."""
+        try:
+            if self.ai_signal_manager:
+                self._update_ai_display()
+                # Schedule next update in 5 seconds
+                self.root.after(5000, self._schedule_ai_update)
+        except Exception as e:
+            app_logger.error(f"[AI] Schedule update failed: {e}")
     
     def _on_signal_selected(self, event):
         """Handle signal selection - show reasoning in logs."""

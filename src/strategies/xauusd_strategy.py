@@ -260,6 +260,8 @@ class StrategyXAUUSD:
         Returns:
             dict: {'direction': str, 'sl': float, 'tp': float, 'valid': bool, 'entry': float}
         """
+        from src.core.logger import logger
+        
         signal = {
             'direction': None, 
             'sl': None, 
@@ -269,11 +271,13 @@ class StrategyXAUUSD:
         }
         
         if not self.bos_direction or current_idx < 20:
+            logger.debug(f"[Strategy] No BOS direction or idx<20: bos={self.bos_direction}, idx={current_idx}")
             return signal
         
         # Расчет ATR(M15) за последние 14 баров (до текущей свечи включительно)
         atr = self._calculate_atr_cached(m15_data, current_idx, period=14)
         if atr == 0:
+            logger.debug(f"[Strategy] ATR = 0")
             return signal
         
         # СТАБИЛИЗАЦИОННЫЕ ФИЛЬТРЫ
@@ -281,8 +285,10 @@ class StrategyXAUUSD:
         atr_avg = self._calculate_atr_sma(m15_data, current_idx, period=14, sma_period=100)
         if atr_avg > 0:
             if atr < atr_avg * self.min_atr_threshold:
+                logger.info(f"[Strategy] ❌ Low volatility: ATR={atr:.2f} < {atr_avg * self.min_atr_threshold:.2f}")
                 return signal  # Low volatility
             if atr > atr_avg * self.max_atr_threshold:
+                logger.info(f"[Strategy] ❌ High volatility: ATR={atr:.2f} > {atr_avg * self.max_atr_threshold:.2f}")
                 return signal  # Too high volatility (news?)
         
         # Фильтр 2: Лимит сделок в день
@@ -293,19 +299,23 @@ class StrategyXAUUSD:
             self.current_date = current_date
         
         if self.trades_today >= self.max_daily_trades:
+            logger.info(f"[Strategy] ❌ Daily trade limit: {self.trades_today}/{self.max_daily_trades}")
             return signal  # Daily trade limit
         
         # Фильтр 3: Стоп на день при большом убытке
         if self.daily_pnl_percent <= -self.max_daily_loss:
+            logger.info(f"[Strategy] ❌ Daily loss limit: {self.daily_pnl_percent:.2f}% <= -{self.max_daily_loss}%")
             return signal  # Daily loss limit
         
         # Поиск Order Block (в исторических данных)
         ob_high, ob_low = self._find_order_block(m15_data, current_idx, atr)
         if ob_high is None or ob_low is None:
+            logger.info(f"[Strategy] ❌ No Order Block found")
             return signal
         
         # Проверка что analysis_price (close) был в OB
         if not (ob_low <= analysis_price <= ob_high):
+            logger.info(f"[Strategy] ❌ Price not in OB: {analysis_price} not in [{ob_low}, {ob_high}]")
             return signal
         
         # Поиск swing high/low на M15 для Premium/Discount (ТОЛЬКО на прошлых данных)
@@ -329,6 +339,7 @@ class StrategyXAUUSD:
         # Проверка Premium/Discount на analysis_price (close)
         if self.bos_direction == 'BUY':
             if analysis_price > discount_threshold:  # Не в discount (< 60%)
+                logger.info(f"[Strategy] ❌ BUY but price NOT in discount: {analysis_price} > {discount_threshold:.2f} (need < 60%)")
                 return signal
             
             # Сигнал валиден, но входим на entry_price (next open)
@@ -336,9 +347,11 @@ class StrategyXAUUSD:
             signal['sl'] = entry_price - (atr * 1.5)
             signal['tp'] = entry_price + ((entry_price - signal['sl']) * 2.0)
             signal['valid'] = True
+            logger.info(f"[Strategy] ✅ BUY SIGNAL VALID: entry={entry_price}, SL={signal['sl']:.2f}, TP={signal['tp']:.2f}")
         
         elif self.bos_direction == 'SELL':
             if analysis_price < premium_threshold:  # Не в premium (> 40%)
+                logger.info(f"[Strategy] ❌ SELL but price NOT in premium: {analysis_price} < {premium_threshold:.2f} (need > 40%)")
                 return signal
             
             # Сигнал валиден, но входим на entry_price (next open)
@@ -346,6 +359,7 @@ class StrategyXAUUSD:
             signal['sl'] = entry_price + (atr * 1.5)
             signal['tp'] = entry_price - ((signal['sl'] - entry_price) * 2.0)
             signal['valid'] = True
+            logger.info(f"[Strategy] ✅ SELL SIGNAL VALID: entry={entry_price}, SL={signal['sl']:.2f}, TP={signal['tp']:.2f}")
         
         return signal
     

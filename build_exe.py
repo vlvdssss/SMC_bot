@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""
+Build BAZA Trading Bot EXE
+"""
+
+import PyInstaller.__main__
+import shutil
+from pathlib import Path
+
+print("=" * 60)
+print("Building BAZA Trading Bot EXE...")
+print("=" * 60)
+
+# Clean old build
+if Path("dist").exists():
+    shutil.rmtree("dist")
+if Path("build").exists():
+    shutil.rmtree("build")
+
+# Build EXE
+PyInstaller.__main__.run([
+    'main.py',
+    '--name=BAZA_TradingBot',
+    '--onefile',
+    '--windowed',
+    '--icon=NONE',
+    '--add-data=config;config',
+    '--add-data=data;data',
+    '--add-data=src;src',
+    '--hidden-import=MetaTrader5',
+    '--hidden-import=openai',
+    '--hidden-import=pandas',
+    '--hidden-import=numpy',
+    '--hidden-import=yaml',
+    '--hidden-import=tkinter',
+    '--hidden-import=customtkinter',
+    '--hidden-import=PIL',
+    '--hidden-import=matplotlib',
+    '--hidden-import=sklearn',
+    '--hidden-import=joblib',
+    '--hidden-import=requests',
+    '--hidden-import=dotenv',
+    '--hidden-import=lightgbm',
+    '--hidden-import=scipy',
+    '--hidden-import=scipy._lib',
+    '--hidden-import=scipy._lib.array_api_compat',
+    '--hidden-import=scipy._lib.array_api_compat.numpy',
+    '--hidden-import=scipy._lib.array_api_compat.numpy.fft',
+    '--hidden-import=scipy.special',
+    '--hidden-import=scipy.special._cdflib',
+    '--collect-all=customtkinter',
+    '--collect-all=PIL',
+    '--collect-all=matplotlib',
+    '--collect-all=scipy',
+    '--collect-all=lightgbm',
+    '--noconfirm',
+])
+
+print("\n" + "=" * 60)
+print("✓ Build complete!")
+print("EXE location: dist/BAZA_TradingBot.exe")
+print("=" * 60)

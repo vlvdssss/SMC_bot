@@ -172,17 +172,29 @@ class AnalystScheduler:
         
         Steps:
         1. Check kill-switch
-        2. Run market analysis (GPT + charts) with fallback
-        3. Process signals through SignalManager
-        4. Save history
-        5. Execute callback
-        6. Return results
+        2. Check time restrictions
+        3. Run market analysis (GPT + charts) with fallback
+        4. Process signals through SignalManager
+        5. Save history
+        6. Execute callback
+        7. Return results
         """
         try:
             # Check kill-switch
             if not self.is_ai_enabled():
                 logger.warning("[AI-Scheduler] AI disabled, using fallback")
                 return self._get_fallback_analysis(symbol)
+            
+            # Check time restrictions
+            time_allowed, time_reason = self.signal_manager._is_trading_time_allowed()
+            if not time_allowed:
+                logger.warning(f"[AI-Scheduler] Analysis blocked: {time_reason}")
+                return {
+                    "error": "time_restriction",
+                    "reason": time_reason,
+                    "symbol": symbol,
+                    "timestamp": datetime.now().isoformat()
+                }
             
             logger.info(f"[AI-Scheduler] Starting analysis for {symbol}...")
             

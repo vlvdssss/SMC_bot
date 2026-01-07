@@ -192,7 +192,7 @@ class MarketAnalystService:
     def _build_analysis_prompt(self, symbol: str, metrics: Dict, news: List[Dict]) -> str:
         """Build comprehensive prompt for GPT analysis."""
         
-        prompt = f"""You are an expert forex/gold trader and market analyst. Analyze the market and provide actionable trading signals.
+        prompt = f"""You are an expert forex/gold trader and market analyst. Analyze the market and provide actionable trading signals with detailed structured reasoning.
 
 **SYMBOL:** {symbol}
 **TIMESTAMP:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
@@ -219,9 +219,9 @@ class MarketAnalystService:
         prompt += """
 
 **TASK:**
-Analyze the provided M15 and H1 chart screenshots along with the metrics above.
+Analyze the provided M15 and H1 chart screenshots along with the metrics above. Provide detailed structured reasoning in your analysis field.
 
-**YOUR RESPONSE MUST BE IN STRICT JSON FORMAT:**
+**YOUR RESPONSE MUST BE IN STRICT JSON FORMAT WITH DETAILED REASONING:**
 
 {
   "timestamp": "2026-01-07T06:00:00",
@@ -259,11 +259,26 @@ Analyze the provided M15 and H1 chart screenshots along with the metrics above.
     "Price near resistance"
   ],
   "analysis": {
-    "M15": "Short timeframe shows...",
-    "H1": "Hourly timeframe confirms...",
-    "overall": "Market is in strong bullish trend..."
+    "trend": "### Тренд:\\nОпишите текущий тренд: восходящий/нисходящий/флэт, сила тренда, ключевые уровни поддержки и сопротивления, которые подтверждают направление.",
+    "support_resistance": "### Уровни поддержки и сопротивления:\\n- **Уровень сопротивления:** 2474 (предыдущий локальный максимум)\\n- **Уровень поддержки:** 2442 (предыдущий локальный минимум)\\nОпишите ключевые уровни, которые наблюдаете на графике.",
+    "patterns": "### Паттерны:\\nОпишите любые паттерны (V-образная разворотная формация, двойное дно, голова и плечи и т.д.) или их отсутствие.",
+    "entry_exit": "### Точки входа и выхода:\\n- **Точка входа на покупку:** При пробое уровня 2474 и закреплении выше\\n- **Точка выхода для продаж:** Возврат к уровню 2442 может привлечь продавцов\\nУкажите конкретные ценовые уровни для входа и выхода.",
+    "risk_assessment": "### Оценка риска:\\nВвиду отсутствия значительных экономических событий и стабильного восстановления после падения, риск умеренный. Однако следует проявить осторожность, так как развороты возможны у важных уровней.",
+    "news_impact": "### Учет новостей:\\nПоскольку нет запланированных экономических событий на сегодня, можно ожидать меньшую волатильность, но следует быть готовым к внезапным изменениям рынка.\\n\\nОпишите влияние новостей на рынок.",
+    "recommendation": "Рекомендуется следить за динамикой объема, которая может указать на сильное движение."
   }
 }
+
+**INSTRUCTIONS FOR "analysis" FIELD:**
+Structure your analysis with clear sections (use Russian language for better readability):
+
+1. **trend**: Describe current trend (восходящий/нисходящий/флэт), strength, confirm with EMA/structure
+2. **support_resistance**: List key support/resistance levels with specific prices
+3. **patterns**: Identify chart patterns (V-shape, double top/bottom, head & shoulders, etc.) or note absence
+4. **entry_exit**: Specify exact entry points for BUY/SELL with price levels
+5. **risk_assessment**: Evaluate risk level considering volatility, news, market conditions
+6. **news_impact**: Explain how current/upcoming news affects market
+7. **recommendation**: Final actionable recommendation with volume/momentum notes
 
 **BLOCK TYPES:**
 - "none": No restrictions (normal trading)
