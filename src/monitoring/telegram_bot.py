@@ -59,8 +59,11 @@ class TelegramBotWithButtons:
         elif text == "✅ Статус работы":
             await self.send_status(update)
         else:
+            # Отправляем клавиатуру с любым ответом
             await update.message.reply_text(
-                "Используйте кнопки меню для взаимодействия с ботом",
+                "🤖 <b>BAZA Trading Bot</b>\n\n"
+                "Используйте кнопки меню для взаимодействия с ботом:",
+                parse_mode="HTML",
                 reply_markup=self.reply_markup
             )
     
