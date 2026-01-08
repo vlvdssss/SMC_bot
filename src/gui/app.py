@@ -2796,7 +2796,7 @@ class BazaApp:
             # Режим Pure AI Trading
             self.log("=" * 60)
             self.log("[MODE] 🤖 Переключено на режим: Pure AI Trading")
-            self.log("[MODE] Бот торгует только по сигналам GPT (каждые 2 часа)")
+            self.log("[MODE] Бот торгует только по сигналам GPT (каждые 3 часа)")
             self.log("[MODE] Символы: XAUUSD, EURUSD | Таймфрейм: 15M")
             self.log("=" * 60)
             

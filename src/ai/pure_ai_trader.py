@@ -3,7 +3,7 @@
 Pure AI Trader - Trading based solely on GPT signals
 
 Режим торговли только по сигналам ChatGPT:
-- Анализ каждые 2 часа
+- Анализ каждые 3 часа
 - Скриншоты 5M, 15M, 1H
 - Новости с внешних источников
 - GPT генерирует готовые сигналы
@@ -28,7 +28,7 @@ class PureAITrader:
     Pure AI Trading Mode - торговля только по GPT сигналам.
     
     Логика:
-    1. Каждые 2 часа запускает анализ для XAUUSD и EURUSD
+    1. Каждые 3 часа запускает анализ для XAUUSD и EURUSD
     2. GPT анализирует скриншоты 5M/15M/1H + новости
     3. Генерирует сигналы с entry/SL/TP
     4. SignalManager проверяет дубликаты и управляет TTL
@@ -37,7 +37,7 @@ class PureAITrader:
     
     # Конфигурация
     SYMBOLS = ["XAUUSD", "EURUSD"]
-    ANALYSIS_INTERVAL = 5 * 60 * 60  # 5 часов в секундах
+    ANALYSIS_INTERVAL = 3 * 60 * 60  # 3 часа в секундах
     MIN_CONFIDENCE = 70  # Минимальная уверенность для входа
     MAX_TRADES_PER_DAY = 5  # Максимум сделок в день
     COOLDOWN_HOURS = 2  # Пауза между сделками одного символа
@@ -119,7 +119,7 @@ class PureAITrader:
                 time.sleep(60)
     
     def _get_next_analysis_time(self) -> datetime:
-        """Вычисляет время следующего анализа (каждые 2 часа)."""
+        """Вычисляет время следующего анализа (каждые 3 часа)."""
         now = datetime.now()
         current_hour = now.hour
         

@@ -250,7 +250,7 @@ class TelegramNotifier:
 🚀 <b>BAZA BOT: Pure AI Trading запущен</b>
 
 🤖 <b>Режим:</b> Только GPT-4 анализ
-⏰ <b>Интервал:</b> Каждые 2 часа
+⏰ <b>Интервал:</b> Каждые 3 часа
 📊 <b>Таймфрейм:</b> 15 минут
 💹 <b>Инструменты:</b> {', '.join(instruments or ['XAUUSD', 'EURUSD'])}
 
@@ -264,7 +264,7 @@ class TelegramNotifier:
 🚀 <b>BAZA BOT: Pure AI Trading запущен</b>
 
 🤖 Режим автономной торговли активирован
-📊 Анализ каждые 2 часа на 15M таймфрейме
+📊 Анализ каждые 3 часа на 15M таймфрейме
 💹 {', '.join(instruments or ['XAUUSD', 'EURUSD'])}
 
 ⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
