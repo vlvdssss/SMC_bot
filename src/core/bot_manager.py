@@ -278,6 +278,12 @@ class BotManager:
                 except Exception as e:
                     self.log(f"Error checking signals: {e}")
                 
+                # Проверка закрытых позиций для Telegram уведомлений
+                try:
+                    trader.check_closed_positions()
+                except Exception as e:
+                    self.log(f"Error checking closed positions: {e}")
+                
                 # Ждём перед следующей проверкой
                 self.stop_event.wait(60)  # 60 секунд
                 

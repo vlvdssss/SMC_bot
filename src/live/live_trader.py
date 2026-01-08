@@ -80,6 +80,9 @@ class LiveTrader:
         self.notify_config = {}
         if MONITORING_AVAILABLE:
             self._init_monitoring()
+        
+        # Отслеживание открытых позиций для Telegram уведомлений
+        self.tracked_positions = {}  # {ticket: {symbol, direction, entry_time, ...}}
     
     def start(self) -> None:
         """Запуск трейдера (для совместимости)."""
@@ -448,8 +451,133 @@ class LiveTrader:
             if result:
                 logger.info(f"Trade executed for {symbol}: {result}")
                 
+                # Отправка Telegram уведомления
+                if self.telegram:
+                    try:
+                        # Определяем режим торговли
+                        from src.core.bot_manager import BotManager
+                        bot_manager = BotManager()
+                        trading_mode = bot_manager.trading_mode
+                        
+                        # Извлекаем данные из сигнала
+                        direction = signal.get('direction', '').upper()
+                        if direction.lower() == 'long':
+                            direction = 'BUY'
+                        elif direction.lower() == 'short':
+                            direction = 'SELL'
+                        
+                        entry = signal.get('entry_price', 0)
+                        sl = signal.get('sl', signal.get('stop_loss', 0))
+                        tp = signal.get('tp', signal.get('take_profit', 0))
+                        lot_size = signal.get('lot_size', signal.get('volume', 0.01))
+                        reasoning = signal.get('reasoning', '')
+                        confidence = signal.get('confidence', 0) * 100  # Convert to %
+                        
+                        # Отправляем уведомление
+                        self.telegram.send_trade_opened(
+                            symbol=symbol,
+                            direction=direction,
+                            lot=lot_size,
+                            entry=entry,
+                            sl=sl,
+                            tp=tp,
+                            mode='pure_ai' if trading_mode == 'pure_ai' else 'strategy',
+                            reasoning=reasoning,
+                            confidence=confidence
+                        )
+                        logger.info(f"[Telegram] Trade opened notification sent for {symbol}")
+                    except Exception as tg_error:
+                        logger.error(f"[Telegram] Failed to send trade opened notification: {tg_error}")
+                
+                # Запоминаем позицию для отслеживания закрытия
+                try:
+                    # Получаем последнюю открытую позицию из MT5
+                    positions = self.mt5_connector.positions_get(symbol=symbol)
+                    if positions and len(positions) > 0:
+                        pos = positions[-1]  # Последняя открытая позиция
+                        self.tracked_positions[pos.ticket] = {
+                            'symbol': symbol,
+                            'direction': direction,
+                            'entry_price': entry,
+                            'entry_time': datetime.now(),
+                            'volume': lot_size
+                        }
+                        logger.info(f"[Telegram] Tracking position #{pos.ticket} for close notification")
+                except Exception as track_error:
+                    logger.error(f"[Telegram] Failed to track position: {track_error}")
+                
         except Exception as e:
             logger.error(f"Trade execution failed for {symbol}: {e}")
+    
+    def check_closed_positions(self):
+        """Проверяет закрытые позиции и отправляет Telegram уведомления."""
+        if not self.telegram or not self.tracked_positions:
+            return
+        
+        try:
+            # Проходим по отслеживаемым позициям
+            for ticket in list(self.tracked_positions.keys()):
+                # Проверяем есть ли позиция в открытых
+                position = self.mt5_connector.positions_get(ticket=ticket)
+                
+                if not position or len(position) == 0:
+                    # Позиция закрыта - проверяем историю
+                    from datetime import datetime, timedelta
+                    
+                    # Ищем в истории сделок
+                    history = self.mt5_connector.history_deals_get(
+                        datetime.now() - timedelta(hours=1),
+                        datetime.now()
+                    )
+                    
+                    if history:
+                        for deal in history:
+                            if deal.position_id == ticket:
+                                # Нашли сделку закрытия
+                                pos_info = self.tracked_positions[ticket]
+                                
+                                # Вычисляем profit
+                                profit = deal.profit if hasattr(deal, 'profit') else 0.0
+                                
+                                # Вычисляем длительность
+                                duration = datetime.now() - pos_info['entry_time']
+                                hours = int(duration.total_seconds() // 3600)
+                                minutes = int((duration.total_seconds() % 3600) // 60)
+                                duration_str = f"{hours}ч {minutes}м" if hours > 0 else f"{minutes}м"
+                                
+                                # Вычисляем пипсы
+                                price_diff = abs(deal.price - pos_info['entry_price'])
+                                pips = price_diff * 10000  # для forex
+                                if pos_info['symbol'] == 'XAUUSD':
+                                    pips = price_diff * 100  # для золота
+                                
+                                # Определяем причину закрытия
+                                result_reason = "TP" if profit > 0 else "SL" if profit < 0 else "BE"
+                                
+                                # Получаем режим торговли
+                                from src.core.bot_manager import BotManager
+                                bot_manager = BotManager()
+                                trading_mode = bot_manager.trading_mode
+                                
+                                # Отправляем уведомление
+                                self.telegram.send_trade_closed(
+                                    symbol=pos_info['symbol'],
+                                    direction=pos_info['direction'],
+                                    profit=profit,
+                                    pips=pips,
+                                    duration=duration_str,
+                                    mode='pure_ai' if trading_mode == 'pure_ai' else 'strategy',
+                                    result_reason=result_reason
+                                )
+                                
+                                logger.info(f"[Telegram] Trade closed notification sent for #{ticket}")
+                                
+                                # Удаляем из отслеживаемых
+                                del self.tracked_positions[ticket]
+                                break
+        
+        except Exception as e:
+            logger.error(f"[Telegram] Failed to check closed positions: {e}")
     
     def save_trade(self, trade: dict):
         """Сохраняет сделку в историю."""
