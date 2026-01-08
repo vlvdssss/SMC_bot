@@ -37,21 +37,26 @@ class PureAITrader:
     
     # Конфигурация
     SYMBOLS = ["XAUUSD", "EURUSD"]
-    ANALYSIS_INTERVAL = 2 * 60 * 60  # 2 часа в секундах
+    ANALYSIS_INTERVAL = 5 * 60 * 60  # 5 часов в секундах
     MIN_CONFIDENCE = 70  # Минимальная уверенность для входа
     MAX_TRADES_PER_DAY = 5  # Максимум сделок в день
     COOLDOWN_HOURS = 2  # Пауза между сделками одного символа
     
-    def __init__(self, api_key: str = None, executor=None):
+    def __init__(self, api_key: str = None, executor=None, analysis_interval_hours: int = None):
         """
         Initialize Pure AI Trader.
         
         Args:
             api_key: OpenAI API key
             executor: Executor instance for trade execution
+            analysis_interval_hours: Интервал анализа в часах (по умолчанию 5)
         """
         self.api_key = api_key
         self.executor = executor
+        
+        # Применяем пользовательский интервал если задан
+        if analysis_interval_hours is not None:
+            self.ANALYSIS_INTERVAL = analysis_interval_hours * 60 * 60
         
         # Инициализация сервисов
         self.analyst = MarketAnalystService(api_key=api_key)

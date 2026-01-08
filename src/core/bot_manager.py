@@ -16,6 +16,7 @@ from src.core.logger import logger
 # Мониторинг
 try:
     from src.monitoring import TelegramNotifier, AlertManager
+    from src.monitoring.telegram_bot import TelegramBotWithButtons
     MONITORING_AVAILABLE = True
 except ImportError:
     MONITORING_AVAILABLE = False
@@ -48,6 +49,7 @@ class BotManager:
             
         self._initialized = True
         self.status = BotStatus.STOPPED
+        self.is_running = False  # Для Telegram бота
         self.mode = 'demo'  # Режим работы: demo, backtest, live
         self.trading_mode = 'strategy'  # Режим торговли: strategy, pure_ai
         self.bot_thread: Optional[threading.Thread] = None
@@ -78,6 +80,8 @@ class BotManager:
         
         # Система мониторинга
         self.telegram = None
+        self.telegram_bot = None  # Бот с кнопками
+        self.telegram_bot_thread = None
         self.alert_manager = None
         if MONITORING_AVAILABLE:
             self._init_monitoring()
@@ -126,6 +130,19 @@ class BotManager:
                 self.notify_config = tg_config.get('notify', {})
                 logger.info("Telegram notifications enabled")
                 
+                # Запускаем Telegram бот с кнопками
+                bot_token = tg_config.get('bot_token')
+                if bot_token and tg_config.get('enable_bot', True):
+                    self.telegram_bot = TelegramBotWithButtons(bot_token, bot_manager=self)
+                    # Запускаем бот в отдельном потоке
+                    self.telegram_bot_thread = threading.Thread(
+                        target=self.telegram_bot.start_polling,
+                        daemon=True,
+                        name="TelegramBotThread"
+                    )
+                    self.telegram_bot_thread.start()
+                    logger.info("🤖 Telegram бот с кнопками запущен")
+                
                 # Инициализация AlertManager
                 self.alert_manager = AlertManager()
                 
@@ -162,6 +179,7 @@ class BotManager:
         self.pause_event.clear()
         self.trading_mode = trading_mode  # Сохраняем режим торговли
         self.status = BotStatus.RUNNING
+        self.is_running = True  # Для Telegram бота
         
         # Запускаем в отдельном потоке
         self.bot_thread = threading.Thread(
@@ -175,6 +193,9 @@ class BotManager:
         
         # Обновляем статистику из MT5 перед отправкой уведомления
         self._update_stats_from_mt5()
+        
+        # Сохраняем статистику для Telegram бота
+        self.save_stats()
         
         # Telegram уведомление
         if self.telegram and self.notify_config.get('startup', True):
@@ -194,6 +215,7 @@ class BotManager:
         
         self.stop_event.set()
         self.status = BotStatus.STOPPED
+        self.is_running = False  # Для Telegram бота
         
         if self.bot_thread:
             self.bot_thread.join(timeout=5)
@@ -202,6 +224,9 @@ class BotManager:
         
         # Обновляем статистику из MT5 перед отправкой уведомления
         self._update_stats_from_mt5()
+        
+        # Сохраняем статистику для Telegram бота
+        self.save_stats()
         
         # Telegram уведомление
         if self.telegram and self.notify_config.get('shutdown', True):
@@ -277,6 +302,12 @@ class BotManager:
                             self.log(f"Signal: {signal_msg}")
                 except Exception as e:
                     self.log(f"Error checking signals: {e}")
+                
+                # Проверка trailing stop loss (60% -> 50%)
+                try:
+                    trader.check_trailing_stop()
+                except Exception as e:
+                    self.log(f"Error checking trailing stop: {e}")
                 
                 # Проверка закрытых позиций для Telegram уведомлений
                 try:
@@ -396,8 +427,14 @@ class BotManager:
         stats_file = Path('data/bot_stats.json')
         stats_file.parent.mkdir(exist_ok=True)
         
-        with open(stats_file, 'w') as f:
-            json.dump(self.stats, f, indent=2)
+        # Добавляем дополнительные поля для Telegram бота
+        stats_to_save = self.stats.copy()
+        stats_to_save['mode'] = self.trading_mode
+        stats_to_save['last_activity'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        stats_to_save['is_running'] = self.status == BotStatus.RUNNING
+        
+        with open(stats_file, 'w', encoding='utf-8') as f:
+            json.dump(stats_to_save, f, indent=2)
     
     def load_stats(self):
         """Загрузка статистики."""

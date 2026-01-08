@@ -6,6 +6,9 @@ pyyaml>=6.0
 python-dateutil>=2.8.2
 requests>=2.31.0
 
+# Telegram Bot
+python-telegram-bot>=21.0
+
 # AI/ML
 openai>=1.0.0
 python-dotenv>=1.0.0

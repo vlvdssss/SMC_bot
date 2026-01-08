@@ -499,8 +499,11 @@ class LiveTrader:
                             'symbol': symbol,
                             'direction': direction,
                             'entry_price': entry,
+                            'sl': sl,
+                            'tp': tp,
                             'entry_time': datetime.now(),
-                            'volume': lot_size
+                            'volume': lot_size,
+                            'sl_moved': False  # Флаг что SL еще не перемещен
                         }
                         logger.info(f"[Telegram] Tracking position #{pos.ticket} for close notification")
                 except Exception as track_error:
@@ -508,6 +511,99 @@ class LiveTrader:
                 
         except Exception as e:
             logger.error(f"Trade execution failed for {symbol}: {e}")
+    
+    def check_trailing_stop(self):
+        """Проверяет открытые позиции и перемещает SL при достижении 60% к TP."""
+        if not self.tracked_positions:
+            return
+        
+        try:
+            for ticket, pos_info in list(self.tracked_positions.items()):
+                # Пропускаем если SL уже перемещен
+                if pos_info.get('sl_moved', False):
+                    continue
+                
+                # Проверяем что позиция еще открыта
+                positions = self.mt5_connector.positions_get(ticket=ticket)
+                if not positions or len(positions) == 0:
+                    continue
+                
+                current_position = positions[0]
+                current_price = current_position.price_current
+                entry = pos_info['entry_price']
+                sl = pos_info['sl']
+                tp = pos_info['tp']
+                direction = pos_info['direction']
+                
+                # Вычисляем расстояние до TP
+                if direction == 'BUY':
+                    # Для BUY: цена должна расти к TP
+                    distance_to_tp = tp - entry
+                    current_profit_distance = current_price - entry
+                    
+                    # Проверяем достигнуто ли 60% пути к TP
+                    if current_profit_distance >= distance_to_tp * 0.6:
+                        # Перемещаем SL на 50% профита
+                        new_sl = entry + (distance_to_tp * 0.5)
+                        
+                        # Обновляем SL в MT5
+                        if self._modify_position_sl(ticket, new_sl):
+                            pos_info['sl_moved'] = True
+                            logger.info(f"[TrailingSL] Position #{ticket} SL moved to 50% profit: {new_sl:.5f}")
+                
+                elif direction == 'SELL':
+                    # Для SELL: цена должна падать к TP
+                    distance_to_tp = entry - tp
+                    current_profit_distance = entry - current_price
+                    
+                    # Проверяем достигнуто ли 60% пути к TP
+                    if current_profit_distance >= distance_to_tp * 0.6:
+                        # Перемещаем SL на 50% профита
+                        new_sl = entry - (distance_to_tp * 0.5)
+                        
+                        # Обновляем SL в MT5
+                        if self._modify_position_sl(ticket, new_sl):
+                            pos_info['sl_moved'] = True
+                            logger.info(f"[TrailingSL] Position #{ticket} SL moved to 50% profit: {new_sl:.5f}")
+        
+        except Exception as e:
+            logger.error(f"[TrailingSL] Failed to check trailing stop: {e}")
+    
+    def _modify_position_sl(self, ticket: int, new_sl: float) -> bool:
+        """Изменяет Stop Loss открытой позиции."""
+        try:
+            # Получаем текущую позицию
+            positions = self.mt5_connector.positions_get(ticket=ticket)
+            if not positions or len(positions) == 0:
+                return False
+            
+            position = positions[0]
+            
+            # Формируем запрос на модификацию
+            request = {
+                "action": self.mt5_connector.TRADE_ACTION_SLTP,
+                "position": ticket,
+                "symbol": position.symbol,
+                "sl": new_sl,
+                "tp": position.tp,
+                "magic": 123456,
+                "comment": "Trailing SL (60%->50%)",
+            }
+            
+            # Отправляем запрос
+            result = self.mt5_connector.order_send(request)
+            
+            if result and result.retcode == self.mt5_connector.TRADE_RETCODE_DONE:
+                logger.info(f"[TrailingSL] SL modified for #{ticket}: {new_sl:.5f}")
+                return True
+            else:
+                error_msg = result.comment if result else "No result"
+                logger.error(f"[TrailingSL] Failed to modify SL for #{ticket}: {error_msg}")
+                return False
+        
+        except Exception as e:
+            logger.error(f"[TrailingSL] Error modifying SL: {e}")
+            return False
     
     def check_closed_positions(self):
         """Проверяет закрытые позиции и отправляет Telegram уведомления."""

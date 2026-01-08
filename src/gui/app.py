@@ -136,8 +136,20 @@ class BazaApp:
             from src.ai.pure_ai_trader import PureAITrader
             api_key = os.getenv('OPENAI_API_KEY')
             if api_key:
-                self.pure_ai_trader = PureAITrader(api_key=api_key)
-                app_logger.info("[OK] Pure AI Trader initialized")
+                # Загружаем настройки Pure AI из config
+                config_file = Path('data/config.json')
+                pure_ai_config = {}
+                if config_file.exists():
+                    try:
+                        with open(config_file, 'r') as f:
+                            config = json.load(f)
+                            pure_ai_config = config.get('pure_ai', {})
+                    except:
+                        pass
+                
+                interval_hours = pure_ai_config.get('analysis_interval_hours', 5)
+                self.pure_ai_trader = PureAITrader(api_key=api_key, analysis_interval_hours=interval_hours)
+                app_logger.info(f"[OK] Pure AI Trader initialized (interval: {interval_hours}h)")
         except Exception as e:
             app_logger.error(f"[ERROR] Pure AI Trader init failed: {e}")
         
@@ -291,8 +303,10 @@ class BazaApp:
                     except Exception:
                         pass
 
-                    # Если баланс или equity изменились — обновляем AppState.stats и UI
-                    if new_balance != old_balance or new_equity != old_equity:
+                    # Обновляем статистику (баланс, прибыли)
+                    balance_changed = new_balance != old_balance or new_equity != old_equity
+                    
+                    if balance_changed:
                         # Записываем в статистику
                         self.app_state.stats['balance'] = new_balance
                         self.app_state.stats['equity'] = new_equity
@@ -305,13 +319,34 @@ class BazaApp:
 
                         # Сохраняем нереализованный P&L отдельно, не затирая суммарный реализованный PnL
                         self.app_state.stats['unrealized_pnl'] = round(pnl, 2)
-
-                        # Обновляем UI
-                        self.app_state.update_mt5_status(True, account_info)
-                        self.root.after(0, self.update_mt5_status)
-                    else:
-                        # Если ничего не изменилось — всё равно обновляем метки аккаунта периодически
-                        self.root.after(0, self.update_mt5_status)
+                    
+                    # Каждый цикл обновляем прибыль из истории MT5
+                    try:
+                        trades = self.app_state.mt5_manager.get_trade_history(days=365)
+                        if trades:
+                            total_pnl = sum(t.get('pnl', 0) for t in trades)
+                            today_date = datetime.now().strftime('%Y-%m-%d')
+                            today_pnl = sum(t.get('pnl', 0) for t in trades if t.get('date') == today_date)
+                            
+                            self.app_state.stats['total_pnl'] = round(float(total_pnl), 2)
+                            self.app_state.stats['today_pnl'] = round(float(today_pnl), 2)
+                            
+                            # Обновляем счетчики сделок
+                            total_trades = len(trades)
+                            wins = sum(1 for t in trades if t.get('pnl', 0) > 0)
+                            losses = total_trades - wins
+                            
+                            self.app_state.stats['total_trades'] = total_trades
+                            self.app_state.stats['trades'] = total_trades
+                            self.app_state.stats['wins'] = wins
+                            self.app_state.stats['losses'] = losses
+                    except Exception as e:
+                        app_logger.error(f"Failed to update pnl from MT5: {e}")
+                    
+                    # Обновляем UI
+                    self.app_state.update_mt5_status(True, account_info)
+                    self.root.after(0, self.update_mt5_status)
+                    self.root.after(0, self.update_display)
 
                     threading.Event().wait(self.mt5_poll_interval)
 
@@ -641,6 +676,34 @@ class BazaApp:
                 font=('Arial', 8),
                 bg='#2a2a2a', fg='#888888').pack(anchor='w', pady=(10, 10))
         
+        # Раздел Pure AI настроек
+        pure_ai_frame = tk.Frame(dialog, bg='#2a2a2a', relief='flat')
+        pure_ai_frame.pack(fill='x', padx=20, pady=10)
+        
+        tk.Label(pure_ai_frame, text="🤖 Pure AI Trading - Настройки",
+                font=('Arial', 11, 'bold'),
+                bg='#2a2a2a', fg='white').pack(anchor='w', pady=(10, 5))
+        
+        # Получаем текущие настройки Pure AI
+        pure_ai_config = current_config.get('pure_ai', {})
+        current_interval = pure_ai_config.get('analysis_interval_hours', 5)
+        
+        # Интервал анализа
+        interval_row = tk.Frame(pure_ai_frame, bg='#2a2a2a')
+        interval_row.pack(fill='x', pady=5)
+        tk.Label(interval_row, text="Интервал анализа GPT:",
+                font=('Arial', 10), bg='#2a2a2a', fg='white', width=25, anchor='w').pack(side='left')
+        interval_var = tk.IntVar(value=current_interval)
+        tk.Spinbox(interval_row, from_=1, to=24, textvariable=interval_var,
+                  font=('Arial', 10), bg='#0f0f0f', fg='white', width=10,
+                  buttonbackground='#2a2a2a', insertbackground='white').pack(side='left', padx=5)
+        tk.Label(interval_row, text="часов",
+                font=('Arial', 10), bg='#2a2a2a', fg='#888888').pack(side='left')
+        
+        tk.Label(pure_ai_frame, text="ℹ️ Меньше интервал = больше запросов к GPT и расход API",
+                font=('Arial', 8),
+                bg='#2a2a2a', fg='#888888').pack(anchor='w', pady=(5, 10))
+        
         # Кнопки
         btn_frame = tk.Frame(dialog, bg='#1a1a1a')
         btn_frame.pack(fill='x', padx=20, pady=20)
@@ -655,6 +718,11 @@ class BazaApp:
                 'max_daily_loss': max_loss_var.get(),
                 'min_atr_threshold': min_atr_var.get(),
                 'max_atr_threshold': max_atr_var.get()
+            }
+            
+            # Получаем значения Pure AI
+            pure_ai_settings = {
+                'analysis_interval_hours': interval_var.get()
             }
             
             if key:
@@ -699,6 +767,7 @@ class BazaApp:
                 
                 config['enable_gpt'] = gpt_enabled_val
                 config['strategy'] = strategy_settings  # Добавляем настройки стратегии
+                config['pure_ai'] = pure_ai_settings  # Добавляем настройки Pure AI
                 
                 with open(config_file, 'w') as f:
                     json.dump(config, f, indent=2)
@@ -724,10 +793,16 @@ class BazaApp:
                                 status_label.config(text="[OK] Настройки применены! Бот использует новые значения.", fg='#00d4aa')
                             else:
                                 status_label.config(text="[OK] Настройки сохранены (применятся при запуске бота)", fg='#00d4aa')
-                        else:
-                            status_label.config(text="[OK] Настройки сохранены (применятся при запуске бота)", fg='#00d4aa')
+                        
+                        # Применяем настройки Pure AI
+                        if hasattr(self, 'pure_ai_trader') and self.pure_ai_trader:
+                            new_interval = pure_ai_settings['analysis_interval_hours'] * 60 * 60
+                            self.pure_ai_trader.ANALYSIS_INTERVAL = new_interval
+                            app_logger.info(f"[Settings] Pure AI interval updated: {pure_ai_settings['analysis_interval_hours']}h")
+                            status_label.config(text="[OK] Pure AI настройки применены!", fg='#00d4aa')
+                    
                     except Exception as e:
-                        app_logger.error(f"[Settings] Failed to apply strategy settings: {e}")
+                        app_logger.error(f"[Settings] Failed to apply settings: {e}")
                         status_label.config(text="[OK] Настройки сохранены (применятся при перезапуске)", fg='#f39c12')
                 else:
                     status_label.config(text="[OK] Настройки сохранены!", fg='#00d4aa')
@@ -2491,9 +2566,6 @@ class BazaApp:
         self.card_today = self.create_stat_card(stats_frame, "Сегодня", "$0.00")
         self.card_today.pack(side='left', expand=True, fill='x', padx=5)
         
-        self.card_winrate = self.create_stat_card(stats_frame, "Win Rate", "0%")
-        self.card_winrate.pack(side='left', expand=True, fill='x', padx=5)
-        
         # ===== MANUAL TRADING =====
         if self.manual_controller and self.manual_controller.is_enabled():
             self.create_manual_trading_section()
@@ -2522,11 +2594,15 @@ class BazaApp:
 
     def _insert_log_message(self, message: str, level: str):
         """Вставка сообщения в лог с цветом - только в мини-логи Manual Trading."""
+        # Добавляем timestamp
+        timestamp = datetime.now().strftime('[%H:%M:%S]')
+        formatted_message = f"{timestamp} {message}"
+        
         # Пишем только в мини-логи Manual Trading
         if hasattr(self, 'mini_logs_text') and self.mini_logs_text:
             try:
                 self.mini_logs_text.config(state='normal')
-                self.mini_logs_text.insert('end', message + '\n', level.lower())
+                self.mini_logs_text.insert('end', formatted_message + '\n', level.lower())
                 self.mini_logs_text.see('end')
                 self.mini_logs_text.config(state='disabled')
             except Exception as e:
@@ -2602,10 +2678,6 @@ class BazaApp:
         color = '#00d4aa' if today >= 0 else '#ff4757'
         self.card_today.value_label.config(
             text=f"{'+' if today >= 0 else ''}${today:.2f}", fg=color)
-        
-        total = self.app_state.stats['wins'] + self.app_state.stats['losses']
-        winrate = (self.app_state.stats['wins'] / total * 100) if total > 0 else 0
-        self.card_winrate.value_label.config(text=f"{winrate:.0f}%")
     
     def update_status(self, running, paused=False):
         """Обновление статуса бота."""
@@ -3241,11 +3313,15 @@ class BazaApp:
 
     def _insert_log_message(self, message: str, level: str):
         """Вставка сообщения в лог с цветом."""
+        # Добавляем timestamp
+        timestamp = datetime.now().strftime('[%H:%M:%S]')
+        formatted_message = f"{timestamp} {message}"
+        
         # Основные логи внизу
         if hasattr(self, 'log_text') and self.log_text:
             try:
                 self.log_text.configure(state='normal')
-                self.log_text.insert('end', message + '\n', level.lower())
+                self.log_text.insert('end', formatted_message + '\n', level.lower())
                 self.log_text.see('end')
                 self.log_text.configure(state='disabled')
             except Exception as e:
@@ -3267,7 +3343,7 @@ class BazaApp:
                         except Exception:
                             pass
 
-                    self.mini_logs_text.insert('end', message + '\n', level.lower())
+                    self.mini_logs_text.insert('end', formatted_message + '\n', level.lower())
                     self.mini_logs_text.see('end')
                     self.mini_logs_text.config(state='disabled')
                 else:

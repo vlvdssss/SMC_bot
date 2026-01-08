@@ -2,6 +2,7 @@ telegram:
   enabled: True  # true для активации
   bot_token: "8531407014:AAFsKnKlt5w05cL4zRv5771ZbuZJY1gmQHU"   # Токен от @BotFather
   chat_id: "543258309"     # Ваш Chat ID от @userinfobot
+  enable_bot: true  # Включить интерактивного бота с кнопками
   
   # Какие события отправлять
   notify:
