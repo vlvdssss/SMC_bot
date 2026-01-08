@@ -1,6 +1,9 @@
 """Trade executor - manages position lifecycle."""
 
 from ..models import TradeRequest, TradeResult
+import logging
+
+logger = logging.getLogger('BAZA')
 
 
 class Position:
@@ -67,12 +70,22 @@ class Executor:
     def _execute_signal_live(self, symbol: str, signal: dict) -> bool:
         """Execute signal in live mode using MT5."""
         try:
-            direction = signal.get('direction', '').upper()
-            lot_size = signal.get('lot_size', 0.01)
+            # Конвертация direction: 'long'/'short' -> 'BUY'/'SELL'
+            raw_direction = signal.get('direction', '').lower()
+            if raw_direction == 'long':
+                direction = 'BUY'
+            elif raw_direction == 'short':
+                direction = 'SELL'
+            else:
+                # Уже в формате BUY/SELL
+                direction = signal.get('direction', '').upper()
+            
+            lot_size = signal.get('lot_size', signal.get('volume', 0.01))
             sl = signal.get('sl')
             tp = signal.get('tp')
 
             if direction not in ['BUY', 'SELL']:
+                logger.error(f"[Executor] Invalid direction: {signal.get('direction')}")
                 return False
 
             # Get current price

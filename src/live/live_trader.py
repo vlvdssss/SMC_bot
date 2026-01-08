@@ -330,7 +330,8 @@ class LiveTrader:
                         # Apply AI risk multiplier
                         filtered_signal = self._apply_ai_risk_multiplier(symbol, filtered_signal)
                         
-                        signals.append(f"{symbol}: {filtered_signal}")
+                        direction = "BUY" if filtered_signal.get('direction') == 'long' else "SELL"
+                        signals.append(f"{symbol}: {direction} @ {filtered_signal.get('entry_price', 0):.5f}")
                         
                         # Если разрешена торговля, открываем сделку
                         if self.enable_trading:
@@ -364,26 +365,44 @@ class LiveTrader:
         """Обработка сигнала с ML и GPT фильтрами."""
         
         if not signal.get('valid', False):
-            return
+            logger.debug(f"[LiveTrader] Signal not valid, skipping")
+            return None
         
         # 1. ML проверка (если есть данные)
         if h1_data is not None and m15_data is not None and m15_idx is not None:
             ml_ok, ml_prob = self.check_ml_filter(h1_data, m15_data, m15_idx, signal)
             if not ml_ok:
-                return f"ML filtered (prob: {ml_prob:.1%})"
+                logger.info(f"[LiveTrader] Signal filtered by ML (prob: {ml_prob:.1%})")
+                return None
         
         # 2. GPT проверка
         gpt_ok, gpt_reason = self.check_gpt_filter(instrument)
         if not gpt_ok:
-            return f"GPT filtered: {gpt_reason}"
+            logger.info(f"[LiveTrader] Signal filtered by GPT: {gpt_reason}")
+            return None
         
-        # Сигнал прошел все фильтры
+        # Сигнал прошел все фильтры - возвращаем обработанный dict
         direction = "BUY" if signal.get('direction') == 'long' else "SELL"
-        entry_price = signal.get('entry_price', 0)
-        sl = signal.get('stop_loss', 0)
-        tp = signal.get('take_profit', 0)
+        entry_price = signal.get('entry_price', signal.get('entry', 0))
+        sl = signal.get('sl', signal.get('stop_loss', 0))
+        tp = signal.get('tp', signal.get('take_profit', 0))
         
-        return f"{direction} @ {entry_price:.5f} (SL: {sl:.5f}, TP: {tp:.5f})"
+        processed_signal = {
+            'symbol': instrument,
+            'direction': signal.get('direction'),
+            'entry_price': entry_price,
+            'sl': sl,
+            'tp': tp,
+            'valid': True
+        }
+        
+        # Копируем дополнительные поля если есть
+        for key in ['confidence', 'reasoning', 'source', 'ai_signal_id', 'timestamp']:
+            if key in signal:
+                processed_signal[key] = signal[key]
+        
+        logger.info(f"[LiveTrader] ✅ Signal passed all filters: {direction} @ {entry_price:.5f} (SL: {sl:.5f}, TP: {tp:.5f})")
+        return processed_signal
     
     def check_ml_filter(self, h1_data, m15_data, m15_idx, signal):
         """ML фильтр сигнала."""
@@ -488,12 +507,17 @@ class LiveTrader:
                     for ai_signal in signals:
                         # Конвертируем AI сигнал в формат стратегии
                         strategy_signal = self._convert_ai_signal_to_strategy(ai_signal)
-                        triggered_signals.append(strategy_signal)
                         
                         logger.info(
                             f"[AI-Signal] Triggered: {symbol} {ai_signal.type} "
                             f"@ {ai_signal.entry_price} (conf: {ai_signal.confidence}%)"
                         )
+                        
+                        # Исполняем AI сигнал если разрешена торговля
+                        if self.enable_trading:
+                            self.execute_trade(symbol, strategy_signal)
+                        
+                        triggered_signals.append(strategy_signal)
         
         except Exception as e:
             logger.error(f"[AI] Signal check failed: {e}")
@@ -516,10 +540,13 @@ class LiveTrader:
             'entry_price': ai_signal.entry_price,
             'sl': ai_signal.stop_loss,
             'tp': ai_signal.take_profit,
+            'stop_loss': ai_signal.stop_loss,  # Дублируем для совместимости
+            'take_profit': ai_signal.take_profit,
             'confidence': ai_signal.confidence / 100.0,  # 0-1 scale
             'reasoning': ai_signal.reasoning,
             'source': 'AI-GPT',
             'ai_signal_id': ai_signal.id,
+            'valid': True,  # AI сигналы всегда валидны после проверки
             'timestamp': datetime.now().isoformat()
         }
     
