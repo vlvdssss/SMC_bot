@@ -325,11 +325,6 @@ class LiveTrader:
                     logger.info(f"[LiveTrader] ✅ Valid signal from strategy: {signal.get('direction')} @ {signal.get('entry')}")
                     # Применяем фильтры
                     filtered_signal = self.process_signal(symbol, signal, h1_data, m15_data, len(m15_data)-1)
-                else:
-                    if signal:
-                        logger.info(f"[LiveTrader] ❌ Strategy signal NOT valid for {symbol}: {signal}")
-                    else:
-                        logger.debug(f"[LiveTrader] No strategy signal for {symbol}")
                     
                     if filtered_signal:
                         # Apply AI risk multiplier
@@ -340,6 +335,11 @@ class LiveTrader:
                         # Если разрешена торговля, открываем сделку
                         if self.enable_trading:
                             self.execute_trade(symbol, filtered_signal)
+                else:
+                    if signal:
+                        logger.info(f"[LiveTrader] ❌ Strategy signal NOT valid for {symbol}: {signal}")
+                    else:
+                        logger.debug(f"[LiveTrader] No strategy signal for {symbol}")
             
             except Exception as e:
                 logger.error(f"Error checking {symbol}: {e}")

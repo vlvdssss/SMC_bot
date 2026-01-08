@@ -49,6 +49,7 @@ class BotManager:
         self._initialized = True
         self.status = BotStatus.STOPPED
         self.mode = 'demo'  # Режим работы: demo, backtest, live
+        self.trading_mode = 'strategy'  # Режим торговли: strategy, pure_ai
         self.bot_thread: Optional[threading.Thread] = None
         self.stop_event = threading.Event()
         self.pause_event = threading.Event()
@@ -145,14 +146,21 @@ class BotManager:
         except Exception as e:
             logger.error(f"Failed to initialize monitoring: {e}")
     
-    def start(self, mode: str = 'demo'):
-        """Запуск бота."""
+    def start(self, mode: str = 'demo', trading_mode: str = 'strategy'):
+        """
+        Запуск бота.
+        
+        Args:
+            mode: Режим счета ('demo' или 'live')
+            trading_mode: Режим торговли ('strategy' или 'pure_ai')
+        """
         if self.status == BotStatus.RUNNING:
             self.log("Warning: Bot already running")
             return False
         
         self.stop_event.clear()
         self.pause_event.clear()
+        self.trading_mode = trading_mode  # Сохраняем режим торговли
         self.status = BotStatus.RUNNING
         
         # Запускаем в отдельном потоке
@@ -163,7 +171,7 @@ class BotManager:
         )
         self.bot_thread.start()
         
-        self.log(f"Bot started in {mode.upper()} mode")
+        self.log(f"Bot started in {mode.upper()} mode | Trading: {trading_mode.upper()}")
         
         # Обновляем статистику из MT5 перед отправкой уведомления
         self._update_stats_from_mt5()
@@ -171,7 +179,10 @@ class BotManager:
         # Telegram уведомление
         if self.telegram and self.notify_config.get('startup', True):
             instruments = list(self.stats.get('instruments', ['XAUUSD', 'EURUSD']))
-            self.telegram.send_startup(mode=mode.upper(), instruments=instruments)
+            self.telegram.send_startup(
+                mode=trading_mode,  # Передаем режим торговли (strategy/pure_ai)
+                instruments=instruments
+            )
         
         return True
     
@@ -194,7 +205,10 @@ class BotManager:
         
         # Telegram уведомление
         if self.telegram and self.notify_config.get('shutdown', True):
-            self.telegram.send_shutdown(stats=self.stats)
+            self.telegram.send_shutdown(
+                mode=self.trading_mode,  # Передаем режим торговли
+                stats=self.stats
+            )
         
         return True
     

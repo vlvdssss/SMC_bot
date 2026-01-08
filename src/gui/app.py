@@ -2657,12 +2657,15 @@ class BazaApp:
                 "Будут открываться РЕАЛЬНЫЕ сделки!"):
             return
         
+        # Получаем выбранный режим торговли
+        trading_mode = self.trading_mode.get()  # "strategy" или "pure_ai"
+        
         # Используем bot_manager для старта (с telegram уведомлением)
         if self.bot_manager:
-            success = self.bot_manager.start(mode=mode)
+            success = self.bot_manager.start(mode=mode, trading_mode=trading_mode)
             if success:
                 self.update_status(True, False)
-                self.log(f"[LAUNCH] Bot started in {mode.upper()} mode")
+                self.log(f"[LAUNCH] Bot started in {mode.upper()} mode | Trading: {trading_mode.upper()}")
             else:
                 messagebox.showerror("Ошибка", "Не удалось запустить бота")
         else:
