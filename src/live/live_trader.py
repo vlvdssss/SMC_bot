@@ -302,9 +302,15 @@ class LiveTrader:
         
         # Проверяем AI сигналы если доступны
         if self.ai_signal_manager:
+            logger.debug("[LiveTrader] Checking AI signals...")
             ai_signals = self._check_ai_signals()
             if ai_signals:
+                logger.info(f"[LiveTrader] Found {len(ai_signals)} AI signals")
                 signals.extend(ai_signals)
+            else:
+                logger.debug("[LiveTrader] No triggered AI signals found")
+        else:
+            logger.debug("[LiveTrader] AI signal manager not available")
         
         for symbol, strategy in self.strategies.items():
             try:
@@ -703,6 +709,7 @@ class LiveTrader:
             List of triggered AI signals ready for execution
         """
         if not self.ai_signal_manager:
+            logger.debug("[AI] Signal manager not available")
             return []
         
         triggered_signals = []
@@ -711,14 +718,18 @@ class LiveTrader:
             import MetaTrader5 as mt5
             current_time = datetime.now()
             
+            logger.debug(f"[AI] Checking signals at {current_time.strftime('%H:%M:%S')}")
+            
             # Проверяем каждый символ
             for symbol in ['XAUUSD', 'EURUSD']:
                 # Получаем текущую цену
                 tick = mt5.symbol_info_tick(symbol)
                 if not tick:
+                    logger.debug(f"[AI] No tick data for {symbol}")
                     continue
                 
                 current_price = (tick.bid + tick.ask) / 2
+                logger.debug(f"[AI] {symbol} current price: {current_price}")
                 
                 # Проверяем триггеры
                 signals = self.ai_signal_manager.check_triggers(
@@ -726,6 +737,8 @@ class LiveTrader:
                     symbol=symbol,
                     current_time=current_time
                 )
+                
+                logger.debug(f"[AI] {symbol} found {len(signals) if signals else 0} triggered signals")
                 
                 if signals:
                     for ai_signal in signals:
@@ -739,12 +752,15 @@ class LiveTrader:
                         
                         # Исполняем AI сигнал если разрешена торговля
                         if self.enable_trading:
+                            logger.info(f"[AI] Executing AI signal for {symbol}")
                             self.execute_trade(symbol, strategy_signal)
+                        else:
+                            logger.info(f"[AI] Trading disabled, skipping execution")
                         
                         triggered_signals.append(strategy_signal)
         
         except Exception as e:
-            logger.error(f"[AI] Signal check failed: {e}")
+            logger.error(f"[AI] Signal check failed: {e}", exc_info=True)
         
         return triggered_signals
     
