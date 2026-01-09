@@ -454,6 +454,32 @@ class AISignalManager:
                     signal.status = "expired"
                     continue
                 
+                # ⏰ TIME LIMIT: Signal valid only 15 minutes after creation
+                # Prevents old signals from triggering on wrong market conditions
+                try:
+                    created = datetime.fromisoformat(signal.created_at)
+                    age_minutes = (current_time - created).total_seconds() / 60
+                    
+                    if age_minutes > 15:
+                        signal.status = "time_expired"
+                        logger.warning(
+                            f"[AI-Signal] ⏰ TIME EXPIRED {signal.id}: "
+                            f"Signal age {age_minutes:.1f} min > 15 min limit"
+                        )
+                        continue
+                except Exception as e:
+                    logger.error(f"[AI-Signal] Failed to check signal age: {e}")
+                
+                # 🛡️ SMART PRICE INVALIDATION - Prevent stale signal traps
+                # If price moved too far from entry, signal becomes obsolete
+                if self._is_price_invalidated(signal, current_price, symbol):
+                    signal.status = "price_invalidated"
+                    logger.warning(
+                        f"[AI-Signal] ⛔ INVALIDATED {signal.id}: "
+                        f"Price {current_price:.2f} moved too far from entry {signal.entry_price:.2f}"
+                    )
+                    continue
+                
                 # Check time trigger
                 if signal.trigger_time != "immediate":
                     if not self._is_time_reached(signal.trigger_time, current_time):
@@ -501,18 +527,51 @@ class AISignalManager:
             return current_price >= signal.entry_price
         return False
     
+    def _is_price_invalidated(self, signal: AISignal, current_price: float, symbol: str) -> bool:
+        """
+        Check if signal became obsolete due to price moving too far.
+        
+        Prevents trap scenario:
+        - BUY signal at 4465 created when price was 4300
+        - Price rises to 4473 (missed entry)
+        - Price reverses down to 4465 -> would trigger BUY at top of reversal!
+        
+        Solution: Invalidate signal if price moved >threshold from entry
+        """
+        # Define invalidation thresholds per symbol
+        thresholds = {
+            "XAUUSD": 30.0,   # 30 points for gold
+            "EURUSD": 0.0030, # 30 pips for EUR/USD
+            "default": 0.005  # 0.5% for others
+        }
+        
+        threshold = thresholds.get(symbol, thresholds["default"])
+        
+        # For BUY: if price went above entry + threshold, signal stale
+        if signal.type == "BUY":
+            if current_price > signal.entry_price + threshold:
+                return True  # Price too high, BUY signal obsolete
+        
+        # For SELL: if price went below entry - threshold, signal stale
+        elif signal.type == "SELL":
+            if current_price < signal.entry_price - threshold:
+                return True  # Price too low, SELL signal obsolete
+        
+        return False
+    
     def _cleanup_expired_signals(self):
-        """Remove expired signals."""
+        """Remove expired and invalidated signals."""
         original_count = len(self.active_signals)
         
         self.active_signals = [
             s for s in self.active_signals
-            if not s.is_expired() or s.status == "triggered"
+            if (not s.is_expired() and s.status not in ["expired", "price_invalidated", "time_expired"]) 
+            or s.status == "triggered"
         ]
         
         removed = original_count - len(self.active_signals)
         if removed > 0:
-            logger.info(f"[AI-Signal] Cleaned up {removed} expired signals")
+            logger.info(f"[AI-Signal] Cleaned up {removed} expired/invalidated signals")
     
     def get_trading_permission(
         self, 
