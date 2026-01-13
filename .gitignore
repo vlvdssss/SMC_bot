@@ -31,6 +31,8 @@ data/*.json
 config/*.enc
 config/mt5.yaml
 config/telegram.yaml
+config/.env
+.env
 
 # IDE
 .vscode/
