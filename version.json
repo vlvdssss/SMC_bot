@@ -1,16 +1,14 @@
 {
-  "latest_version": "1.0.0",
-  "download_url": "https://github.com/vlvdssss/SMC_bot/releases/download/v1.0.0/BAZA_TradingBot.exe",
+  "latest_version": "1.0.6",
+  "download_url": "https://github.com/vlvdssss/SMC_bot/releases/download/v1.0.6/BAZA_TradingBot.exe",
   "release_date": "2026-01-13",
   "size_mb": 205.86,
   "changelog": [
-    "🚀 Первый релиз BAZA Trading Bot",
-    "🤖 AI Market Analysis через GPT-4o Vision",
-    "✨ Pure AI Trading Mode (только GPT сигналы)",
-    "📱 Telegram интеграция для уведомлений",
-    "🔄 Система автоматических обновлений",
-    "📊 Полная статистика торговли",
-    "⚙️ Настраиваемый риск-менеджмент"
+    "� Добавлена система автоматических обновлений",
+    "🧹 Масштабная очистка проекта",
+    "📚 Обновлена документация (UPDATE_SYSTEM.md, QUICKSTART_UPDATE.md)",
+    "🎯 Улучшена структура и стабильность",
+    "✨ Готова к продакшену версия v1.0.6"
   ],
   "minimum_version": "1.0.0",
   "critical_update": false
