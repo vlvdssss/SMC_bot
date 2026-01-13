@@ -57,7 +57,7 @@ class Logger:
         file_handler = logging.handlers.RotatingFileHandler(
             log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'
         )
-        file_handler.setLevel(logging.DEBUG)
+        file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(formatter)
 
         # Консольный хендлер с UTF-8 (добавляем обратно для видимости)
@@ -79,12 +79,8 @@ class Logger:
         """Внутренний метод для вывода в GUI через callback."""
         if self.gui_callback:
             try:
-                # Форматирование сообщения с timestamp
-                timestamp = datetime.now().strftime("%H:%M:%S")
-                formatted = f"[{timestamp}] {message}"
-                
-                # Вызов callback для вставки в GUI
-                self.gui_callback(formatted, level)
+                # Вызов callback для вставки в GUI (timestamp добавляется в GUI)
+                self.gui_callback(message, level)
             except Exception as e:
                 # Fallback в консоль при ошибке GUI
                 print(f"GUI logging error: {e}")

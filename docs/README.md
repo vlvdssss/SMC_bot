@@ -1,220 +1,183 @@
-# 📚 BAZA Trading Bot - Документация
+# BAZA Trading Bot
 
-Полная документация проекта BAZA Trading Bot.
+Автоматизированная торговая система с AI-анализом рынка для MetaTrader 5.
 
----
+## 📋 Возможности
 
-## 📖 Содержание
+- **AI Market Analysis**: Анализ рыночных графиков через GPT-4o Vision API
+- **Pure AI Trading Mode**: Торговля исключительно на основе AI-сигналов
+- **Smart Order Management**: Управление позициями с trailing stop, partial TP
+- **Risk Management**: Автоматический расчет позиции на основе риска
+- **Telegram Integration**: Уведомления о сделках и состоянии бота
+- **GUI Interface**: Удобный интерфейс на Tkinter
+- **Multi-Instrument Support**: Торговля EURUSD, XAUUSD и других инструментов
+- **AI Signal System v2.0**: Система управления сигналами с TTL, блокировками, мультипликаторами риска
 
-### 🚀 Начало работы
-1. **[README.md](../README.md)** - Главная страница проекта
-2. **[ARCHITECTURE_2.0.md](../ARCHITECTURE_2.0.md)** - Архитектура системы
-3. **[LAUNCH_CHECKLIST.md](../LAUNCH_CHECKLIST.md)** - Чеклист перед запуском
+## 🚀 Быстрый старт
 
-### 🛠️ Разработка
-4. **[CONTRIBUTING.md](../CONTRIBUTING.md)** - Как внести свой вклад
-5. **[BUGFIXES.md](BUGFIXES.md)** - История исправлений багов
-6. **[LOGGING_IMPROVEMENTS.md](LOGGING_IMPROVEMENTS.md)** - Улучшение системы логирования (NEW ✨)
-7. **[IMPROVEMENTS_SUMMARY.md](IMPROVEMENTS_SUMMARY.md)** - Сводка улучшений
-8. **[API.md](API.md)** - API документация (NEW ✨)
-9. **[CI_CD.md](CI_CD.md)** - CI/CD и современная конфигурация (NEW ✨)
-10. **[MONITORING.md](MONITORING.md)** - Мониторинг и уведомления (NEW ✨)
-11. **[TELEGRAM_SETUP.md](TELEGRAM_SETUP.md)** - Быстрая настройка Telegram (NEW ✨)
+### Требования
 
-### ✨ Новые функции
-10. **[AI_SCREENSHOT_ANALYSIS.md](AI_SCREENSHOT_ANALYSIS.md)** - Анализ скриншотов MT5 через GPT-4 Vision
-11. **[QUICKSTART_SCREENSHOT.md](QUICKSTART_SCREENSHOT.md)** - Быстрый старт работы со скриншотами
-12. **[NEWS_FIX.md](NEWS_FIX.md)** - Интеграция актуальных новостей
+- Python 3.12+
+- MetaTrader 5
+- OpenAI API ключ
 
-### 📊 Торговля
-13. **[MANUAL_TRADING_README.md](../MANUAL_TRADING_README.md)** - Руководство по ручной торговле
+### Установка
 
-### 🧪 Тестирование
-14. **[TESTING_CHECKLIST.md](TESTING_CHECKLIST.md)** - Чеклист тестирования
-15. **[TESTING_GUIDE.md](TESTING_GUIDE.md)** - Руководство по тестированию (NEW ✨)
+1. Клонируйте репозиторий
+2. Установите зависимости:
+```bash
+pip install -r requirements.txt
+```
 
-### 🗑️ Обслуживание
-16. **[CLEANUP_LIST.md](CLEANUP_LIST.md)** - Список файлов для очистки
+3. Настройте конфигурационные файлы:
+   - `config/mt5.yaml` - настройки MT5
+   - `config/ai.yaml` - настройки AI анализа
+   - `config/telegram.yaml` - настройки Telegram бота
+   - `config/portfolio.yaml` - настройки риск-менеджмента
+   - `config/trading.yaml` - настройки торговли
 
----
+4. Запустите бота:
+```bash
+python main.py
+```
 
-## 🎯 Быстрый доступ
+## ⚙️ Конфигурация
 
-### Для пользователей:
-- **Установка:** [README.md](../README.md#установка)
-- **Первый запуск:** [LAUNCH_CHECKLIST.md](../LAUNCH_CHECKLIST.md)
-- **Ручная торговля:** [MANUAL_TRADING_README.md](../MANUAL_TRADING_README.md)
-- **AI Аналитик:** [QUICKSTART_SCREENSHOT.md](QUICKSTART_SCREENSHOT.md)
+### AI Analysis (config/ai.yaml)
 
-### Для разработчиков:
-- **Архитектура:** [ARCHITECTURE_2.0.md](../ARCHITECTURE_2.0.md)
-- **API документация:** [API.md](API.md) ⭐
-- **CI/CD:** [CI_CD.md](CI_CD.md) 🚀
-- **Мониторинг:** [MONITORING.md](MONITORING.md) 🔔
-- **История изменений:** [BUGFIXES.md](BUGFIXES.md)
-- **Тестирование:** [TESTING_GUIDE.md](TESTING_GUIDE.md)
-- **Вклад в проект:** [CONTRIBUTING.md](../CONTRIBUTING.md)
+```yaml
+openai:
+  api_key: "your-api-key"
+  model: "gpt-4o"
+  vision_model: "gpt-4o"
+  temperature: 0.7
+  max_tokens: 2000
 
----
+market_analyst:
+  enabled: true
+  schedule:
+    - "03:00"
+    - "06:00"
+    - "09:00"
+    - "12:00"
+    - "15:00"
+    - "18:00"
+    - "21:00"
+  
+  signals:
+    min_rr: 1.5  # Минимальный Risk/Reward
+    min_confidence: 70  # Минимальная уверенность (%)
+```
 
-## 📂 Структура проекта
+### Trading Settings (config/trading.yaml)
+
+```yaml
+risk:
+  sl_pips: 30
+  tp_pips: 60
+  base_risk_percent: 1.0
+
+trailing_stop:
+  enabled: true
+  activation_profit_pips: 20
+  trailing_distance_pips: 15
+
+hours:
+  enabled: true
+  start: "00:00"
+  end: "23:59"
+```
+
+### MetaTrader 5 (config/mt5.yaml)
+
+```yaml
+account:
+  login: your_login
+  password: your_password
+  server: "broker_server"
+```
+
+## 📊 Структура проекта
 
 ```
 BAZA/
-├── main.py                      # Точка входа
-├── requirements.txt             # Зависимости
-├── build_exe.py                 # Сборка EXE
-├── train_ml_model.py           # Обучение ML модели
-│
-├── config/                      # Конфигурация
-│   ├── mt5.yaml                # MT5 настройки
-│   ├── instruments.yaml        # Торговые инструменты
-│   ├── portfolio.yaml          # Портфель
-│   └── ai.yaml                 # AI настройки
-│
-├── src/                         # Исходный код
-│   ├── core/                   # Ядро системы
-│   │   ├── app_state.py       # Состояние приложения
-│   │   ├── mt5_manager.py     # Управление MT5
-│   │   ├── bot_manager.py     # Управление ботом
-│   │   ├── executor.py        # Исполнение сделок
-│   │   ├── risk_manager.py    # Риск-менеджмент
-│   │   └── logger.py          # Логирование
-│   │
-│   ├── gui/                    # Графический интерфейс
-│   │   └── app.py             # Главное окно
-│   │
-│   ├── strategies/             # Торговые стратегии
-│   │   ├── xauusd_strategy.py # XAUUSD стратегия
-│   │   └── eurusd_strategy.py # EURUSD стратегия
-│   │
-│   ├── ai/                     # AI модули
-│   │   ├── news_filter.py     # GPT фильтр новостей
-│   │   └── news_fetcher.py    # Получение новостей
-│   │
-│   ├── ml/                     # Machine Learning
-│   │   ├── predictor.py       # ML предиктор
-│   │   └── features.py        # Фичи для ML
-│   │
-│   ├── manual_trading/         # Ручная торговля
-│   │   ├── controller.py      # Контроллер
-│   │   ├── calculator.py      # Калькулятор
-│   │   ├── validator.py       # Валидатор
-│   │   └── ai_analyzer.py     # AI анализ
-│   │
-│   ├── backtest/               # Бэктестинг
-│   │   ├── backtester.py      # Бэктестер
-│   │   ├── portfolio_backtester.py
-│   │   └── metrics.py         # Метрики
-│   │
-│   └── live/                   # Live торговля
-│       └── live_trader.py     # Live трейдер
-│
-├── data/                        # Данные
-│   ├── bot_stats.json          # Статистика бота
-│   ├── trades_history.json     # История сделок
-│   └── backtest/               # Данные для бэктеста
-│
-├── logs/                        # Логи
-├── models/                      # ML модели
-├── results/                     # Результаты бэктестов
-│
-└── docs/                        # 📚 Документация
-    ├── README.md               # Этот файл
-    ├── BUGFIXES.md            # Исправления
-    ├── IMPROVEMENTS_SUMMARY.md # Улучшения
-    ├── AI_SCREENSHOT_ANALYSIS.md
-    ├── NEWS_FIX.md
-    └── TESTING_CHECKLIST.md
+├── config/          # Конфигурационные файлы
+├── src/
+│   ├── ai/         # AI анализ и сигналы
+│   ├── core/       # Ядро системы
+│   ├── gui/        # Графический интерфейс
+│   ├── mt5/        # Интеграция с MT5
+│   ├── strategies/ # Торговые стратегии
+│   └── monitoring/ # Мониторинг и логирование
+├── data/           # Данные (анализы, сделки, статистика)
+├── logs/           # Логи работы бота
+├── dist/           # Скомпилированный EXE
+└── main.py         # Точка входа
+
 ```
 
----
+## 🤖 AI Market Analyst
 
-## 🔥 Ключевые функции
+AI Market Analyst использует GPT-4o Vision для анализа графиков:
 
-### ⚡ Автоматическая торговля
-- Smart Money Concepts (SMC) стратегии
-- ML-powered предсказания
-- GPT фильтр новостей
-- Автоматический риск-менеджмент
+1. **Screenshot Analysis**: Захват и анализ графика MT5
+2. **Market Context**: Анализ текущей рыночной ситуации
+3. **Signal Generation**: Создание торговых сигналов с RR и confidence
+4. **Signal Management**: TTL (3 часа), блокировки, мультипликаторы риска
 
-### 💼 Ручная торговля
-- AI-анализ сделок
-- Автоматический расчет лотов
-- Валидация параметров
-- GPT-4 Vision анализ графиков
+### Пример AI сигнала
 
-### 📊 Бэктестинг
-- Исторические данные 2023-2025
-- Портфельный бэктестинг
-- Детальные метрики
-- Экспорт результатов
+```json
+{
+  "action": "buy",
+  "entry": 1.08500,
+  "stop_loss": 1.08200,
+  "take_profit": 1.09100,
+  "risk_reward": 2.0,
+  "confidence": 85
+}
+```
 
-### 🤖 AI Интеграция
-- **GPT-4o Vision** - анализ скриншотов MT5
-- **GPT-4o-mini** - текстовый анализ
-- **Актуальные новости** - экономический календарь
-- **ML предиктор** - LightGBM модель
+## 🔐 Безопасность
 
----
+- Чувствительные данные (пароли, API ключи) хранятся в `*.enc` файлах
+- Файлы `*.yaml.example` - шаблоны для настройки
+- Не коммитьте реальные учетные данные в Git
 
-## 📈 Результаты
+## 📝 Логирование
 
-| Год | XAUUSD ROI | EURUSD ROI | Portfolio ROI | Max DD |
-|-----|------------|------------|---------------|--------|
-| 2023 | 42.5% | 285.3% | 163.9% | 18.5% |
-| 2024 | 45.86% | 340.75% | 193.31% | 20.8% |
-| 2025 | 48.2% | 52.8% | 50.5% | 16.8% |
-| **AVG** | **45.5%** | **226%** | **136%** | **18.7%** |
+Логи сохраняются в `logs/baza_YYYYMMDD.log` с ротацией по дням.
 
----
+Уровни логирования:
+- INFO: Основная информация о работе
+- WARNING: Предупреждения
+- ERROR: Ошибки
+- DEBUG: Детальная отладочная информация
 
-## 🛠️ Технологии
+## 🔨 Сборка EXE
 
-- **Python 3.9+**
-- **MetaTrader 5** - торговая платформа
-- **OpenAI GPT-4** - AI анализ
-- **LightGBM** - машинное обучение
-- **Tkinter/CustomTkinter** - GUI
-- **Pandas/Numpy** - обработка данных
+```bash
+python build_exe.py
+```
 
----
+Результат: `dist/BAZA_TradingBot.exe` (~218 MB)
 
-## 📞 Поддержка
+## 📞 Telegram уведомления
 
-- **Email:** kamsaaaimpa@gmail.com
-- **Issues:** GitHub Issues
-- **Документация:** Этот файл
+Бот отправляет уведомления о:
+- Запуске/остановке бота
+- Новых сделках (открытие/закрытие)
+- AI анализах рынка
+- Критических ошибках
 
----
+## ⚠️ Дисклеймер
 
-## 📝 Версии
-
-### v1.2.0 (02.01.2026) - Актуальная
-- ✅ Добавлен анализ скриншотов MT5 через GPT-4 Vision
-- ✅ Интеграция актуальных экономических новостей
-- ✅ Исправлены критические баги (race conditions, memory leaks)
-- ✅ Улучшена обработка ошибок
-- ✅ Добавлены type hints
-
-### v1.1.0 (30.12.2025)
-- Добавлена ручная торговля с AI
-- ML предиктор
-- Портфельный бэктестинг
-
-### v1.0.0 (01.12.2025)
-- Первый релиз
-- Базовые стратегии SMC
-- GUI приложение
-
----
+Эта программа предоставляется "как есть". Торговля на финансовых рынках связана с риском потери капитала. Автор не несет ответственности за убытки.
 
 ## 📄 Лицензия
 
-Proprietary License - см. [LICENSE](../LICENSE)
+MIT License
 
----
+## 🤝 Поддержка
 
-**Обновлено:** 02.01.2026  
-**Версия:** 1.2.0  
-**Статус:** ✅ Production Ready
+Для вопросов и предложений создавайте Issues в репозитории.

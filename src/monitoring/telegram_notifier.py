@@ -43,6 +43,7 @@ class TelegramNotifier:
             True если успешно отправлено
         """
         if not self.enabled:
+            logger.warning(f"[Telegram] Disabled - cannot send message")
             return False
         
         try:
@@ -56,11 +57,11 @@ class TelegramNotifier:
             response = requests.post(url, json=data, timeout=10)
             response.raise_for_status()
             
-            logger.debug(f"Telegram сообщение отправлено: {text[:50]}...")
+            logger.info(f"[Telegram] ✅ Message sent: {text[:50]}...")
             return True
             
         except Exception as e:
-            logger.error(f"Ошибка отправки Telegram: {e}")
+            logger.error(f"[Telegram] ❌ Send failed: {e}")
             return False
     
     def send_trade_opened(self, symbol: str, direction: str, lot: float, 

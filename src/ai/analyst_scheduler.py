@@ -196,7 +196,18 @@ class AnalystScheduler:
                     "timestamp": datetime.now().isoformat()
                 }
             
-            logger.info(f"[AI-Scheduler] Starting analysis for {symbol}...")
+            # Check volatility pre-filter (skip GPT if market too quiet)
+            vol_passed, vol_reason = self.signal_manager.check_volatility_filter(symbol)
+            if not vol_passed:
+                logger.warning(f"[AI-Scheduler] Analysis skipped: {vol_reason}")
+                return {
+                    "error": "volatility_filter",
+                    "reason": vol_reason,
+                    "symbol": symbol,
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+            logger.info(f"[AI-Scheduler] Starting analysis for {symbol} ({vol_reason})...")
             
             # Step 1: Run analysis with fallback on error
             try:

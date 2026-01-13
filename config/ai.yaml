@@ -1,125 +1,72 @@
-# AI Configuration - Market Analyst & News Filter
-
-# ========================================
-# GLOBAL KILL-SWITCH
-# ========================================
-ai_enabled: true  # Set to false to disable ALL AI features
-
-# ========================================
-# MARKET ANALYST (NEW)
-# ========================================
+ai_enabled: true
 market_analyst:
-  enabled: true
-  
-  # Analysis schedule
-  schedule:
-    enabled: true
-    # Analyze every hour
-    times:
-      - "00:00"
-      - "01:00"
-      - "02:00"
-      - "03:00"
-      - "04:00"
-      - "05:00"
-      - "06:00"
-      - "07:00"
-      - "08:00"
-      - "09:00"
-      - "10:00"
-      - "11:00"
-      - "12:00"
-      - "13:00"
-      - "14:00"
-      - "15:00"
-      - "16:00"
-      - "17:00"
-      - "18:00"
-      - "19:00"
-      - "20:00"
-      - "21:00"
-      - "22:00"
-      - "23:00"
-    
-    # Time restrictions (UTC or local timezone)
-    restrictions:
-      # Block analysis and trading from 22:00 to 02:00
-      night_block:
-        enabled: true
-        start: "22:00"
-        end: "02:00"
-      
-      # Block weekends (Friday 22:00 to Monday 02:00)
-      weekend_block:
-        enabled: true
-        friday_start: "22:00"
-        monday_end: "02:00"
-  
-  # GPT Settings
-  gpt:
-    model: "gpt-4o"  # or "gpt-4-vision-preview"
-    temperature: 0.3
-    max_tokens: 2000
-  
-  # Versions (for tracking)
-  analysis_version: "1.0"
-  prompt_version: "2026-01"
-  
-  # Signal Settings
-  signals:
-    default_ttl_hours: 24
-    min_confidence: 50
-    confidence_decay: true
-    auto_cleanup: true
-  
-  # Block multipliers
+  analysis_version: '1.0'
   blocks:
-    none: 1.0
-    bias: 0.8
-    warning: 0.5
-    soft_block: 0.3
-    hard_block: 0.0
     auto_expire_hours: 12
-  
-  # Screenshots
-  screenshots:
-    enabled: true
-    timeframes: ["M15", "H1"]
-    bars: 100
-    dpi: 150
-    cleanup_days: 7
-  
-  # Fallback on error
+    bias: 0.8
+    hard_block: 0.0
+    none: 1.0
+    soft_block: 0.3
+    warning: 0.5
+  enabled: true
   fallback:
-    use_stale_analysis: true
     max_stale_hours: 6
-    on_error: "warning"  # none, warning, soft_block, hard_block
-  
-  # Safety
+    on_error: warning
+    use_stale_analysis: true
+  gpt:
+    max_tokens: 2000
+    model: gpt-4o
+    temperature: 0.3
+  prompt_version: 2026-01
   safety:
     max_daily_calls: 10
     max_monthly_cost: 20.0
     min_minutes_between_calls: 30
-
-# ========================================
-# NEWS FILTER (EXISTING)
-# ========================================
+  schedule:
+    enabled: true
+    restrictions:
+      night_block:
+        enabled: true
+        end: 02:00
+        start: '22:00'
+      weekend_block:
+        enabled: true
+        friday_start: '22:00'
+        monday_end: 02:00
+    times:
+    - 03:00
+    - 03:15
+    - 06:00
+    - 09:00
+    - '12:00'
+    - '15:00'
+    - '18:00'
+    - '21:00'
+  screenshots:
+    bars: 100
+    cleanup_days: 7
+    dpi: 150
+    enabled: true
+    timeframes:
+    - M15
+    - H1
+  signals:
+    auto_cleanup: true
+    confidence_decay: true
+    default_ttl_hours: 24
+    min_confidence: 70
+    min_rr: 1.5
 news_filter:
-  openai:
-    model: "gpt-4o-mini"
-    max_tokens: 100
-    temperature: 0.1
-
+  cache_duration: 3600
   enabled: true
-  cache_duration: 3600  # секунды
-
-  # Действия по уровню риска
-  risk_actions:
-    LOW: "trade"           # Торгуем нормально
-    MEDIUM: "reduce_75"    # 75% риска
-    HIGH: "reduce_50"      # 50% риска
-    EXTREME: "skip"        # Пропускаем сделку
-
-  # Инструменты для проверки
   instruments:
-    - XAUUSD
+  - XAUUSD
+  openai:
+    max_tokens: 100
+    model: gpt-4o-mini
+    temperature: 0.1
+  risk_actions:
+    EXTREME: skip
+    HIGH: reduce_50
+    LOW: trade
+    MEDIUM: reduce_75

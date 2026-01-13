@@ -1,0 +1,41 @@
+# Trading Configuration
+trading:
+  # Risk Management
+  risk:
+    max_lot_size: 1.0
+    default_sl_pips: 50
+    default_tp_pips: 100
+  
+  # Trailing Stop
+  trailing_stop:
+    enabled: false
+    distance_pips: 20
+  
+  # Trading Hours (UTC)
+  hours:
+    start: "02:00"
+    end: "22:00"
+  
+  # Indicators
+  indicators:
+    timeframes:
+      - M15
+      - M30
+      - H1
+      - H4
+    ema_periods:
+      - 20
+      - 50
+      - 200
+    rsi_period: 14
+    atr_period: 14
+  
+  # Smart Money Concepts
+  smc:
+    enabled: true
+    order_blocks: true
+    fair_value_gaps: true
+  
+  # Trend Filter
+  trend_filter:
+    enabled: true
