@@ -194,6 +194,13 @@ class MarketAnalystService:
         
         prompt = f"""You are an expert forex/gold trader and market analyst. Analyze the market and provide actionable trading signals with detailed structured reasoning.
 
+**IMPORTANT ANALYSIS RULES:**
+1. Analyze the FULL CONTEXT of last 50-100 candles visible on screenshots (not just the last 10-20)
+2. Entry price MUST be close to current price (within 10-30 pips maximum)
+3. If price already moved >50% toward your predicted target - DO NOT give signal (missed opportunity)
+4. Consider market structure, premium/discount zones, and recent price action
+5. Only give signals when you see a clear HIGH-PROBABILITY setup
+
 **SYMBOL:** {symbol}
 **TIMESTAMP:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 

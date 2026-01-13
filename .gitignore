@@ -1,75 +1,62 @@
-# Данные и результаты
-data/
-results/
-logs/
-*.csv
-
-# Конфиг с секретами
-config/mt5.yaml
-config/.env
-config/mt5_credentials.enc
-config/*.enc
-config/*.key
-config/*.pem
-
-# Environment files
-.env
-
-# Telegram / bot tokens
-archive/**/config.json
-**/config.json
-
-# Логи продаж и лицензии
-sales_log.txt
-license_*.txt
-trial_start.txt
-
-# Скрипты генерации лицензий (локальные)
-generate_key.py
-
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
 .Python
-venv/
-.venv/
-env/
 *.egg-info/
-dist/
-build/
+dist-info/
 *.egg
+.venv/
+venv/
+ENV/
+env/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Logs
+logs/
+*.log
+
+# Data files
+data/ai_analysis/
+data/screenshots/
+data/backtest/
+data/*.json
+
+# Sensitive config
+config/*.enc
+config/mt5.yaml
+config/telegram.yaml
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
-.spyderproject
-.spyproject
+*~
 
 # OS
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Временные
-*.log
+# Temporary
 *.tmp
 *.bak
-*.cache
+booom.txt
 
-# Sensitive local files
-.secret
-.credentials
+# Results
+results/
 
-# Jupyter
-.ipynb_checkpoints/
+# Models
+models/*.pkl
+models/*.h5
 
-# Testing
+# Tests
 .pytest_cache/
-htmlcov/
 .coverage
-coverage.xml
-*.cover
-.hypothesis/
+htmlcov/

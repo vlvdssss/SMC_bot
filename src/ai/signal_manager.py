@@ -94,6 +94,9 @@ class AISignalManager:
         self.signals_dir = Path("data/ai_signals")
         self.signals_dir.mkdir(parents=True, exist_ok=True)
         
+        # Load AI config
+        self.config = self._load_config()
+        
         self.active_signals: List[AISignal] = []
         self.signal_history: List[Dict] = []
         
@@ -111,6 +114,18 @@ class AISignalManager:
         self._load_state()
         
         logger.info("[AI-Signal] Manager v2.0 initialized")
+    
+    def _load_config(self) -> Dict:
+        """Load AI configuration from ai.yaml."""
+        try:
+            import yaml
+            config_path = Path("config/ai.yaml")
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    return yaml.safe_load(f) or {}
+        except Exception as e:
+            logger.warning(f"[AI-Signal] Failed to load config: {e}")
+        return {}
     
     def _is_trading_time_allowed(self, test_time: Optional[datetime] = None) -> Tuple[bool, str]:
         """
@@ -148,6 +163,48 @@ class AISignalManager:
             return False, "Weekend block ending (Monday 02:00)"
         
         return True, "OK"
+    
+    def check_volatility_filter(self, symbol: str) -> Tuple[bool, str]:
+        """Pre-filter: Check if market volatility is sufficient for trading.
+        
+        Returns:
+            (pass_filter, reason)
+        """
+        try:
+            import MetaTrader5 as mt5
+            
+            # Get recent data
+            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M15, 0, 100)
+            if rates is None or len(rates) < 20:
+                return True, "Not enough data for volatility check"
+            
+            import pandas as pd
+            df = pd.DataFrame(rates)
+            
+            # Calculate ATR (Average True Range)
+            high = df['high']
+            low = df['low']
+            close = df['close']
+            
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr = tr.rolling(14).mean().iloc[-1]
+            
+            # Check if ATR is too low (market too quiet)
+            # For XAUUSD: minimum $2-3 ATR
+            min_atr = 2.0 if symbol == "XAUUSD" else 0.0002  # 2 pips for EURUSD
+            
+            if atr < min_atr:
+                return False, f"Low volatility: ATR ${atr:.2f} < ${min_atr:.2f} (market too quiet)"
+            
+            return True, f"Volatility OK: ATR ${atr:.2f}"
+            
+        except Exception as e:
+            logger.warning(f"[AI-Signal] Volatility check failed: {e}")
+            return True, "Volatility check unavailable"
     
     def process_analysis(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -261,17 +318,40 @@ class AISignalManager:
             logger.info("[AI-Signal] No trading restrictions")
     
     def _validate_signal(self, signal_data: Dict) -> bool:
-        """Validate signal has required fields."""
+        """Validate signal has required fields and meets quality criteria."""
         required = ["type", "entry_price", "stop_loss", "take_profit", "confidence"]
         for field in required:
             if field not in signal_data or signal_data[field] is None:
                 logger.warning(f"[AI-Signal] Invalid signal - missing {field}")
                 return False
         
+        # Confidence check
         if signal_data["confidence"] < 50:
             logger.info(f"[AI-Signal] Skipped low confidence: {signal_data['confidence']}%")
             return False
         
+        # Risk/Reward ratio check (minimum 2:1)
+        entry = signal_data["entry_price"]
+        sl = signal_data["stop_loss"]
+        tp = signal_data["take_profit"]
+        
+        risk = abs(entry - sl)
+        reward = abs(tp - entry)
+        
+        if risk == 0:
+            logger.warning(f"[AI-Signal] Invalid signal - zero risk (entry == SL)")
+            return False
+        
+        rr_ratio = reward / risk
+        
+        # Читаем min_rr из конфига
+        min_rr_threshold = self.config.get('market_analyst', {}).get('signals', {}).get('min_rr', 2.0)
+        
+        if rr_ratio < min_rr_threshold:
+            logger.info(f"[AI-Signal] Rejected poor RR ratio: {rr_ratio:.2f} < {min_rr_threshold} (risk: ${risk:.2f}, reward: ${reward:.2f})")
+            return False
+        
+        logger.info(f"[AI-Signal] Signal validated: RR={rr_ratio:.2f}, confidence={signal_data['confidence']}%")
         return True
     
     def is_duplicate_signal(
@@ -442,7 +522,7 @@ class AISignalManager:
         symbol: str, 
         current_time: datetime
     ) -> List[AISignal]:
-        """Check if any signals should trigger."""
+        """Check if any signals should trigger with TTL and price validation."""
         triggered_signals = []
         
         with self._lock:
@@ -450,8 +530,38 @@ class AISignalManager:
                 if signal.status != "pending" or signal.symbol != symbol:
                     continue
                 
+                # Check standard expiration (24h)
                 if signal.is_expired():
                     signal.status = "expired"
+                    logger.info(f"[AI-Signal] Signal {signal.id} expired (24h TTL)")
+                    continue
+                
+                # TTL check: 15 minutes from creation
+                created_time = datetime.fromisoformat(signal.created_at)
+                age_minutes = (current_time - created_time).total_seconds() / 60
+                if age_minutes > 60:
+                    signal.status = "time_expired"
+                    logger.info(f"[AI-Signal] Signal {signal.id} expired (60min TTL, age: {age_minutes:.1f}min)")
+                    continue
+                
+                # Price invalidation: if price moved too far from entry
+                pip_multiplier = 10 if symbol == "EURUSD" else 1
+                price_diff = abs(current_price - signal.entry_price) * pip_multiplier
+                if price_diff > 30:  # 30 pips
+                    signal.status = "price_invalidated"
+                    logger.info(f"[AI-Signal] Signal {signal.id} invalidated (price moved {price_diff:.1f} pips from entry)")
+                    continue
+                
+                # Entry distance check: if price already too far from entry (missed opportunity)
+                # For BUY: if current > entry + 20 pips (price already ran up)
+                # For SELL: if current < entry - 20 pips (price already ran down)
+                if signal.type == "BUY" and (current_price - signal.entry_price) * pip_multiplier > 20:
+                    signal.status = "price_invalidated"
+                    logger.info(f"[AI-Signal] BUY signal {signal.id} invalidated (price already ran up {price_diff:.1f} pips above entry)")
+                    continue
+                elif signal.type == "SELL" and (signal.entry_price - current_price) * pip_multiplier > 20:
+                    signal.status = "price_invalidated"
+                    logger.info(f"[AI-Signal] SELL signal {signal.id} invalidated (price already ran down {price_diff:.1f} pips below entry)")
                     continue
                 
                 # ⏰ TIME LIMIT: Signal valid only 15 minutes after creation
@@ -499,7 +609,7 @@ class AISignalManager:
                         "price": current_price
                     })
                     
-                    logger.info(f"[AI-Signal] Triggered: {signal.id}")
+                    logger.info(f"[AI-Signal] Triggered: {signal.id} at price {current_price}")
             
             if triggered_signals:
                 self._save_state()
@@ -560,18 +670,30 @@ class AISignalManager:
         return False
     
     def _cleanup_expired_signals(self):
+<<<<<<< HEAD
         """Remove expired and invalidated signals."""
+=======
+        """Remove expired, time_expired, and price_invalidated signals."""
+>>>>>>> 17dbde7 ( Complete Update System + Project Cleanup)
         original_count = len(self.active_signals)
         
         self.active_signals = [
             s for s in self.active_signals
+<<<<<<< HEAD
             if (not s.is_expired() and s.status not in ["expired", "price_invalidated", "time_expired"]) 
             or s.status == "triggered"
+=======
+            if s.status not in ["expired", "time_expired", "price_invalidated"] or s.status == "triggered"
+>>>>>>> 17dbde7 ( Complete Update System + Project Cleanup)
         ]
         
         removed = original_count - len(self.active_signals)
         if removed > 0:
             logger.info(f"[AI-Signal] Cleaned up {removed} expired/invalidated signals")
+<<<<<<< HEAD
+=======
+            self._save_state()
+>>>>>>> 17dbde7 ( Complete Update System + Project Cleanup)
     
     def get_trading_permission(
         self, 

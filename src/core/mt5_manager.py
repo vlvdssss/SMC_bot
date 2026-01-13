@@ -11,9 +11,21 @@ logger = logging.getLogger(__name__)
 
 
 class MT5Manager:
-    """Менеджер MT5 подключения."""
+    """Менеджер MT5 подключения (Singleton)."""
+    
+    _instance = None
+    _initialized = False
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
 
     def __init__(self):
+        # Инициализация только один раз
+        if self._initialized:
+            return
+            
         self.mt5 = None
         self.connected = False
         self.account_info = {}
@@ -28,6 +40,8 @@ class MT5Manager:
         except ImportError:
             logger.error("MetaTrader5 library not found")
             raise ImportError("MetaTrader5 library is required")
+        
+        self._initialized = True
 
     def initialize(self, terminal_path: str = None) -> bool:
         """Инициализация MT5."""
@@ -139,6 +153,41 @@ class MT5Manager:
                 logger.error(f"Error getting account info: {e}")
 
         return {}
+    
+    def get_symbol_price(self, symbol: str) -> float:
+        """Получение текущей цены символа (bid price)."""
+        if self.is_connected():
+            try:
+                tick = self.mt5.symbol_info_tick(symbol)
+                if tick:
+                    return float(tick.bid)
+            except Exception as e:
+                logger.error(f"Error getting price for {symbol}: {e}")
+        return 0.0
+    
+    def get_open_positions(self) -> list:
+        """Получение списка открытых позиций."""
+        positions = []
+        if self.is_connected():
+            try:
+                pos_list = self.mt5.positions_get()
+                if pos_list:
+                    for pos in pos_list:
+                        positions.append({
+                            'ticket': pos.ticket,
+                            'symbol': pos.symbol,
+                            'type': 'BUY' if pos.type == 0 else 'SELL',
+                            'volume': pos.volume,
+                            'price_open': pos.price_open,
+                            'price_current': pos.price_current,
+                            'profit': pos.profit,
+                            'sl': pos.sl,
+                            'tp': pos.tp,
+                            'time': pos.time
+                        })
+            except Exception as e:
+                logger.error(f"Error getting open positions: {e}")
+        return positions
 
     def get_terminal_info(self) -> dict:
         """Получение информации о терминале."""

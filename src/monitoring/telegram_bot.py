@@ -168,8 +168,14 @@ class TelegramBotWithButtons:
                 reply_markup=self.reply_markup
             )
     
-    async def run(self):
-        """Запуск бота"""
+    # Метод run() больше не нужен, перенесён в start_polling()
+    
+    def start_polling(self):
+        """Запуск бота в отдельном потоке"""
+        # Создаём новый event loop для потока сразу
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
         try:
             # Создаём приложение
             self.application = Application.builder().token(self.token).build()
@@ -180,14 +186,9 @@ class TelegramBotWithButtons:
             
             # Запускаем polling
             logger.info("🤖 Telegram бот запущен с кнопками")
-            await self.application.run_polling(allowed_updates=Update.ALL_TYPES)
+            loop.run_until_complete(self.application.run_polling(allowed_updates=Update.ALL_TYPES))
             
         except Exception as e:
-            logger.error(f"Ошибка запуска Telegram бота: {e}")
-    
-    def start_polling(self):
-        """Запуск бота в отдельном потоке"""
-        try:
-            asyncio.run(self.run())
-        except Exception as e:
             logger.error(f"Ошибка polling Telegram бота: {e}")
+        finally:
+            loop.close()

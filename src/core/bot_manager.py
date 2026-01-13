@@ -123,15 +123,19 @@ class BotManager:
             
             tg_config = config.get('telegram', {})
             if tg_config.get('enabled', False):
+                bot_token = tg_config.get('bot_token')
+                chat_id = tg_config.get('chat_id')
+                logger.info(f"[BotManager] Initializing Telegram: token={'***' + bot_token[-4:] if bot_token else 'NONE'}, chat_id={chat_id}")
+                
                 self.telegram = TelegramNotifier(
-                    token=tg_config.get('bot_token'),
-                    chat_id=tg_config.get('chat_id')
+                    token=bot_token,
+                    chat_id=chat_id
                 )
                 self.notify_config = tg_config.get('notify', {})
-                logger.info("Telegram notifications enabled")
+                logger.info(f"[BotManager] Telegram notifications enabled: {self.telegram.enabled}")
+                logger.info(f"[BotManager] Notify config: {self.notify_config}")
                 
                 # Запускаем Telegram бот с кнопками
-                bot_token = tg_config.get('bot_token')
                 if bot_token and tg_config.get('enable_bot', True):
                     self.telegram_bot = TelegramBotWithButtons(bot_token, bot_manager=self)
                     # Запускаем бот в отдельном потоке
@@ -198,12 +202,17 @@ class BotManager:
         self.save_stats()
         
         # Telegram уведомление
+        logger.info(f"[BotManager] Checking Telegram notification: telegram={self.telegram}, notify_startup={self.notify_config.get('startup', True) if hasattr(self, 'notify_config') else 'NO_CONFIG'}")
         if self.telegram and self.notify_config.get('startup', True):
             instruments = list(self.stats.get('instruments', ['XAUUSD', 'EURUSD']))
-            self.telegram.send_startup(
+            logger.info(f"[BotManager] Sending startup notification for {trading_mode} mode with {instruments}")
+            result = self.telegram.send_startup(
                 mode=trading_mode,  # Передаем режим торговли (strategy/pure_ai)
                 instruments=instruments
             )
+            logger.info(f"[BotManager] Startup notification result: {result}")
+        else:
+            logger.warning(f"[BotManager] Startup notification skipped: telegram={bool(self.telegram)}, config={hasattr(self, 'notify_config')}")
         
         return True
     
@@ -470,6 +479,25 @@ class BotManager:
             self.stats['trades'] = total_trades
             self.stats['wins'] = wins
             self.stats['losses'] = losses
+    
+    def get_stats(self) -> dict:
+        """Получение текущей статистики."""
+        # Рассчитываем win rate
+        total_trades = self.stats.get('total_trades', 0)
+        winning_trades = self.stats.get('wins', 0)
+        losing_trades = self.stats.get('losses', 0)
+        
+        win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
+        
+        return {
+            'total_trades': total_trades,
+            'winning_trades': winning_trades,
+            'losing_trades': losing_trades,
+            'win_rate': round(win_rate, 2),
+            'total_pnl': self.stats.get('total_pnl', 0.0),
+            'today_pnl': self.stats.get('today_pnl', 0.0),
+            'open_positions': self.stats.get('open_positions', [])
+        }
     
     def get_status_info(self) -> dict:
         """Информация о статусе для API."""

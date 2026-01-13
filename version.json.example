@@ -1,0 +1,12 @@
+{
+  "latest_version": "1.0.0",
+  "download_url": "https://github.com/USERNAME/REPO/releases/download/v1.0.0/BAZA_TradingBot_v1.0.0.exe",
+  "size_mb": 218,
+  "changelog": [
+    "Первый релиз BAZA Trading Bot",
+    "AI Market Analysis через GPT-4o Vision",
+    "Pure AI Trading Mode",
+    "Telegram интеграция",
+    "Система автоматических обновлений"
+  ]
+}
