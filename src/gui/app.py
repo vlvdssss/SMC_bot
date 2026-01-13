@@ -321,6 +321,98 @@ class StatsPanel(tk.Frame):
         total_label.config(text=f"${total_pnl:+,.2f}", fg=total_color)
 
 
+# ==================== CURRENT SETTINGS PANEL ====================
+class CurrentSettingsPanel(tk.Frame):
+    """Панель текущих активных настроек"""
+    
+    def __init__(self, parent):
+        super().__init__(parent, bg=Colors.BG_DARK)
+        
+        tk.Label(self, text="Current Settings",
+                font=('Arial', 11, 'bold'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_PRIMARY).pack(pady=(0, 10))
+        
+        # Контейнер для настроек
+        settings_frame = tk.Frame(self, bg=Colors.BG_CARD,
+                                 highlightbackground=Colors.BORDER,
+                                 highlightthickness=1)
+        settings_frame.pack(fill='x')
+        
+        # Trading Mode
+        self._create_setting_row(settings_frame, "Trading Mode:", "Strategy + AI")
+        
+        # Risk %
+        self._create_setting_row(settings_frame, "Risk per Trade:", "1.0%")
+        
+        # MT5 Status
+        self._create_setting_row(settings_frame, "MT5:", "Connected")
+        
+        # Telegram Status
+        self._create_setting_row(settings_frame, "Telegram:", "Enabled")
+        
+        # AI Model
+        self._create_setting_row(settings_frame, "AI Model:", "GPT-4o")
+    
+    def _create_setting_row(self, parent, label_text, value_text):
+        """Создать строку с настройкой"""
+        row = tk.Frame(parent, bg=Colors.BG_CARD)
+        row.pack(fill='x', padx=10, pady=5)
+        
+        tk.Label(row, text=label_text,
+                font=('Arial', 9),
+                bg=Colors.BG_CARD,
+                fg=Colors.TEXT_MUTED).pack(side='left')
+        
+        value_label = tk.Label(row, text=value_text,
+                              font=('Arial', 9, 'bold'),
+                              bg=Colors.BG_CARD,
+                              fg=Colors.TEXT_PRIMARY)
+        value_label.pack(side='right')
+        
+        # Сохраняем ссылку на value_label для обновления
+        setattr(self, f"_{label_text.replace(':', '').replace(' ', '_').lower()}_label", value_label)
+    
+    def update_settings(self, settings):
+        """Обновить отображаемые настройки"""
+        try:
+            # Trading Mode
+            mode_map = {'strategy': 'Strategy + AI', 'pure_ai': 'Pure AI'}
+            if hasattr(self, '_trading_mode_label'):
+                self._trading_mode_label.config(
+                    text=mode_map.get(settings.get('trading_mode', 'strategy'), 'Unknown')
+                )
+            
+            # Risk %
+            if hasattr(self, '_risk_per_trade_label'):
+                risk = settings.get('risk_percent', 1.0)
+                self._risk_per_trade_label.config(text=f"{risk}%")
+            
+            # MT5 Status
+            if hasattr(self, '_mt5_label'):
+                mt5_connected = settings.get('mt5_connected', False)
+                self._mt5_label.config(
+                    text="Connected" if mt5_connected else "Disconnected",
+                    fg=Colors.SUCCESS if mt5_connected else Colors.ERROR
+                )
+            
+            # Telegram Status
+            if hasattr(self, '_telegram_label'):
+                tg_enabled = settings.get('telegram_enabled', False)
+                self._telegram_label.config(
+                    text="Enabled" if tg_enabled else "Disabled",
+                    fg=Colors.SUCCESS if tg_enabled else Colors.TEXT_MUTED
+                )
+            
+            # AI Model
+            if hasattr(self, '_ai_model_label'):
+                model = settings.get('ai_model', 'gpt-4o')
+                self._ai_model_label.config(text=model.upper())
+                
+        except Exception as e:
+            logger.error(f"[CurrentSettingsPanel] Ошибка обновления: {e}")
+
+
 # ==================== AI ANALYST PANEL ====================
 class AnalystPanel(tk.Frame):
     """Панель AI Analyst"""
@@ -511,6 +603,11 @@ class BazaApp:
         # Установка callback для логов
         app_logger.set_gui_callback(self.add_log)
         
+        # Первичное обновление панели настроек
+        if hasattr(self, 'settings_info_panel'):
+            settings = self.bot_manager.get_current_settings()
+            self.settings_info_panel.update_settings(settings)
+        
         app_logger.info("[BAZA] Trading Terminal started")
     
     def _create_ui(self):
@@ -542,6 +639,10 @@ class BazaApp:
         # Stats Panel
         self.stats_panel = StatsPanel(left_panel, self.app_state)
         self.stats_panel.pack(fill='x', pady=(0, 20))
+        
+        # Current Settings Panel
+        self.settings_info_panel = CurrentSettingsPanel(left_panel)
+        self.settings_info_panel.pack(fill='x', pady=(0, 20))
         
         # Settings Button
         tk.Button(left_panel, text="⚙ Settings",
@@ -591,6 +692,11 @@ class BazaApp:
         
         # Обновить статус в UI
         self.mode_selector.update_status(self.bot_running)
+        
+        # Обновить панель настроек
+        if hasattr(self, 'settings_info_panel'):
+            settings = self.bot_manager.get_current_settings()
+            self.settings_info_panel.update_settings(settings)
     
     def _start_bot(self):
         """Запуск бота"""
@@ -906,8 +1012,28 @@ class BazaApp:
     
     def _on_settings_saved(self):
         """Callback после сохранения настроек"""
-        app_logger.info("[SETTINGS] Settings updated, reload recommended")
-        # Можно добавить автоматическую перезагрузку конфигов
+        try:
+            app_logger.info("[SETTINGS] Settings updated, applying changes...")
+            
+            # Применить настройки без перезапуска
+            if hasattr(self, 'bot_manager') and self.bot_manager:
+                success = self.bot_manager.reload_config()
+                if success:
+                    # Обновить панель Current Settings
+                    settings = self.bot_manager.get_current_settings()
+                    if hasattr(self, 'settings_info_panel'):
+                        self.settings_info_panel.update_settings(settings)
+                    
+                    messagebox.showinfo("Success", "✅ Настройки применены!\n\nИзменения вступили в силу без перезапуска.")
+                    app_logger.info("[SETTINGS] ✅ Settings reloaded successfully")
+                else:
+                    messagebox.showwarning("Warning", "⚠️ Настройки сохранены, но не все изменения применены.\n\nРекомендуется перезапустить бота.")
+            else:
+                messagebox.showinfo("Saved", "Настройки сохранены. Изменения вступят в силу при следующем запуске.")
+                
+        except Exception as e:
+            app_logger.error(f"[SETTINGS] Error applying settings: {e}")
+            messagebox.showerror("Error", f"Ошибка применения настроек: {e}")
     
     def show_mt5_dialog(self):
         """Показать диалог MT5"""

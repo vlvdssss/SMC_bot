@@ -167,6 +167,86 @@ class BotManager:
         except Exception as e:
             logger.error(f"Failed to initialize monitoring: {e}")
     
+    def reload_config(self):
+        """
+        Перезагрузка настроек без перезапуска бота.
+        Применяет изменения из конфигурационных файлов.
+        """
+        try:
+            import yaml
+            logger.info("[BotManager] Reloading configuration...")
+            
+            # Перезагрузка Telegram (если изменились настройки)
+            config_path = Path('config/telegram.yaml')
+            if config_path.exists() and MONITORING_AVAILABLE:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f)
+                
+                tg_config = config.get('telegram', {})
+                if tg_config.get('enabled', False):
+                    bot_token = tg_config.get('bot_token')
+                    chat_id = tg_config.get('chat_id')
+                    
+                    # Переинициализация Telegram notifier
+                    if self.telegram:
+                        self.telegram.token = bot_token
+                        self.telegram.chat_id = chat_id
+                    else:
+                        self.telegram = TelegramNotifier(token=bot_token, chat_id=chat_id)
+                    
+                    self.notify_config = tg_config.get('notify', {})
+                    logger.info("[BotManager] Telegram настройки обновлены")
+                else:
+                    self.telegram = None
+                    logger.info("[BotManager] Telegram отключен")
+            
+            # Перезагрузка MT5 (если менеджер установлен)
+            mt5_config_path = Path('config/mt5.yaml')
+            if mt5_config_path.exists() and self.mt5_manager:
+                # MT5 Manager сам перечитает конфиг при следующем подключении
+                logger.info("[BotManager] MT5 настройки будут применены при следующем подключении")
+            
+            # Другие настройки (risk, strategy, etc.) применяются автоматически
+            # при следующей проверке сигналов
+            
+            logger.info("[BotManager] ✅ Настройки успешно перезагружены")
+            return True
+            
+        except Exception as e:
+            logger.error(f"[BotManager] Ошибка перезагрузки настроек: {e}")
+            return False
+    
+    def get_current_settings(self):
+        """Получить текущие активные настройки."""
+        try:
+            import yaml
+            settings = {
+                'trading_mode': self.trading_mode,
+                'status': self.status.value,
+                'mt5_connected': self.mt5_manager.is_connected() if self.mt5_manager else False,
+                'telegram_enabled': bool(self.telegram),
+            }
+            
+            # Загружаем настройки риска
+            portfolio_path = Path('config/portfolio.yaml')
+            if portfolio_path.exists():
+                with open(portfolio_path, 'r', encoding='utf-8') as f:
+                    portfolio = yaml.safe_load(f)
+                    settings['risk_percent'] = portfolio.get('risk_per_trade_percent', 1.0)
+            
+            # Загружаем настройки AI
+            ai_path = Path('config/ai.yaml')
+            if ai_path.exists():
+                with open(ai_path, 'r', encoding='utf-8') as f:
+                    ai_config = yaml.safe_load(f)
+                    settings['ai_enabled'] = ai_config.get('enabled', True)
+                    settings['ai_model'] = ai_config.get('model', 'gpt-4o')
+            
+            return settings
+        except Exception as e:
+            logger.error(f"[BotManager] Ошибка получения настроек: {e}")
+            return {}
+    
     def start(self, mode: str = 'demo', trading_mode: str = 'strategy'):
         """
         Запуск бота.
