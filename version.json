@@ -1,14 +1,14 @@
 {
-  "latest_version": "1.0.7",
-  "download_url": "https://github.com/vlvdssss/SMC_bot/releases/download/v1.0.7/BAZA_TradingBot.exe",
-  "release_date": "2026-01-13",
-  "size_mb": 205.86,
+  "latest_version": "1.0.8",
+  "download_url": "https://github.com/vlvdssss/SMC_bot/releases/download/v1.0.8/BAZA_TradingBot.exe",
+  "release_date": "2026-01-14",
+  "size_mb": 205.91,
   "changelog": [
-    "🔄 Тест",
-    "🧹 Тест",
-    "📚 Тест",
-    "🎯 Тест",
-    "✨ Тест"
+    "🔑 Обновлен OpenAI API ключ",
+    "📐 Уменьшена панель Current Settings",
+    "📋 Добавлена поддержка Ctrl+V в полях ввода",
+    "✅ Кнопка обновления теперь всегда видна",
+    "🐛 Исправлена ошибка 401 при подключении к GPT"
   ],
   "minimum_version": "1.0.0",
   "critical_update": false
