@@ -330,43 +330,40 @@ class CurrentSettingsPanel(tk.Frame):
         super().__init__(parent, bg=Colors.BG_DARK)
         
         tk.Label(self, text="Current Settings",
-                font=('Arial', 11, 'bold'),
+                font=('Arial', 10, 'bold'),
                 bg=Colors.BG_DARK,
-                fg=Colors.TEXT_PRIMARY).pack(pady=(0, 10))
+                fg=Colors.TEXT_PRIMARY).pack(pady=(0, 8))
         
-        # Контейнер для настроек
+        # Контейнер для настроек (компактный)
         settings_frame = tk.Frame(self, bg=Colors.BG_CARD,
                                  highlightbackground=Colors.BORDER,
                                  highlightthickness=1)
         settings_frame.pack(fill='x')
         
         # Trading Mode
-        self._create_setting_row(settings_frame, "Trading Mode:", "Strategy + AI")
+        self._create_setting_row(settings_frame, "Mode:", "Strategy+AI")
         
         # Risk %
-        self._create_setting_row(settings_frame, "Risk per Trade:", "1.0%")
+        self._create_setting_row(settings_frame, "Risk:", "1.0%")
         
         # MT5 Status
         self._create_setting_row(settings_frame, "MT5:", "Connected")
         
-        # Telegram Status
-        self._create_setting_row(settings_frame, "Telegram:", "Enabled")
-        
         # AI Model
-        self._create_setting_row(settings_frame, "AI Model:", "GPT-4o")
+        self._create_setting_row(settings_frame, "AI:", "GPT-4o")
     
     def _create_setting_row(self, parent, label_text, value_text):
         """Создать строку с настройкой"""
         row = tk.Frame(parent, bg=Colors.BG_CARD)
-        row.pack(fill='x', padx=10, pady=5)
+        row.pack(fill='x', padx=8, pady=3)
         
         tk.Label(row, text=label_text,
-                font=('Arial', 9),
+                font=('Arial', 8),
                 bg=Colors.BG_CARD,
                 fg=Colors.TEXT_MUTED).pack(side='left')
         
         value_label = tk.Label(row, text=value_text,
-                              font=('Arial', 9, 'bold'),
+                              font=('Arial', 8, 'bold'),
                               bg=Colors.BG_CARD,
                               fg=Colors.TEXT_PRIMARY)
         value_label.pack(side='right')
@@ -378,37 +375,29 @@ class CurrentSettingsPanel(tk.Frame):
         """Обновить отображаемые настройки"""
         try:
             # Trading Mode
-            mode_map = {'strategy': 'Strategy + AI', 'pure_ai': 'Pure AI'}
-            if hasattr(self, '_trading_mode_label'):
-                self._trading_mode_label.config(
+            mode_map = {'strategy': 'Strategy+AI', 'pure_ai': 'Pure AI'}
+            if hasattr(self, '_mode_label'):
+                self._mode_label.config(
                     text=mode_map.get(settings.get('trading_mode', 'strategy'), 'Unknown')
                 )
             
             # Risk %
-            if hasattr(self, '_risk_per_trade_label'):
+            if hasattr(self, '_risk_label'):
                 risk = settings.get('risk_percent', 1.0)
-                self._risk_per_trade_label.config(text=f"{risk}%")
+                self._risk_label.config(text=f"{risk}%")
             
             # MT5 Status
             if hasattr(self, '_mt5_label'):
                 mt5_connected = settings.get('mt5_connected', False)
                 self._mt5_label.config(
-                    text="Connected" if mt5_connected else "Disconnected",
+                    text="OK" if mt5_connected else "Off",
                     fg=Colors.SUCCESS if mt5_connected else Colors.ERROR
                 )
             
-            # Telegram Status
-            if hasattr(self, '_telegram_label'):
-                tg_enabled = settings.get('telegram_enabled', False)
-                self._telegram_label.config(
-                    text="Enabled" if tg_enabled else "Disabled",
-                    fg=Colors.SUCCESS if tg_enabled else Colors.TEXT_MUTED
-                )
-            
             # AI Model
-            if hasattr(self, '_ai_model_label'):
+            if hasattr(self, '_ai_label'):
                 model = settings.get('ai_model', 'gpt-4o')
-                self._ai_model_label.config(text=model.upper())
+                self._ai_label.config(text=model.upper())
                 
         except Exception as e:
             logger.error(f"[CurrentSettingsPanel] Ошибка обновления: {e}")
@@ -646,7 +635,7 @@ class BazaApp:
         
         # Current Settings Panel
         self.settings_info_panel = CurrentSettingsPanel(left_panel)
-        self.settings_info_panel.pack(fill='x', pady=(0, 20))
+        self.settings_info_panel.pack(fill='x', pady=(0, 10))
         
         # Settings Button
         tk.Button(left_panel, text="⚙ Settings",

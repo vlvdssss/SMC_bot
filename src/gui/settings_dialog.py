@@ -826,3 +826,17 @@ class SettingsDialog:
         except Exception as e:
             logger.error(f"[SETTINGS] Failed to save: {e}")
             messagebox.showerror("Error", f"Failed to save settings:\n{e}")
+    
+    def _bind_paste(self, entry_widget):
+        """Добавить поддержку Ctrl+V для Entry виджета"""
+        def paste(event=None):
+            try:
+                text = self.dialog.clipboard_get()
+                entry_widget.delete(0, 'end')
+                entry_widget.insert(0, text)
+                return 'break'
+            except:
+                pass
+        
+        entry_widget.bind('<Control-v>', paste)
+        entry_widget.bind('<Control-V>', paste)
