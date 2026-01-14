@@ -37,9 +37,18 @@ class MarketAnalystService:
         """Initialize Market Analyst Service v2.0."""
         self.api_key = api_key or os.getenv('OPENAI_API_KEY')
         if not self.api_key:
-            raise ValueError("OpenAI API key not found")
+            logger.error("[AI] ❌ OpenAI API key not found! Set OPENAI_API_KEY in config/.env or pass to constructor")
+            raise ValueError("OpenAI API key not found. Please configure API key in Settings.")
         
-        self.client = OpenAI(api_key=self.api_key)
+        logger.info(f"[AI] API Key found: {self.api_key[:15]}...{self.api_key[-4:]}")
+        
+        try:
+            self.client = OpenAI(api_key=self.api_key)
+            logger.info("[AI] ✅ OpenAI client initialized successfully")
+        except Exception as e:
+            logger.error(f"[AI] ❌ Failed to initialize OpenAI client: {e}")
+            raise
+        
         self.screenshot_service = ChartScreenshotService()
         self.news_fetcher = RealTimeNewsFetcher()
         
@@ -312,6 +321,8 @@ Provide ONLY the JSON response, no additional text."""
     def _call_gpt_api(self, prompt: str, screenshots: Dict[str, str]) -> Dict[str, Any]:
         """Call GPT-4 Vision API with prompt and images."""
         try:
+            logger.info(f"[AI] 📤 Sending request to GPT-4o with {len(screenshots)} screenshots...")
+            
             # Build messages with images
             messages = [
                 {
@@ -335,14 +346,18 @@ Provide ONLY the JSON response, no additional text."""
                         "detail": "high"
                     }
                 })
+                logger.info(f"[AI] Added {timeframe} screenshot to request")
             
             # Call API
+            logger.info("[AI] Calling OpenAI API...")
             response = self.client.chat.completions.create(
                 model="gpt-4o",  # or "gpt-4-vision-preview"
                 messages=messages,
                 max_tokens=2000,
                 temperature=0.3  # Lower temperature for more consistent analysis
             )
+            
+            logger.info("[AI] ✅ Received response from OpenAI")
             
             # Parse response
             content = response.choices[0].message.content.strip()
@@ -354,10 +369,11 @@ Provide ONLY the JSON response, no additional text."""
                     content = content[4:]
             
             analysis = json.loads(content)
+            logger.info("[AI] ✅ Successfully parsed GPT response")
             return analysis
             
         except Exception as e:
-            logger.error(f"[AI] GPT API call failed: {e}")
+            logger.error(f"[AI] ❌ GPT API call failed: {type(e).__name__}: {e}")
             raise
     
     def _validate_analysis(self, analysis: Dict[str, Any]) -> Dict[str, Any]:

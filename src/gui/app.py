@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from src.core.app_state import AppState
 from src.core.mt5_manager import MT5Manager
 from src.core.bot_manager import bot_manager, BotManager
+from src.core.diagnostics import SystemDiagnostics
 from src.live.live_trader import LiveTrader
 from src.gui.settings_dialog import SettingsDialog
 from src.gui.mt5_dialog import MT5Dialog
@@ -603,6 +604,9 @@ class BazaApp:
         # Установка callback для логов
         app_logger.set_gui_callback(self.add_log)
         
+        # Системная диагностика
+        self._run_diagnostics()
+        
         # Первичное обновление панели настроек
         if hasattr(self, 'settings_info_panel'):
             settings = self.bot_manager.get_current_settings()
@@ -1001,6 +1005,43 @@ class BazaApp:
                     threading.Event().wait(5)
         
         threading.Thread(target=monitor, daemon=True).start()
+    
+    def _run_diagnostics(self):
+        """Запуск системной диагностики при старте."""
+        try:
+            app_logger.info("[Diagnostics] Running system checks...")
+            
+            # Запустить диагностику
+            results = SystemDiagnostics.check_all()
+            
+            # Вывести отчёт в лог
+            report = SystemDiagnostics.get_diagnostic_report()
+            for line in report.split('\n'):
+                app_logger.info(f"[Diagnostics] {line}")
+            
+            # Если есть критические проблемы - показать предупреждение
+            if not results["all_ok"]:
+                issues = []
+                
+                if not results["openai_api"]["status"]:
+                    issues.append(f"• {results['openai_api']['message']}")
+                    if "solution" in results["openai_api"]:
+                        issues.append(f"  → {results['openai_api']['solution']}")
+                
+                if not results["config_files"]["status"]:
+                    issues.append(f"• {results['config_files']['message']}")
+                
+                if issues:
+                    warning_text = "⚠️ System Diagnostics\n\nSome issues detected:\n\n" + "\n".join(issues)
+                    warning_text += "\n\nBot may not function correctly.\nPlease check Settings."
+                    
+                    messagebox.showwarning("System Diagnostics", warning_text)
+                    app_logger.warning("[Diagnostics] Issues detected - user notified")
+            else:
+                app_logger.info("[Diagnostics] ✅ All systems operational")
+                
+        except Exception as e:
+            app_logger.error(f"[Diagnostics] Failed to run diagnostics: {e}")
     
     def show_settings_dialog(self):
         """Показать диалог настроек"""

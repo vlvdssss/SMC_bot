@@ -41,6 +41,21 @@ class DataLoader:
 
     def load(self) -> tuple[pd.DataFrame, pd.DataFrame]:
         """Load and filter H1 and M15 data."""
+        # Check if files exist
+        if not self.h1_path.exists():
+            raise FileNotFoundError(
+                f"Backtest data file not found: {self.h1_path}\n"
+                f"Backtest mode requires CSV files in data/backtest/ folder.\n"
+                f"For live trading, this error can be ignored."
+            )
+        
+        if not self.m15_path.exists():
+            raise FileNotFoundError(
+                f"Backtest data file not found: {self.m15_path}\n"
+                f"Backtest mode requires CSV files in data/backtest/ folder.\n"
+                f"For live trading, this error can be ignored."
+            )
+        
         # Load H1
         h1 = pd.read_csv(self.h1_path)
         h1['time'] = pd.to_datetime(h1['time'])
