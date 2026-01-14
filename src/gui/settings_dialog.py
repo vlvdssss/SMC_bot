@@ -812,7 +812,9 @@ class SettingsDialog:
             with open(telegram_path, 'w', encoding='utf-8') as f:
                 yaml.dump(telegram_config, f, default_flow_style=False, allow_unicode=True)
             
-            logger.info("[SETTINGS] Settings saved successfully")
+            logger.info("="*80)
+            logger.info("[SETTINGS] ✅ Все настройки успешно сохранены")
+            logger.info("="*80)
             messagebox.showinfo("Success", "Settings saved!\nRestart bot to apply changes.")
             
             # Вызвать callback

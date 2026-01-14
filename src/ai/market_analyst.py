@@ -362,6 +362,12 @@ Provide ONLY the JSON response, no additional text."""
             # Parse response
             content = response.choices[0].message.content.strip()
             
+            # Логируем полный ответ для отладки
+            logger.info("[AI] 📝 Полный ответ GPT:")
+            logger.info("-" * 80)
+            logger.info(content)
+            logger.info("-" * 80)
+            
             # Extract JSON if wrapped in markdown
             if content.startswith("```"):
                 content = content.split("```")[1]

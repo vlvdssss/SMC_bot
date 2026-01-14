@@ -44,45 +44,65 @@ class LiveTrader:
             enable_trading: True = реальная торговля, False = только мониторинг
             enable_gpt: True = использовать GPT фильтр, False = отключить
         """
+        logger.info("="*80)
+        logger.info("[LiveTrader] 🚀 Инициализация LiveTrader...")
+        logger.info(f"[LiveTrader] Режим: {'📈 REAL TRADING' if enable_trading else '👀 MONITORING ONLY'}")
+        logger.info(f"[LiveTrader] GPT фильтр: {'✅ Включён' if enable_gpt else '❌ Отключён'}")
+        
         self.config_dir: str = config_dir
         self.enable_trading: bool = enable_trading
         self.enable_gpt: bool = enable_gpt
         self.connected: bool = False
         
         # Загрузка конфигов
+        logger.info("[LiveTrader] 📂 Загрузка конфигурационных файлов...")
         self.load_configs()
         
         # Подключение к MT5
+        logger.info("[LiveTrader] 🔌 Подключение к MetaTrader 5...")
         self.connect_mt5()
         
         # Инициализация стратегий
+        logger.info("[LiveTrader] 📊 Инициализация торговых стратегий...")
         self.init_strategies()
         
         # Инициализация фильтров
+        logger.info("[LiveTrader] 🔍 Инициализация фильтров (GPT, ML)...")
         self.init_filters()
         
         # Инициализация executor
+        logger.info("[LiveTrader] ⚙️ Инициализация Executor...")
         from src.core.executor import Executor
         self.executor = Executor(mt5_connector=self.mt5_connector)
+        logger.info("[LiveTrader] ✅ Executor готов")
         
         # Инициализация AI Signal Manager
         self.ai_signal_manager = None
         if AI_SIGNAL_MANAGER_AVAILABLE:
             try:
+                logger.info("[LiveTrader] 🤖 Инициализация AI Signal Manager...")
                 self.ai_signal_manager = AISignalManager()
-                logger.info("[LiveTrader] AI Signal Manager initialized")
+                logger.info("[LiveTrader] ✅ AI Signal Manager инициализирован")
             except Exception as e:
-                logger.error(f"[LiveTrader] Failed to init AI Signal Manager: {e}")
+                logger.error(f"[LiveTrader] ❌ Failed to init AI Signal Manager: {e}")
+        else:
+            logger.warning("[LiveTrader] ⚠️ AI Signal Manager недоступен")
         
         # Инициализация мониторинга
+        logger.info("[LiveTrader] 📱 Инициализация мониторинга (Telegram)...")
         self.telegram = None
         self.alert_manager = None
         self.notify_config = {}
         if MONITORING_AVAILABLE:
             self._init_monitoring()
+        else:
+            logger.warning("[LiveTrader] ⚠️ Модули мониторинга недоступны")
         
         # Отслеживание открытых позиций для Telegram уведомлений
         self.tracked_positions = {}  # {ticket: {symbol, direction, entry_time, ...}}
+        
+        logger.info("[LiveTrader] ✅ LiveTrader полностью инициализирован")
+        logger.info("="*80)
     
     def start(self) -> None:
         """Запуск трейдера (для совместимости)."""
@@ -205,9 +225,9 @@ class LiveTrader:
                                         strategy.max_daily_loss = strategy_settings.get('max_daily_loss', strategy.max_daily_loss)
                                         strategy.min_atr_threshold = strategy_settings.get('min_atr_threshold', strategy.min_atr_threshold)
                                         strategy.max_atr_threshold = strategy_settings.get('max_atr_threshold', strategy.max_atr_threshold)
-                                        logger.info(f"[Strategy] Applied custom settings: trades={strategy.max_daily_trades}, "
-                                                  f"loss={strategy.max_daily_loss}%, min_atr={strategy.min_atr_threshold}, "
-                                                  f"max_atr={strategy.max_atr_threshold}")
+                                        logger.info(f"[Strategy] ⚙️ Применены кастомные настройки для {symbol}: "
+                                                  f"trades={strategy.max_daily_trades}, loss={strategy.max_daily_loss}%, "
+                                                  f"ATR=[{strategy.min_atr_threshold}-{strategy.max_atr_threshold}]")
                         except Exception as e:
                             logger.warning(f"[Strategy] Failed to load custom settings: {e}")
                         

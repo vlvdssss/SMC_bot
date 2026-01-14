@@ -536,12 +536,13 @@ class AISignalManager:
                     logger.info(f"[AI-Signal] Signal {signal.id} expired (24h TTL)")
                     continue
                 
-                # TTL check: 15 minutes from creation
+                # TTL check: configurable validity time from config
+                validity_minutes = self.config.get('market_analyst', {}).get('signals', {}).get('validity_minutes', 60)
                 created_time = datetime.fromisoformat(signal.created_at)
                 age_minutes = (current_time - created_time).total_seconds() / 60
-                if age_minutes > 60:
+                if age_minutes > validity_minutes:
                     signal.status = "time_expired"
-                    logger.info(f"[AI-Signal] Signal {signal.id} expired (60min TTL, age: {age_minutes:.1f}min)")
+                    logger.info(f"[AI-Signal] Signal {signal.id} expired ({validity_minutes}min TTL, age: {age_minutes:.1f}min)")
                     continue
                 
                 # Price invalidation: if price moved too far from entry

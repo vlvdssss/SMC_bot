@@ -174,11 +174,13 @@ class BotManager:
         """
         try:
             import yaml
-            logger.info("[BotManager] Reloading configuration...")
+            logger.info("="*80)
+            logger.info("[BotManager] 🔄 Перезагрузка конфигурации...")
             
-            # Перезагрузка Telegram (если изменились настройки)
+            # Перезагрузка Telegram настроек
             config_path = Path('config/telegram.yaml')
             if config_path.exists() and MONITORING_AVAILABLE:
+                logger.info("[BotManager] 📱 Перезагрузка Telegram настроек...")
                 with open(config_path, 'r', encoding='utf-8') as f:
                     config = yaml.safe_load(f)
                 
@@ -191,29 +193,54 @@ class BotManager:
                     if self.telegram:
                         self.telegram.token = bot_token
                         self.telegram.chat_id = chat_id
+                        logger.info(f"[BotManager] ✅ Telegram обновлён (chat_id: {chat_id})")
                     else:
                         self.telegram = TelegramNotifier(token=bot_token, chat_id=chat_id)
+                        logger.info(f"[BotManager] ✅ Telegram инициализирован (chat_id: {chat_id})")
                     
                     self.notify_config = tg_config.get('notify', {})
-                    logger.info("[BotManager] Telegram настройки обновлены")
+                    notify_list = [k for k, v in self.notify_config.items() if v]
+                    logger.info(f"[BotManager] 📬 Уведомления включены: {', '.join(notify_list) if notify_list else 'нет'}")
                 else:
                     self.telegram = None
-                    logger.info("[BotManager] Telegram отключен")
+                    logger.info("[BotManager] ❌ Telegram отключен")
+            else:
+                logger.info("[BotManager] ⚠️ Telegram config не найден или модуль недоступен")
             
             # Перезагрузка MT5 (если менеджер установлен)
             mt5_config_path = Path('config/mt5.yaml')
             if mt5_config_path.exists() and self.mt5_manager:
-                # MT5 Manager сам перечитает конфиг при следующем подключении
-                logger.info("[BotManager] MT5 настройки будут применены при следующем подключении")
+                logger.info("[BotManager] 🔌 MT5 настройки будут применены при следующем подключении")
             
-            # Другие настройки (risk, strategy, etc.) применяются автоматически
+            # Перезагрузка Risk настроек
+            portfolio_path = Path('config/portfolio.yaml')
+            if portfolio_path.exists():
+                logger.info("[BotManager] 💰 Перезагрузка risk настроек...")
+                with open(portfolio_path, 'r', encoding='utf-8') as f:
+                    portfolio = yaml.safe_load(f)
+                    risk = portfolio.get('risk_per_trade_percent', 1.0)
+                    logger.info(f"[BotManager] ✅ Risk per trade: {risk}%")
+            
+            # Перезагрузка AI настроек
+            ai_path = Path('config/ai.yaml')
+            if ai_path.exists():
+                logger.info("[BotManager] 🤖 Перезагрузка AI настроек...")
+                with open(ai_path, 'r', encoding='utf-8') as f:
+                    ai_config = yaml.safe_load(f)
+                    enabled = ai_config.get('market_analyst', {}).get('enabled', True)
+                    model = ai_config.get('market_analyst', {}).get('gpt', {}).get('model', 'gpt-4o')
+                    validity = ai_config.get('market_analyst', {}).get('signals', {}).get('validity_minutes', 60)
+                    logger.info(f"[BotManager] ✅ AI Analysis: {'Включён' if enabled else 'Отключён'} (model: {model}, validity: {validity}min)")
+            
+            # Другие настройки (strategy, etc.) применяются автоматически
             # при следующей проверке сигналов
             
-            logger.info("[BotManager] ✅ Настройки успешно перезагружены")
+            logger.info("[BotManager] ✅ Все настройки успешно перезагружены!")
+            logger.info("="*80)
             return True
             
         except Exception as e:
-            logger.error(f"[BotManager] Ошибка перезагрузки настроек: {e}")
+            logger.error(f"[BotManager] ❌ Ошибка перезагрузки настроек: {e}")
             return False
     
     def get_current_settings(self):

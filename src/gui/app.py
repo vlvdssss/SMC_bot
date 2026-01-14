@@ -676,7 +676,17 @@ class BazaApp:
                  activebackground=Colors.BG_HOVER,
                  relief='flat',
                  cursor='hand2',
-                 command=self.check_for_updates).pack(fill='x')
+                 command=self.check_for_updates).pack(fill='x', pady=(0, 10))
+        
+        # Test GPT Connection Button
+        tk.Button(left_panel, text="🧪 Test GPT",
+                 font=('Arial', 10),
+                 bg=Colors.BG_CARD,
+                 fg=Colors.TEXT_PRIMARY,
+                 activebackground=Colors.BG_HOVER,
+                 relief='flat',
+                 cursor='hand2',
+                 command=self.test_gpt_connection).pack(fill='x')
         
         # Right Panel (AI Analyst)
         self.analyst_panel = AnalystPanel(main_container)
@@ -1135,6 +1145,83 @@ class BazaApp:
         except Exception as e:
             app_logger.error(f"[UPDATE] Failed to show update window: {e}")
             messagebox.showerror("Ошибка", f"Не удалось открыть окно обновления: {e}")
+    
+    def test_gpt_connection(self):
+        """Тестовая отправка в GPT для проверки подключения"""
+        try:
+            app_logger.info("[TEST-GPT] Starting connection test...")
+            
+            # Проверяем API ключ
+            import os
+            api_key = os.getenv('OPENAI_API_KEY')
+            
+            if not api_key:
+                messagebox.showerror(
+                    "Test Failed",
+                    "❌ OpenAI API key not found!\n\n"
+                    "Please configure API key in Settings."
+                )
+                app_logger.error("[TEST-GPT] API key not found")
+                return
+            
+            # Показываем что тест начался
+            app_logger.info(f"[TEST-GPT] API Key: {api_key[:15]}...{api_key[-4:]}")
+            
+            # Создаём минимальный тест-запрос в отдельном потоке
+            def run_test():
+                try:
+                    from openai import OpenAI
+                    
+                    app_logger.info("[TEST-GPT] Creating OpenAI client...")
+                    client = OpenAI(api_key=api_key)
+                    
+                    app_logger.info("[TEST-GPT] Sending test message...")
+                    response = client.chat.completions.create(
+                        model="gpt-3.5-turbo",  # Используем дешёвую модель для теста
+                        messages=[
+                            {"role": "user", "content": "Say 'OK' if you can read this"}
+                        ],
+                        max_tokens=10
+                    )
+                    
+                    result = response.choices[0].message.content.strip()
+                    app_logger.info(f"[TEST-GPT] ✅ Response received: {result}")
+                    
+                    # Показываем успех в главном потоке
+                    self.root.after(0, lambda: messagebox.showinfo(
+                        "Test Successful",
+                        f"✅ GPT Connection Works!\n\n"
+                        f"Response: {result}\n"
+                        f"Model: {response.model}\n"
+                        f"API Key: {api_key[:15]}...{api_key[-4:]}"
+                    ))
+                    
+                except Exception as e:
+                    app_logger.error(f"[TEST-GPT] ❌ Test failed: {e}")
+                    self.root.after(0, lambda: messagebox.showerror(
+                        "Test Failed",
+                        f"❌ GPT Connection Failed!\n\n"
+                        f"Error: {str(e)}\n\n"
+                        f"Check:\n"
+                        f"• API key is valid\n"
+                        f"• Account has credits\n"
+                        f"• Internet connection"
+                    ))
+            
+            # Запускаем тест в отдельном потоке
+            threading.Thread(target=run_test, daemon=True).start()
+            
+            # Показываем что тест запущен
+            messagebox.showinfo(
+                "Testing GPT",
+                "🧪 Testing GPT connection...\n\n"
+                "Please wait, this may take a few seconds.\n"
+                "Check System Logs for details."
+            )
+            
+        except Exception as e:
+            app_logger.error(f"[TEST-GPT] Failed to start test: {e}")
+            messagebox.showerror("Error", f"Failed to start test: {e}")
     
     def run(self):
         """Запуск приложения"""
