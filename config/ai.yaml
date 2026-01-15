@@ -57,7 +57,8 @@ market_analyst:
     default_ttl_hours: 24
     min_confidence: 70
     min_rr: 1.5
-    validity_minutes: 60
+    validity_minutes: 60  # TTL сигнала: 15/30/60 минут на выбор пользователя
+    # После истечения validity_minutes сигнал либо отыгрывает, либо анулируется
 news_filter:
   cache_duration: 3600
   enabled: true

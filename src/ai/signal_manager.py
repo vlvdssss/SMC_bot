@@ -110,6 +110,9 @@ class AISignalManager:
         self.latest_analysis_time = None
         self.latest_analysis_version = None
         
+        # Track if state already loaded globally
+        self._state_loaded = False
+        
         self._lock = threading.Lock()
         self._load_state(verbose=True)  # Log on init
         
@@ -589,6 +592,10 @@ class AISignalManager:
                     })
                     
                     logger.info(f"[AI-Signal] Triggered: {signal.id} at price {current_price}")
+                    
+                    # КРИТИЧНО: Немедленно удаляем triggered сигнал из active_signals
+                    # Это предотвращает повторную проверку этого же старого сигнала
+                    self.active_signals.remove(signal)
             
             if triggered_signals:
                 self._save_state()
@@ -617,17 +624,18 @@ class AISignalManager:
         return False
     
     def _cleanup_expired_signals(self):
-        """Remove expired, time_expired, and price_invalidated signals."""
+        """Remove expired, time_expired, price_invalidated, and triggered signals."""
         original_count = len(self.active_signals)
         
+        # Удаляем все сигналы кроме pending и активных
         self.active_signals = [
             s for s in self.active_signals
-            if s.status not in ["expired", "time_expired", "price_invalidated"] or s.status == "triggered"
+            if s.status == "pending"  # Оставляем только ожидающие сигналы
         ]
         
         removed = original_count - len(self.active_signals)
         if removed > 0:
-            logger.info(f"[AI-Signal] Cleaned up {removed} expired/invalidated signals")
+            logger.info(f"[AI-Signal] Cleaned up {removed} expired/invalidated/triggered signals")
             self._save_state()
     
     def get_trading_permission(
@@ -746,11 +754,12 @@ class AISignalManager:
         """Load state from file.
         
         Args:
-            verbose: If True, always log. If False, only log when state changes.
+            verbose: If True, log only on first load. If False, only log when state changes.
         """
         try:
             filepath = self.signals_dir / "active_signals.json"
             if not filepath.exists():
+                self._state_loaded = True
                 return
             
             with open(filepath, 'r', encoding='utf-8') as f:
@@ -784,15 +793,22 @@ class AISignalManager:
             # Load history
             self.signal_history = state.get("signal_history", [])
             
-            # Only log if verbose or state changed
+            # Only log if (verbose AND first load) OR state changed
             new_signal_count = len(self.active_signals)
             new_block_type = self.block_type.value
             
-            if verbose or new_signal_count != old_signal_count or new_block_type != old_block_type:
+            should_log = (
+                (verbose and not self._state_loaded) or 
+                (new_signal_count != old_signal_count or new_block_type != old_block_type)
+            )
+            
+            if should_log:
                 logger.info(
                     f"[AI-Signal] Loaded state: {new_signal_count} signals, "
                     f"block={new_block_type}, multiplier={self.risk_multiplier}"
                 )
+            
+            self._state_loaded = True
             
         except Exception as e:
             logger.error(f"[AI-Signal] Failed to load state: {e}")

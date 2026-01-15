@@ -139,6 +139,27 @@ class LiveTrader:
         else:
             self.portfolio_config = {}
     
+    def _is_trading_enabled_for_instrument(self, symbol: str) -> bool:
+        """Проверить включена ли торговля для инструмента."""
+        try:
+            instrument_config = self.instruments_config.get('instruments', {}).get(symbol, {})
+            # Проверяем оба флага: enabled (общий) и trading_enabled (торговля)
+            is_enabled = instrument_config.get('enabled', False)
+            is_trading = instrument_config.get('trading_enabled', True)
+            
+            if not is_enabled:
+                logger.debug(f"[TRADE] {symbol} instrument disabled")
+                return False
+            
+            if not is_trading:
+                logger.debug(f"[TRADE] {symbol} trading disabled (analysis only)")
+                return False
+            
+            return True
+        except Exception as e:
+            logger.warning(f"[TRADE] Failed to check trading config for {symbol}: {e}")
+            return True  # По умолчанию разрешаем если не смогли проверить
+    
     def connect_mt5(self) -> bool:
         """Подключение к MetaTrader 5."""
         import MetaTrader5 as mt5
@@ -327,6 +348,13 @@ class LiveTrader:
             if ai_signals:
                 logger.info(f"[LiveTrader] Found {len(ai_signals)} AI signals")
                 signals.extend(ai_signals)
+                
+                # Исполняем AI сигналы (только один раз здесь)
+                if self.enable_trading:
+                    for ai_signal in ai_signals:
+                        symbol = ai_signal.get('symbol')
+                        logger.info(f"[LiveTrader] Executing AI signal for {symbol}")
+                        self.execute_trade(symbol, ai_signal)
             else:
                 logger.debug("[LiveTrader] No triggered AI signals found")
         else:
@@ -472,6 +500,11 @@ class LiveTrader:
     def execute_trade(self, symbol: str, signal: dict):
         """Исполнение сделки."""
         try:
+            # Проверяем включена ли торговля для этого инструмента
+            if not self._is_trading_enabled_for_instrument(symbol):
+                logger.info(f"[TRADE] Trading disabled for {symbol} in config - signal ignored")
+                return None
+            
             result = self.executor.execute_signal(symbol, signal)
             
             if result:
@@ -770,12 +803,8 @@ class LiveTrader:
                             f"@ {ai_signal.entry_price} (conf: {ai_signal.confidence}%)"
                         )
                         
-                        # Исполняем AI сигнал если разрешена торговля
-                        if self.enable_trading:
-                            logger.info(f"[AI] Executing AI signal for {symbol}")
-                            self.execute_trade(symbol, strategy_signal)
-                        else:
-                            logger.info(f"[AI] Trading disabled, skipping execution")
+                        # НЕ исполняем здесь - будет исполнено в основном цикле check_signals
+                        # Это предотвращает двойной вход в сделку
                         
                         triggered_signals.append(strategy_signal)
         

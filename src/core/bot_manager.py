@@ -72,7 +72,8 @@ class BotManager:
             'trades': 0,
             'wins': 0,
             'losses': 0,
-            'open_positions': []
+            'open_positions': [],
+            'last_date': datetime.now().strftime('%Y-%m-%d')  # Для отслеживания смены дня
         }
         
         # Callback для обновления UI
@@ -93,6 +94,9 @@ class BotManager:
         """Установка MT5 Manager для получения реальной статистики."""
         self.mt5_manager = mt5_manager
         logger.info("MT5 Manager connected to BotManager")
+        
+        # Синхронизация с MT5 после подключения
+        self._sync_with_mt5()
     
     def _update_stats_from_mt5(self):
         """Обновление статистики из MT5."""
@@ -460,6 +464,15 @@ class BotManager:
     
     def add_trade(self, trade: dict):
         """Добавление сделки."""
+        # Проверяем смену даты и сбрасываем today_pnl если наступил новый день
+        today = datetime.now().strftime('%Y-%m-%d')
+        last_date = self.stats.get('last_date', today)
+        
+        if today != last_date:
+            logger.info(f"[STATS] New day detected: {last_date} -> {today}. Resetting today_pnl from ${self.stats.get('today_pnl', 0):.2f} to $0")
+            self.stats['today_pnl'] = 0.0
+            self.stats['last_date'] = today
+        
         # Обновляем статистику
         pnl = trade.get('pnl', 0)
         self.stats['total_pnl'] += pnl
@@ -474,7 +487,6 @@ class BotManager:
             self.stats['losses'] += 1
         
         # Проверяем сегодняшняя ли сделка
-        today = datetime.now().strftime('%Y-%m-%d')
         if trade.get('date') == today:
             self.stats['today_pnl'] += pnl
         
@@ -586,6 +598,59 @@ class BotManager:
             self.stats['trades'] = total_trades
             self.stats['wins'] = wins
             self.stats['losses'] = losses
+            
+            # Сохраняем обновленную статистику в файл
+            self.save_stats()
+            logger.info(f"[STATS] Loaded: Total PnL=${total_pnl:.2f}, Today PnL=${today_pnl:.2f}, Trades={total_trades}")
+        
+        # Синхронизация с MT5: проверяем новые закрытые сделки
+        self._sync_with_mt5()
+    
+    def _sync_with_mt5(self):
+        """Синхронизация с MT5: загружаем сделки которых нет в trades_history.json"""
+        if not self.mt5_manager or not self.mt5_manager.is_connected():
+            logger.debug("[SYNC] MT5 not connected, skipping sync")
+            return
+        
+        try:
+            # Получаем историю сделок за последние 7 дней
+            from datetime import datetime, timedelta
+            
+            trade_history = self.mt5_manager.get_trade_history(days=7)
+            if not trade_history:
+                logger.debug("[SYNC] No trade history from MT5")
+                return
+            
+            # Загружаем существующие ID сделок
+            trades_file = Path('data/trades_history.json')
+            existing_trades = []
+            existing_ids = set()
+            
+            if trades_file.exists():
+                with open(trades_file, 'r', encoding='utf-8') as f:
+                    existing_trades = json.load(f)
+                    existing_ids = {int(t.get('id', 0)) for t in existing_trades if t.get('id')}
+            
+            # Находим новые сделки
+            new_trades = []
+            for trade in trade_history:
+                trade_id = int(trade.get('id', 0))
+                if trade_id and trade_id not in existing_ids:
+                    new_trades.append(trade)
+            
+            if new_trades:
+                logger.info(f"[SYNC] Found {len(new_trades)} new trades from MT5")
+                
+                # Добавляем новые сделки
+                for trade in new_trades:
+                    self.add_trade(trade)
+                
+                logger.info(f"[SYNC] ✅ Synced {len(new_trades)} trades from MT5")
+            else:
+                logger.debug("[SYNC] No new trades to sync")
+                
+        except Exception as e:
+            logger.error(f"[SYNC] Failed to sync with MT5: {e}")
     
     def get_stats(self) -> dict:
         """Получение текущей статистики."""

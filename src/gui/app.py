@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from src.core.app_state import AppState
 from src.core.mt5_manager import MT5Manager
-from src.core.bot_manager import bot_manager, BotManager
+from src.core.bot_manager import bot_manager, BotManager, BotStatus
 from src.core.diagnostics import SystemDiagnostics
 from src.live.live_trader import LiveTrader
 from src.gui.settings_dialog import SettingsDialog
@@ -450,8 +450,23 @@ class AnalystPanel(tk.Frame):
         self.notebook.add(self.summary_tab, text='📊 Analysis')
     
     def _create_summary_tab(self):
-        """Создать вкладку Analysis Summary"""
+        """Создать вкладку AI Analysis & Signals"""
         frame = tk.Frame(self.notebook, bg=Colors.BG_PANEL)
+        
+        # Верхняя панель с кнопкой обновления
+        top_panel = tk.Frame(frame, bg=Colors.BG_PANEL)
+        top_panel.pack(fill='x', padx=10, pady=5)
+        
+        refresh_btn = tk.Button(top_panel, text="🔄 Refresh", 
+                                font=('Arial', 10),
+                                bg=Colors.BG_CARD,
+                                fg=Colors.TEXT_PRIMARY,
+                                activebackground=Colors.BG_HOVER,
+                                bd=0,
+                                padx=15, pady=5,
+                                cursor='hand2',
+                                command=self.refresh_analysis)
+        refresh_btn.pack(side='right')
         
         # Скроллинг
         canvas = tk.Canvas(frame, bg=Colors.BG_PANEL, highlightthickness=0)
@@ -475,6 +490,14 @@ class AnalystPanel(tk.Frame):
                                     state='disabled',
                                     padx=15, pady=15)
         self.summary_text.pack(fill='both', expand=True)
+        
+        # Цветовые теги
+        self.summary_text.tag_config('header', foreground=Colors.ACCENT, font=('Consolas', 12, 'bold'))
+        self.summary_text.tag_config('active', foreground=Colors.SUCCESS, font=('Consolas', 10, 'bold'))
+        self.summary_text.tag_config('expired', foreground=Colors.TEXT_MUTED)
+        self.summary_text.tag_config('triggered', foreground=Colors.BUY, font=('Consolas', 10, 'bold'))
+        self.summary_text.tag_config('blocked', foreground=Colors.ERROR, font=('Consolas', 10, 'bold'))
+        self.summary_text.tag_config('timestamp', foreground=Colors.TEXT_SECONDARY)
         
         return frame
     
@@ -532,27 +555,95 @@ class AnalystPanel(tk.Frame):
         self.logs_text.see('end')  # Автоскролл
         self.logs_text.config(state='disabled')
     
+    def refresh_analysis(self):
+        """Обновить AI Analysis & Signals"""
+        if not AI_ANALYSIS_AVAILABLE:
+            self.summary_text.config(state='normal')
+            self.summary_text.delete('1.0', 'end')
+            self.summary_text.insert('1.0', "⚠️ AI Analysis not available\n\nInstall required packages:\npip install openai pyyaml")
+            self.summary_text.config(state='disabled')
+            return
+        
+        try:
+            # Получить данные из signal_manager
+            signal_manager = AISignalManager()
+            
+            self.summary_text.config(state='normal')
+            self.summary_text.delete('1.0', 'end')
+            
+            # Заголовок
+            self.summary_text.insert('end', "═══════════════════════════════════════════\n", 'header')
+            self.summary_text.insert('end', "        AI ANALYSIS & SIGNALS STATUS        \n", 'header')
+            self.summary_text.insert('end', "═══════════════════════════════════════════\n\n", 'header')
+            
+            # Статус блокировки
+            block_info = f"🔒 Trading Block: {signal_manager.block_type.value.upper()}\n"
+            if signal_manager.block_type.value != "none":
+                block_info += f"   Reason: {signal_manager.block_reason or 'N/A'}\n"
+                if signal_manager.block_until:
+                    block_info += f"   Until: {signal_manager.block_until}\n"
+            block_info += f"📊 Risk Multiplier: {signal_manager.risk_multiplier}x\n\n"
+            
+            tag = 'blocked' if signal_manager.block_type.value != "none" else 'active'
+            self.summary_text.insert('end', block_info, tag)
+            
+            # Активные сигналы
+            active_signals = [s for s in signal_manager.active_signals if s.status == "pending"]
+            self.summary_text.insert('end', f"━━━ ACTIVE SIGNALS ({len(active_signals)}) ━━━\n\n", 'header')
+            
+            if active_signals:
+                for i, signal in enumerate(active_signals, 1):
+                    signal_text = f"#{i} {signal.symbol} - {signal.direction.upper()}\n"
+                    signal_text += f"   Entry: {signal.entry_price:.5f}\n"
+                    signal_text += f"   SL: {signal.stop_loss:.5f} | TP: {signal.take_profit:.5f}\n"
+                    signal_text += f"   Created: {signal.created_at.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    signal_text += f"   Expires: {signal.expires_at.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    signal_text += f"   Priority: {signal.priority} | Confidence: {signal.confidence}%\n"
+                    if signal.reasoning:
+                        signal_text += f"   💡 {signal.reasoning[:100]}...\n"
+                    signal_text += "\n"
+                    self.summary_text.insert('end', signal_text, 'active')
+            else:
+                self.summary_text.insert('end', "   No active signals\n\n", 'timestamp')
+            
+            # Триггернутые сигналы (последние 5)
+            triggered_signals = [s for s in signal_manager.active_signals if s.status == "triggered"][:5]
+            if triggered_signals:
+                self.summary_text.insert('end', f"━━━ TRIGGERED SIGNALS (Last {len(triggered_signals)}) ━━━\n\n", 'header')
+                for i, signal in enumerate(triggered_signals, 1):
+                    signal_text = f"✓ {signal.symbol} {signal.direction.upper()}\n"
+                    signal_text += f"   Entry: {signal.entry_price:.5f}\n"
+                    signal_text += f"   Triggered: {signal.triggered_at.strftime('%H:%M:%S') if signal.triggered_at else 'N/A'}\n\n"
+                    self.summary_text.insert('end', signal_text, 'triggered')
+            
+            # История (последние 10)
+            if signal_manager.signal_history:
+                recent_history = signal_manager.signal_history[-10:]
+                self.summary_text.insert('end', f"━━━ HISTORY (Last {len(recent_history)}) ━━━\n\n", 'header')
+                for entry in reversed(recent_history):
+                    hist_text = f"• {entry.get('timestamp', 'N/A')} - {entry.get('action', 'N/A')}\n"
+                    hist_text += f"  {entry.get('details', 'N/A')}\n\n"
+                    self.summary_text.insert('end', hist_text, 'timestamp')
+            
+            # Последний анализ
+            if signal_manager.latest_analysis_time:
+                self.summary_text.insert('end', "━━━ LAST ANALYSIS ━━━\n\n", 'header')
+                analysis_text = f"🕐 Time: {signal_manager.latest_analysis_time}\n"
+                if signal_manager.latest_analysis_version:
+                    analysis_text += f"📌 Version: {signal_manager.latest_analysis_version}\n"
+                self.summary_text.insert('end', analysis_text, 'timestamp')
+            
+            self.summary_text.config(state='disabled')
+            
+        except Exception as e:
+            self.summary_text.config(state='normal')
+            self.summary_text.delete('1.0', 'end')
+            self.summary_text.insert('1.0', f"❌ Error loading analysis:\n{str(e)}")
+            self.summary_text.config(state='disabled')
+    
     def update_summary(self, analysis_data):
-        """Обновить Analysis Summary"""
-        self.summary_text.config(state='normal')
-        self.summary_text.delete('1.0', 'end')
-        
-        # Форматирование данных анализа
-        summary = f"""
-Last Analysis: {analysis_data.get('timestamp', 'N/A')}
-
-Market Sentiment: {analysis_data.get('sentiment', 'N/A')}
-Confidence: {analysis_data.get('confidence', 0)}%
-
-Trend: {analysis_data.get('trend', 'N/A')}
-Volatility: {analysis_data.get('volatility', 'N/A')}
-
-Analysis Notes:
-{analysis_data.get('notes', 'No notes available')}
-        """
-        
-        self.summary_text.insert('1.0', summary.strip())
-        self.summary_text.config(state='disabled')
+        """Обновить Analysis Summary (deprecated - use refresh_analysis)"""
+        self.refresh_analysis()
 
 
 # ==================== MAIN APP ====================
@@ -600,6 +691,10 @@ class BazaApp:
         if hasattr(self, 'settings_info_panel'):
             settings = self.bot_manager.get_current_settings()
             self.settings_info_panel.update_settings(settings)
+        
+        # Загрузить AI Analysis при запуске
+        if AI_ANALYSIS_AVAILABLE and hasattr(self, 'analyst_panel'):
+            self.root.after(1000, self.analyst_panel.refresh_analysis)
         
         app_logger.info("[BAZA] Trading Terminal started")
     
@@ -736,6 +831,10 @@ class BazaApp:
             )
             self.bot_thread.start()
             
+            # Обновить вкладку Analysis
+            if AI_ANALYSIS_AVAILABLE and hasattr(self, 'analyst_panel'):
+                self.root.after(500, self.analyst_panel.refresh_analysis)
+            
             app_logger.info(f"[BOT] Started in '{self.bot_manager.trading_mode}' mode")
             
         except Exception as e:
@@ -862,18 +961,27 @@ class BazaApp:
                     balance = float(account_info.get('balance', 0))
                     equity = float(account_info.get('equity', 0))
                     
-                    # Загрузить историю для расчета P&L
+                    # СИНХРОНИЗАЦИЯ: Берем все данные из bot_stats.json (единый источник правды)
                     stats_file = Path('data/bot_stats.json')
-                    if stats_file.exists():
-                        with open(stats_file, 'r') as f:
-                            stats = json.load(f)
-                            initial_balance = stats.get('initial_balance', balance)
-                            total_pnl = balance - initial_balance
-                    else:
-                        total_pnl = 0
-                    
-                    # Today PnL рассчитывается из истории сделок
+                    total_pnl = 0
                     today_pnl = 0
+                    
+                    if stats_file.exists():
+                        try:
+                            with open(stats_file, 'r') as f:
+                                stats = json.load(f)
+                                # Используем данные из файла, который обновляет bot_manager
+                                total_pnl = stats.get('total_pnl', 0)
+                                today_pnl = stats.get('today_pnl', 0)
+                                
+                                # Фоллбэк: если нет total_pnl, но есть initial_balance - вычисляем
+                                if total_pnl == 0 and 'initial_balance' in stats:
+                                    initial_balance = stats.get('initial_balance', balance)
+                                    total_pnl = balance - initial_balance
+                        except Exception as e:
+                            app_logger.error(f"[STATS] Failed to load stats from file: {e}")
+                            total_pnl = 0
+                            today_pnl = 0
                     
                     # Обновить UI
                     self.root.after(0, lambda: self.stats_panel.update_stats(balance, today_pnl, total_pnl))
@@ -956,8 +1064,8 @@ class BazaApp:
                 # Связать BotManager с MT5
                 self.bot_manager.set_mt5_manager(self.app_state.mt5_manager)
                 
-                # Обновить статистику
-                self.bot_manager._update_stats_from_mt5()
+                # ИСПРАВЛЕНО: Обновить статистику через метод app
+                self._update_stats_from_mt5()
             else:
                 self.header.update_mt5_status(False)
                 app_logger.error(f"[MT5] Connection failed: {message}")
@@ -992,11 +1100,8 @@ class BazaApp:
                             if xauusd_price > 0:
                                 self.root.after(0, lambda p=xauusd_price: self.header.update_price(p))
                             
-                            # Обновить статистику
-                            account_info = self.app_state.mt5_manager.get_account_info() or {}
-                            balance = float(account_info.get('balance', 0))
-                            # TODO: Calculate today_pnl and total_pnl
-                            self.root.after(0, lambda b=balance: self.stats_panel.update_stats(b, 0, 0))
+                            # ИСПРАВЛЕНО: Обновить статистику через общий метод
+                            self.root.after(0, self._update_stats_from_mt5)
                     
                     threading.Event().wait(2)
                 except Exception as e:
@@ -1050,26 +1155,59 @@ class BazaApp:
             app_logger.error(f"[SETTINGS] Error: {e}")
             messagebox.showerror("Error", f"Failed to open settings: {e}")
     
-    def _on_settings_saved(self):
-        """Callback после сохранения настроек"""
+    def _on_settings_saved(self, restart=False):
+        """Callback после сохранения настроек
+        
+        Args:
+            restart: Если True - перезапустить бота после сохранения
+        """
         try:
-            app_logger.info("[SETTINGS] Settings updated, applying changes...")
+            app_logger.info(f"[SETTINGS] Settings updated, restart={restart}")
             
-            # Применить настройки без перезапуска
-            if hasattr(self, 'bot_manager') and self.bot_manager:
-                success = self.bot_manager.reload_config()
-                if success:
-                    # Обновить панель Current Settings
+            if restart:
+                # Перезапуск бота
+                app_logger.info("[SETTINGS] Restarting bot with new configuration...")
+                
+                # Останавливаем если работает
+                was_running = False
+                if hasattr(self, 'bot_manager') and self.bot_manager:
+                    if self.bot_manager.status == BotStatus.RUNNING:
+                        was_running = True
+                        self._stop_bot()
+                        # Даем время на остановку
+                        import time
+                        time.sleep(1)
+                
+                # Перезагружаем конфиг
+                if hasattr(self, 'bot_manager') and self.bot_manager:
+                    self.bot_manager.reload_config()
+                    
+                    # Обновляем панель настроек
                     settings = self.bot_manager.get_current_settings()
                     if hasattr(self, 'settings_info_panel'):
                         self.settings_info_panel.update_settings(settings)
-                    
-                    messagebox.showinfo("Success", "✅ Настройки применены!\n\nИзменения вступили в силу без перезапуска.")
-                    app_logger.info("[SETTINGS] ✅ Settings reloaded successfully")
+                
+                # Запускаем снова если был запущен
+                if was_running:
+                    self._start_bot()
+                    app_logger.info("[SETTINGS] ✅ Bot restarted with new configuration")
                 else:
-                    messagebox.showwarning("Warning", "⚠️ Настройки сохранены, но не все изменения применены.\n\nРекомендуется перезапустить бота.")
+                    app_logger.info("[SETTINGS] ✅ Configuration reloaded (bot was stopped)")
             else:
-                messagebox.showinfo("Saved", "Настройки сохранены. Изменения вступят в силу при следующем запуске.")
+                # Применить настройки без перезапуска
+                if hasattr(self, 'bot_manager') and self.bot_manager:
+                    success = self.bot_manager.reload_config()
+                    if success:
+                        # Обновить панель Current Settings
+                        settings = self.bot_manager.get_current_settings()
+                        if hasattr(self, 'settings_info_panel'):
+                            self.settings_info_panel.update_settings(settings)
+                        
+                        app_logger.info("[SETTINGS] ✅ Settings reloaded successfully")
+                    else:
+                        messagebox.showwarning("Warning", "⚠️ Настройки сохранены, но не все изменения применены.\n\nРекомендуется перезапустить бота.")
+                else:
+                    messagebox.showinfo("Saved", "Настройки сохранены. Изменения вступят в силу при следующем запуске.")
                 
         except Exception as e:
             app_logger.error(f"[SETTINGS] Error applying settings: {e}")
@@ -1211,6 +1349,42 @@ class BazaApp:
         except Exception as e:
             app_logger.error(f"[TEST-GPT] Failed to start test: {e}")
             messagebox.showerror("Error", f"Failed to start test: {e}")
+    
+    def _show_first_run_lot_hint(self):
+        """Показать подсказку о размере лота при первом запуске"""
+        try:
+            from pathlib import Path
+            hint_flag = Path('data/.lot_hint_shown')
+            
+            # Если подсказка уже показывалась, пропускаем
+            if hint_flag.exists():
+                return
+            
+            # Показываем информационное окно
+            result = messagebox.showinfo(
+                "💡 Важно: Настройка размера позиции",
+                "📊 РАЗМЕР ЛОТА (Max Lot Size) определяет сколько денег вы рискуете в сделке!\n\n"
+                "🔢 Таблица размеров:\n"
+                "   • 0.01 лот = $1,000 контракт\n"
+                "   • 0.10 лот = $10,000 контракт\n"
+                "   • 1.00 лот = $100,000 контракт\n\n"
+                "⚠️ Рекомендации:\n"
+                "   • Новичкам: 0.01 - 0.05 лота\n"
+                "   • Средний опыт: 0.05 - 0.10 лота\n"
+                "   • Опытные: 0.10 - 0.50 лота\n\n"
+                "⚙️ Настроить можно в меню Settings → Risk Management\n"
+                "📖 Подробное руководство: Settings → 'Открыть подробное руководство'\n\n"
+                "Это сообщение больше не появится."
+            )
+            
+            # Создать флаг что подсказка показана
+            hint_flag.parent.mkdir(parents=True, exist_ok=True)
+            hint_flag.touch()
+            
+            app_logger.info("[GUI] First-run lot size hint shown")
+            
+        except Exception as e:
+            app_logger.error(f"[GUI] Failed to show lot hint: {e}")
     
     def run(self):
         """Запуск приложения"""

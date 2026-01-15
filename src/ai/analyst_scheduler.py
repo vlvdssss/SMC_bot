@@ -96,6 +96,20 @@ class AnalystScheduler:
         schedule_enabled = self.config.get('market_analyst', {}).get('schedule', {}).get('enabled', True)
         return ai_enabled and schedule_enabled
     
+    def _is_instrument_analysis_enabled(self, symbol: str) -> bool:
+        """Проверить включен ли анализ для инструмента."""
+        try:
+            instruments_path = Path("config/instruments.yaml")
+            if instruments_path.exists():
+                with open(instruments_path, 'r', encoding='utf-8') as f:
+                    instruments_config = yaml.safe_load(f) or {}
+                    instrument = instruments_config.get('instruments', {}).get(symbol, {})
+                    # Проверяем оба флага: enabled (общий) и analysis_enabled (анализ)
+                    return instrument.get('enabled', False) and instrument.get('analysis_enabled', True)
+        except Exception as e:
+            logger.warning(f"[AI-Scheduler] Failed to check instrument config for {symbol}: {e}")
+        return True  # По умолчанию включено
+    
     def start(self):
         """Start the scheduler thread."""
         if self.running:
@@ -131,7 +145,17 @@ class AnalystScheduler:
                 for schedule_time in self.schedule_times:
                     if self._should_run(current_time, schedule_time):
                         logger.info(f"[AI-Scheduler] ✓ Triggered at {current_time.strftime('%H:%M')} (scheduled: {schedule_time.strftime('%H:%M')})")
-                        self._run_analysis("XAUUSD")
+                        # Анализируем инструменты если включены
+                        if self._is_instrument_analysis_enabled("XAUUSD"):
+                            self._run_analysis("XAUUSD")
+                        else:
+                            logger.info("[AI-Scheduler] XAUUSD analysis disabled in config")
+                        
+                        if self._is_instrument_analysis_enabled("EURUSD"):
+                            self._run_analysis("EURUSD")
+                        else:
+                            logger.info("[AI-Scheduler] EURUSD analysis disabled in config")
+                        
                         self.last_run = now
                         break  # Only run once per minute
                 
@@ -166,7 +190,7 @@ class AnalystScheduler:
         Trigger analysis manually.
         
         Args:
-            symbol: Trading symbol to analyze
+            symbol: Trading symbol to analyze (XAUUSD or EURUSD)
         
         Returns:
             Analysis result dict

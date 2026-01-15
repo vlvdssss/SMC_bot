@@ -1,11 +1,13 @@
-# Instruments Configuration - XAUUSD Only
-# Trading Bot optimized for Gold trading with SMC strategy
+# Instruments Configuration - XAUUSD & EURUSD
+# Trading Bot optimized for Gold and Euro/Dollar trading with SMC strategy
 
 instruments:
   XAUUSD:
     name: "Gold (XAU/USD)"
     type: "Metal"
     enabled: true
+    analysis_enabled: true    # GPT анализ включен
+    trading_enabled: true     # Торговля включена
     
     # Contract specifications
     contract_size: 100          # 100 oz per lot
@@ -30,6 +32,30 @@ instruments:
       max_dd: 9.43
       roi: 243.52
       total_trades: 97
+
+  EURUSD:
+    name: "Euro / US Dollar"
+    type: "Forex"
+    enabled: true
+    analysis_enabled: true    # GPT анализ включен
+    trading_enabled: true     # Торговля включена
+    
+    # Contract specifications
+    contract_size: 100000       # 100k per lot
+    pip_value: 10.0             # $10 per 0.0001 move per lot
+    pip_size: 0.0001
+    spread_points: 0.00015      # 1.5 pips
+    spread_multiplier: 0.0001
+    commission_per_lot: 7.0     # Round turn commission
+    price_decimals: 5           # Display format (1.08450)
+    
+    # Risk management
+    risk_per_trade: 2.0         # % of balance
+    max_trades_per_day: 3       # Maximum trades per day
+    
+    # Strategy
+    strategy_class: "StrategyEURUSD"
+    strategy_version: "SMC v1.0"
 
 # Global settings
 global_settings:

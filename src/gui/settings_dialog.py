@@ -15,10 +15,12 @@ class Colors:
     BG_DARK = '#0d1117'
     BG_PANEL = '#161b22'
     BG_CARD = '#21262d'
+    BG_HOVER = '#30363d'       # Hover эффект
     TEXT_PRIMARY = '#c9d1d9'
     TEXT_SECONDARY = '#8b949e'
     TEXT_MUTED = '#6e7681'
     BORDER = '#30363d'
+    PRIMARY = '#1f6feb'       # Синий (для кнопок)
     SUCCESS = '#3fb950'
     WARNING = '#d29922'
     ERROR = '#f85149'
@@ -102,12 +104,14 @@ class SettingsDialog:
         self.notebook.pack(fill='both', expand=True, padx=20, pady=20)
         
         # Tabs
+        self.instruments_tab = self._create_instruments_tab()
         self.trading_tab = self._create_trading_tab()
         self.ai_tab = self._create_ai_tab()
         self.strategy_tab = self._create_strategy_tab()
         self.gpt_api_tab = self._create_gpt_api_tab()
         self.telegram_tab = self._create_telegram_tab()
         
+        self.notebook.add(self.instruments_tab, text='📈 Instruments')
         self.notebook.add(self.trading_tab, text='💰 Trading')
         self.notebook.add(self.ai_tab, text='🤖 AI')
         self.notebook.add(self.strategy_tab, text='📊 Strategy')
@@ -126,13 +130,126 @@ class SettingsDialog:
                  padx=20, pady=10,
                  command=self.dialog.destroy).pack(side='right', padx=(10, 0))
         
+        # Save & Apply (без перезапуска)
         tk.Button(button_frame, text="Save & Apply",
+                 font=('Arial', 11),
+                 bg=Colors.PRIMARY,
+                 fg='white',
+                 relief='flat',
+                 padx=20, pady=10,
+                 command=self._save_settings).pack(side='right', padx=(0, 10))
+        
+        # Apply & Restart (сохранить + перезапустить бота)
+        tk.Button(button_frame, text="Apply & Restart",
                  font=('Arial', 11, 'bold'),
                  bg=Colors.SUCCESS,
                  fg='white',
                  relief='flat',
                  padx=20, pady=10,
-                 command=self._save_settings).pack(side='right')
+                 command=self._save_and_restart).pack(side='right')
+    
+    def _create_instruments_tab(self):
+        """Настройки инструментов (XAUUSD, EURUSD)"""
+        frame = tk.Frame(self.notebook, bg=Colors.BG_DARK)
+        
+        # Scrollable content
+        canvas = tk.Canvas(frame, bg=Colors.BG_DARK, highlightthickness=0)
+        scrollbar = tk.Scrollbar(frame, orient='vertical', command=canvas.yview)
+        content = tk.Frame(canvas, bg=Colors.BG_DARK)
+        
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side='right', fill='y')
+        canvas.pack(side='left', fill='both', expand=True)
+        canvas.create_window((0, 0), window=content, anchor='nw')
+        
+        # Загружаем конфиг
+        instruments_config = {}
+        try:
+            instruments_path = Path('config/instruments.yaml')
+            if instruments_path.exists():
+                with open(instruments_path, 'r', encoding='utf-8') as f:
+                    instruments_config = yaml.safe_load(f) or {}
+        except Exception as e:
+            logger.error(f"Failed to load instruments config: {e}")
+        
+        # === XAUUSD (GOLD) ===
+        self._create_section(content, "🥇 XAUUSD (Золото)")
+        
+        xauusd_config = instruments_config.get('instruments', {}).get('XAUUSD', {})
+        
+        # General Enable
+        xauusd_enabled_frame = self._create_setting_row(content, "Включить инструмент")
+        self.xauusd_enabled = tk.BooleanVar(value=xauusd_config.get('enabled', True))
+        tk.Checkbutton(xauusd_enabled_frame, variable=self.xauusd_enabled,
+                      bg=Colors.BG_DARK, activebackground=Colors.BG_DARK,
+                      selectcolor=Colors.BG_CARD).pack(side='right')
+        
+        # Analysis Enable
+        xauusd_analysis_frame = self._create_setting_row(content, "📊 GPT Анализ (скриншоты + сигналы)")
+        self.xauusd_analysis = tk.BooleanVar(value=xauusd_config.get('analysis_enabled', True))
+        tk.Checkbutton(xauusd_analysis_frame, variable=self.xauusd_analysis,
+                      bg=Colors.BG_DARK, activebackground=Colors.BG_DARK,
+                      selectcolor=Colors.BG_CARD).pack(side='right')
+        
+        # Trading Enable
+        xauusd_trading_frame = self._create_setting_row(content, "💰 Торговля (вход в сделки)")
+        self.xauusd_trading = tk.BooleanVar(value=xauusd_config.get('trading_enabled', True))
+        tk.Checkbutton(xauusd_trading_frame, variable=self.xauusd_trading,
+                      bg=Colors.BG_DARK, activebackground=Colors.BG_DARK,
+                      selectcolor=Colors.BG_CARD).pack(side='right')
+        
+        # Info
+        tk.Label(content, 
+                text="💡 Если GPT Анализ выключен - бот не будет делать скриншоты и запрашивать сигналы у GPT\n"
+                     "   Если Торговля выключена - сигналы будут генерироваться, но сделки не откроются",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED,
+                justify='left').pack(fill='x', pady=(5, 15), padx=20)
+        
+        # Separator
+        tk.Frame(content, bg=Colors.BORDER, height=2).pack(fill='x', pady=15)
+        
+        # === EURUSD ===
+        self._create_section(content, "💶 EURUSD (Евро/Доллар)")
+        
+        eurusd_config = instruments_config.get('instruments', {}).get('EURUSD', {})
+        
+        # General Enable
+        eurusd_enabled_frame = self._create_setting_row(content, "Включить инструмент")
+        self.eurusd_enabled = tk.BooleanVar(value=eurusd_config.get('enabled', True))
+        tk.Checkbutton(eurusd_enabled_frame, variable=self.eurusd_enabled,
+                      bg=Colors.BG_DARK, activebackground=Colors.BG_DARK,
+                      selectcolor=Colors.BG_CARD).pack(side='right')
+        
+        # Analysis Enable
+        eurusd_analysis_frame = self._create_setting_row(content, "📊 GPT Анализ (скриншоты + сигналы)")
+        self.eurusd_analysis = tk.BooleanVar(value=eurusd_config.get('analysis_enabled', True))
+        tk.Checkbutton(eurusd_analysis_frame, variable=self.eurusd_analysis,
+                      bg=Colors.BG_DARK, activebackground=Colors.BG_DARK,
+                      selectcolor=Colors.BG_CARD).pack(side='right')
+        
+        # Trading Enable
+        eurusd_trading_frame = self._create_setting_row(content, "💰 Торговля (вход в сделки)")
+        self.eurusd_trading = tk.BooleanVar(value=eurusd_config.get('trading_enabled', True))
+        tk.Checkbutton(eurusd_trading_frame, variable=self.eurusd_trading,
+                      bg=Colors.BG_DARK, activebackground=Colors.BG_DARK,
+                      selectcolor=Colors.BG_CARD).pack(side='right')
+        
+        # Info
+        tk.Label(content, 
+                text="💡 Если GPT Анализ выключен - бот не будет делать скриншоты и запрашивать сигналы у GPT\n"
+                     "   Если Торговля выключена - сигналы будут генерироваться, но сделки не откроются",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED,
+                justify='left').pack(fill='x', pady=(5, 15), padx=20)
+        
+        # Update scroll region
+        content.update_idletasks()
+        canvas.config(scrollregion=canvas.bbox('all'))
+        
+        return frame
     
     def _create_trading_tab(self):
         """Trading настройки"""
@@ -149,25 +266,61 @@ class SettingsDialog:
         canvas.create_window((0, 0), window=content, anchor='nw')
         
         # Risk Management
-        self._create_section(content, "Risk Management")
+        self._create_section(content, "💰 Risk Management (Управление Рисками)")
         
         portfolio_config = self.configs.get('portfolio.yaml', {})
         trading_config = self.configs.get('trading.yaml', {})
         risk_config = trading_config.get('trading', {}).get('risk', {})
         
-        # Risk per trade
-        risk_frame = self._create_setting_row(content, "Risk per trade (%)")
+        # Risk per trade - УПРОЩЁННОЕ ОБЪЯСНЕНИЕ
+        risk_frame = self._create_setting_row(content, "💵 Риск на сделку (% от баланса)")
         self.risk_per_trade = tk.Entry(risk_frame, font=('Arial', 10), width=10)
         self.risk_per_trade.insert(0, str(portfolio_config.get('portfolio', {}).get('risk_model', {}).get('max_total_exposure', 1.25)))
         self.risk_per_trade.pack(side='right')
         self._bind_paste(self.risk_per_trade)
         
-        # Max lot size
-        lot_frame = self._create_setting_row(content, "Maximum lot size")
+        # Подсказка для Risk
+        risk_hint = tk.Label(content, 
+                            text="💡 Пример: 1% при балансе $10,000 = максимум $100 риска на сделку",
+                            font=('Arial', 8, 'italic'),
+                            bg=Colors.BG_DARK,
+                            fg=Colors.TEXT_MUTED,
+                            justify='left')
+        risk_hint.pack(fill='x', pady=(2, 5), padx=20)
+        
+        # Max lot size - УПРОЩЁННОЕ ОБЪЯСНЕНИЕ
+        lot_frame = self._create_setting_row(content, "📊 Максимальный лот (объём позиции)")
         self.max_lot = tk.Entry(lot_frame, font=('Arial', 10), width=10)
         self.max_lot.insert(0, str(risk_config.get('max_lot_size', 1.0)))
         self.max_lot.pack(side='right')
         self._bind_paste(self.max_lot)
+        
+        # Подсказка для Lot Size с ДЕНЬГАМИ
+        lot_hint = tk.Label(content, 
+                           text="💡 1 лот = $100,000 (EURUSD) или ~$200,000 (XAUUSD на золото)\n"
+                                "   0.01 лот = $1,000 | 0.1 лот = $10,000 | 1.0 лот = $100,000\n"
+                                "   Рекомендация: 0.01-0.1 для безопасной торговли",
+                           font=('Arial', 8, 'italic'),
+                           bg=Colors.BG_DARK,
+                           fg=Colors.TEXT_MUTED,
+                           justify='left')
+        lot_hint.pack(fill='x', pady=(2, 5), padx=20)
+        
+        # Кнопка для открытия подробного руководства
+        help_btn_frame = tk.Frame(content, bg=Colors.BG_DARK)
+        help_btn_frame.pack(fill='x', pady=(0, 10), padx=20)
+        
+        help_btn = tk.Button(help_btn_frame,
+                            text="📖 Открыть подробное руководство по размеру лота",
+                            font=('Arial', 9),
+                            bg=Colors.BG_CARD,
+                            fg=Colors.PRIMARY,
+                            activebackground=Colors.BG_HOVER,
+                            activeforeground=Colors.PRIMARY,
+                            relief='flat',
+                            cursor='hand2',
+                            command=self._open_lot_size_guide)
+        help_btn.pack(pady=3)
         
         # Stop Loss / Take Profit
         self._create_section(content, "Stop Loss / Take Profit")
@@ -298,11 +451,21 @@ class SettingsDialog:
         self.min_rr.pack(side='right')
         self._bind_paste(self.min_rr)
         
-        validity_frame = self._create_setting_row(content, "Signal lifetime (minutes)")
+        validity_frame = self._create_setting_row(content, "⏱ AI Signal TTL (мин): 15/30/60")
         self.signal_validity = tk.Entry(validity_frame, font=('Arial', 10), width=10)
         self.signal_validity.insert(0, str(signals_config.get('validity_minutes', 60)))
         self.signal_validity.pack(side='right')
         self._bind_paste(self.signal_validity)
+        
+        # Подсказка о TTL сигнала
+        ttl_hint = tk.Label(content, 
+                           text="💡 Время жизни AI сигнала. По истечению TTL сигнал либо отыгрывает, либо аннулируется.",
+                           font=('Arial', 8, 'italic'),
+                           bg=Colors.BG_DARK,
+                           fg=Colors.TEXT_MUTED,
+                           wraplength=450,
+                           justify='left')
+        ttl_hint.pack(fill='x', pady=(2, 10), padx=20)
         
         # Time restrictions
         self._create_section(content, "Time Restrictions")
@@ -905,6 +1068,33 @@ class SettingsDialog:
             with open(telegram_path, 'w', encoding='utf-8') as f:
                 yaml.dump(telegram_config, f, default_flow_style=False, allow_unicode=True)
             
+            # Сохранить Instruments config
+            instruments_path = Path('config') / 'instruments.yaml'
+            instruments_config = {}
+            if instruments_path.exists():
+                with open(instruments_path, 'r', encoding='utf-8') as f:
+                    instruments_config = yaml.safe_load(f) or {}
+            
+            if 'instruments' not in instruments_config:
+                instruments_config['instruments'] = {}
+            
+            # Update XAUUSD
+            if 'XAUUSD' not in instruments_config['instruments']:
+                instruments_config['instruments']['XAUUSD'] = {}
+            instruments_config['instruments']['XAUUSD']['enabled'] = self.xauusd_enabled.get()
+            instruments_config['instruments']['XAUUSD']['analysis_enabled'] = self.xauusd_analysis.get()
+            instruments_config['instruments']['XAUUSD']['trading_enabled'] = self.xauusd_trading.get()
+            
+            # Update EURUSD
+            if 'EURUSD' not in instruments_config['instruments']:
+                instruments_config['instruments']['EURUSD'] = {}
+            instruments_config['instruments']['EURUSD']['enabled'] = self.eurusd_enabled.get()
+            instruments_config['instruments']['EURUSD']['analysis_enabled'] = self.eurusd_analysis.get()
+            instruments_config['instruments']['EURUSD']['trading_enabled'] = self.eurusd_trading.get()
+            
+            with open(instruments_path, 'w', encoding='utf-8') as f:
+                yaml.dump(instruments_config, f, default_flow_style=False, allow_unicode=True)
+            
             logger.info("="*80)
             logger.info("[SETTINGS] ✅ Все настройки успешно сохранены")
             logger.info("="*80)
@@ -919,6 +1109,248 @@ class SettingsDialog:
         except Exception as e:
             logger.error(f"[SETTINGS] Failed to save: {e}")
             messagebox.showerror("Error", f"Failed to save settings:\n{e}")
+    
+    def _save_and_restart(self):
+        """Сохранить настройки и перезапустить бота"""
+        try:
+            # Сначала сохраняем все настройки (используем код из _save_settings)
+            # Обновить AI config
+            ai_config = self.configs.get('ai.yaml', {})
+            ai_config['ai_enabled'] = self.ai_enabled.get()
+            
+            if 'market_analyst' not in ai_config:
+                ai_config['market_analyst'] = {}
+            
+            if 'gpt' not in ai_config['market_analyst']:
+                ai_config['market_analyst']['gpt'] = {}
+            
+            ai_config['market_analyst']['gpt']['model'] = self.gpt_model.get()
+            ai_config['market_analyst']['gpt']['temperature'] = float(self.temperature.get())
+            
+            if 'schedule' not in ai_config['market_analyst']:
+                ai_config['market_analyst']['schedule'] = {}
+            
+            ai_config['market_analyst']['schedule']['enabled'] = self.schedule_enabled.get()
+            
+            # Parse analysis times
+            times_str = self.analysis_times.get()
+            times_list = [t.strip() for t in times_str.split(',') if t.strip()]
+            ai_config['market_analyst']['schedule']['times'] = times_list
+            
+            # AI signal validity
+            ai_config['market_analyst']['signal_validity_minutes'] = int(self.signal_validity.get())
+            
+            # Обновить Portfolio config
+            portfolio_config = self.configs.get('portfolio.yaml', {})
+            if 'portfolio' not in portfolio_config:
+                portfolio_config['portfolio'] = {}
+            
+            portfolio_config['portfolio']['default_lot_size'] = float(self.default_lot.get())
+            portfolio_config['portfolio']['risk_per_trade'] = float(self.risk_per_trade.get())
+            
+            # Обновить Trading config
+            trading_config = self.configs.get('trading.yaml', {})
+            if 'trading' not in trading_config:
+                trading_config['trading'] = {}
+            
+            trading_config['trading']['mode'] = self.trading_mode.get()
+            trading_config['trading']['max_positions'] = int(self.max_positions.get())
+            trading_config['trading']['max_lot_size'] = float(self.max_lot_size.get())
+            
+            # Stop loss / Take profit
+            trading_config['trading']['stop_loss_pips'] = int(self.stop_loss.get())
+            trading_config['trading']['take_profit_pips'] = int(self.take_profit.get())
+            
+            # Trailing stop
+            if 'trailing_stop' not in trading_config['trading']:
+                trading_config['trading']['trailing_stop'] = {}
+            
+            trading_config['trading']['trailing_stop']['enabled'] = self.trail_enabled.get()
+            trading_config['trading']['trailing_stop']['distance_pips'] = int(self.trail_distance.get())
+            
+            # Trading hours
+            if 'hours' not in trading_config['trading']:
+                trading_config['trading']['hours'] = {}
+            
+            trading_config['trading']['hours']['start'] = self.trade_start.get()
+            trading_config['trading']['hours']['end'] = self.trade_end.get()
+            
+            # Indicators
+            if 'indicators' not in trading_config['trading']:
+                trading_config['trading']['indicators'] = {}
+            
+            # Parse timeframes
+            tf_str = self.timeframes.get()
+            tf_list = [t.strip() for t in tf_str.split(',') if t.strip()]
+            trading_config['trading']['indicators']['timeframes'] = tf_list
+            
+            # Parse EMA periods
+            ema_str = self.ema_periods.get()
+            ema_list = [int(p.strip()) for p in ema_str.split(',') if p.strip()]
+            trading_config['trading']['indicators']['ema_periods'] = ema_list
+            
+            trading_config['trading']['indicators']['rsi_period'] = int(self.rsi_period.get())
+            trading_config['trading']['indicators']['atr_period'] = int(self.atr_period.get())
+            
+            # SMC settings
+            if 'smc' not in trading_config['trading']:
+                trading_config['trading']['smc'] = {}
+            
+            trading_config['trading']['smc']['enabled'] = self.smc_enabled.get()
+            trading_config['trading']['smc']['order_blocks'] = self.ob_enabled.get()
+            trading_config['trading']['smc']['fair_value_gaps'] = self.fvg_enabled.get()
+            
+            # Trend filter
+            if 'trend_filter' not in trading_config['trading']:
+                trading_config['trading']['trend_filter'] = {}
+            
+            trading_config['trading']['trend_filter']['enabled'] = self.trend_filter.get()
+            
+            # Обновить Telegram config
+            telegram_config = {}
+            telegram_path = Path('config') / 'telegram.yaml'
+            if telegram_path.exists():
+                with open(telegram_path, 'r', encoding='utf-8') as f:
+                    telegram_config = yaml.safe_load(f) or {}
+            
+            if 'telegram' not in telegram_config:
+                telegram_config['telegram'] = {}
+            
+            telegram_config['telegram']['enabled'] = self.telegram_enabled.get()
+            telegram_config['telegram']['bot_token'] = self.telegram_token.get()
+            telegram_config['telegram']['chat_id'] = self.telegram_chat_id.get()
+            telegram_config['telegram']['enable_bot'] = self.telegram_enable_bot.get()
+            
+            if 'notify' not in telegram_config['telegram']:
+                telegram_config['telegram']['notify'] = {}
+            
+            telegram_config['telegram']['notify']['startup'] = self.notify_startup.get()
+            telegram_config['telegram']['notify']['trade_opened'] = self.notify_trade_opened.get()
+            telegram_config['telegram']['notify']['trade_closed'] = self.notify_trade_closed.get()
+            telegram_config['telegram']['notify']['daily_report'] = self.notify_daily_report.get()
+            telegram_config['telegram']['notify']['alerts'] = self.notify_alerts.get()
+            telegram_config['telegram']['alert_min_level'] = self.alert_min_level.get()
+            
+            # Сохранить GPT API key в .env
+            env_path = Path('.env')
+            env_lines = []
+            api_key_updated = False
+            
+            if env_path.exists():
+                with open(env_path, 'r') as f:
+                    env_lines = f.readlines()
+            
+            # Update or add OPENAI_API_KEY
+            new_api_key = self.gpt_api_key.get().strip()
+            if new_api_key:
+                for i, line in enumerate(env_lines):
+                    if line.startswith('OPENAI_API_KEY='):
+                        env_lines[i] = f'OPENAI_API_KEY={new_api_key}\n'
+                        api_key_updated = True
+                        break
+                
+                if not api_key_updated:
+                    env_lines.append(f'OPENAI_API_KEY={new_api_key}\n')
+                
+                with open(env_path, 'w') as f:
+                    f.writelines(env_lines)
+                
+                # Update environment variable
+                import os
+                os.environ['OPENAI_API_KEY'] = new_api_key
+            
+            # Сохранить файлы
+            ai_path = Path('config') / 'ai.yaml'
+            with open(ai_path, 'w', encoding='utf-8') as f:
+                yaml.dump(ai_config, f, default_flow_style=False, allow_unicode=True)
+            
+            portfolio_path = Path('config') / 'portfolio.yaml'
+            with open(portfolio_path, 'w', encoding='utf-8') as f:
+                yaml.dump(portfolio_config, f, default_flow_style=False, allow_unicode=True)
+            
+            trading_path = Path('config') / 'trading.yaml'
+            with open(trading_path, 'w', encoding='utf-8') as f:
+                yaml.dump(trading_config, f, default_flow_style=False, allow_unicode=True)
+            
+            with open(telegram_path, 'w', encoding='utf-8') as f:
+                yaml.dump(telegram_config, f, default_flow_style=False, allow_unicode=True)
+            
+            # Сохранить Instruments config
+            instruments_path = Path('config') / 'instruments.yaml'
+            instruments_config = {}
+            if instruments_path.exists():
+                with open(instruments_path, 'r', encoding='utf-8') as f:
+                    instruments_config = yaml.safe_load(f) or {}
+            
+            if 'instruments' not in instruments_config:
+                instruments_config['instruments'] = {}
+            
+            # Update XAUUSD
+            if 'XAUUSD' not in instruments_config['instruments']:
+                instruments_config['instruments']['XAUUSD'] = {}
+            instruments_config['instruments']['XAUUSD']['enabled'] = self.xauusd_enabled.get()
+            instruments_config['instruments']['XAUUSD']['analysis_enabled'] = self.xauusd_analysis.get()
+            instruments_config['instruments']['XAUUSD']['trading_enabled'] = self.xauusd_trading.get()
+            
+            # Update EURUSD
+            if 'EURUSD' not in instruments_config['instruments']:
+                instruments_config['instruments']['EURUSD'] = {}
+            instruments_config['instruments']['EURUSD']['enabled'] = self.eurusd_enabled.get()
+            instruments_config['instruments']['EURUSD']['analysis_enabled'] = self.eurusd_analysis.get()
+            instruments_config['instruments']['EURUSD']['trading_enabled'] = self.eurusd_trading.get()
+            
+            with open(instruments_path, 'w', encoding='utf-8') as f:
+                yaml.dump(instruments_config, f, default_flow_style=False, allow_unicode=True)
+            
+            logger.info("="*80)
+            logger.info("[SETTINGS] ✅ Settings saved, restarting bot...")
+            logger.info("="*80)
+            
+            # Перезапускаем бота через callback
+            if self.on_save_callback:
+                # Закрываем диалог
+                self.dialog.destroy()
+                
+                # Вызываем callback с флагом restart
+                self.on_save_callback(restart=True)
+                
+                messagebox.showinfo("Success", "Settings saved!\nBot restarted with new configuration.")
+            else:
+                messagebox.showwarning("Warning", "Settings saved but bot restart not available.\nPlease restart manually.")
+                self.dialog.destroy()
+            
+        except Exception as e:
+            logger.error(f"[SETTINGS] Failed to save and restart: {e}")
+            messagebox.showerror("Error", f"Failed to save settings:\n{e}")
+    
+    def _open_lot_size_guide(self):
+        """Открыть руководство по размеру лота"""
+        try:
+            import os
+            import subprocess
+            from pathlib import Path
+            
+            guide_path = Path('docs') / 'LOT_SIZE_GUIDE.md'
+            
+            if not guide_path.exists():
+                messagebox.showwarning(
+                    "Руководство не найдено",
+                    "Файл LOT_SIZE_GUIDE.md не найден в папке docs/\n\n"
+                    "Создайте его или скачайте из репозитория проекта."
+                )
+                return
+            
+            # Открыть файл в системном редакторе для Markdown
+            if os.name == 'nt':  # Windows
+                os.startfile(guide_path)
+            elif os.name == 'posix':  # Linux/Mac
+                subprocess.run(['xdg-open', guide_path])
+            
+            logger.info(f"[SETTINGS] Opened lot size guide: {guide_path}")
+            
+        except Exception as e:
+            logger.error(f"[SETTINGS] Failed to open guide: {e}")
+            messagebox.showerror("Ошибка", f"Не удалось открыть руководство:\n{e}")
     
     def _bind_paste(self, entry_widget):
         """Добавить поддержку Ctrl+V для Entry виджета"""
