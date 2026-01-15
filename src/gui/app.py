@@ -839,8 +839,8 @@ class BazaApp:
                     # Обновить открытые позиции
                     self._update_positions()
                     
-                    # Пауза перед следующей итерацией (30 секунд)
-                    self.stop_event.wait(30)
+                    # Пауза перед следующей итерацией (15 секунд)
+                    self.stop_event.wait(15)
                     
                 except Exception as e:
                     app_logger.error(f"[LOOP] Error in trading loop: {e}")

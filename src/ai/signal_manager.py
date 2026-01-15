@@ -111,7 +111,7 @@ class AISignalManager:
         self.latest_analysis_version = None
         
         self._lock = threading.Lock()
-        self._load_state()
+        self._load_state(verbose=True)  # Log on init
         
         logger.info("[AI-Signal] Manager v2.0 initialized")
     
@@ -260,8 +260,9 @@ class AISignalManager:
                 # Cleanup expired
                 self._cleanup_expired_signals()
                 
-                # Save state
+                # Save and reload state to show updated signals
                 self._save_state()
+                self._load_state(verbose=True)  # Log when new signals added
                 
                 return summary
                 
@@ -525,8 +526,8 @@ class AISignalManager:
         """Check if any signals should trigger with TTL and price validation."""
         triggered_signals = []
         
-        # Reload signals from file to catch new signals from GPT analysis
-        self._load_state()
+        # Note: State is loaded at init and when signals are added.
+        # No need to reload every check - reduces log spam.
         
         with self._lock:
             for signal in self.active_signals:
@@ -741,8 +742,12 @@ class AISignalManager:
         except Exception as e:
             logger.error(f"[AI-Signal] Failed to save state: {e}")
     
-    def _load_state(self):
-        """Load state from file."""
+    def _load_state(self, verbose: bool = False):
+        """Load state from file.
+        
+        Args:
+            verbose: If True, always log. If False, only log when state changes.
+        """
         try:
             filepath = self.signals_dir / "active_signals.json"
             if not filepath.exists():
@@ -750,6 +755,10 @@ class AISignalManager:
             
             with open(filepath, 'r', encoding='utf-8') as f:
                 state = json.load(f)
+            
+            # Track if state changed
+            old_signal_count = len(self.active_signals)
+            old_block_type = self.block_type.value
             
             # Load block state
             block_type_str = state.get("block_type", "none")
@@ -763,6 +772,7 @@ class AISignalManager:
             self.latest_analysis_version = state.get("latest_analysis_version")
             
             # Load signals
+            self.active_signals = []  # Clear and reload
             for signal_data in state.get("active_signals", []):
                 try:
                     signal = AISignal(**signal_data)
@@ -774,10 +784,15 @@ class AISignalManager:
             # Load history
             self.signal_history = state.get("signal_history", [])
             
-            logger.info(
-                f"[AI-Signal] Loaded state: {len(self.active_signals)} signals, "
-                f"block={self.block_type.value}, multiplier={self.risk_multiplier}"
-            )
+            # Only log if verbose or state changed
+            new_signal_count = len(self.active_signals)
+            new_block_type = self.block_type.value
+            
+            if verbose or new_signal_count != old_signal_count or new_block_type != old_block_type:
+                logger.info(
+                    f"[AI-Signal] Loaded state: {new_signal_count} signals, "
+                    f"block={new_block_type}, multiplier={self.risk_multiplier}"
+                )
             
         except Exception as e:
             logger.error(f"[AI-Signal] Failed to load state: {e}")
