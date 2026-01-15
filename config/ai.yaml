@@ -54,9 +54,9 @@ market_analyst:
     auto_cleanup: true
     confidence_decay: true
     default_ttl_hours: 24
-    validity_minutes: 60  # Время жизни сигнала (минуты)
     min_confidence: 70
     min_rr: 1.5
+    validity_minutes: 60
 news_filter:
   cache_duration: 3600
   enabled: true

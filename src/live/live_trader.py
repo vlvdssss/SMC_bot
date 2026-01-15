@@ -45,9 +45,9 @@ class LiveTrader:
             enable_gpt: True = использовать GPT фильтр, False = отключить
         """
         logger.info("="*80)
-        logger.info("[LiveTrader] 🚀 Инициализация LiveTrader...")
-        logger.info(f"[LiveTrader] Режим: {'📈 REAL TRADING' if enable_trading else '👀 MONITORING ONLY'}")
-        logger.info(f"[LiveTrader] GPT фильтр: {'✅ Включён' if enable_gpt else '❌ Отключён'}")
+        logger.info("[LiveTrader] Initializing LiveTrader...")
+        logger.info(f"[LiveTrader] Mode: {'REAL TRADING' if enable_trading else 'MONITORING ONLY'}")
+        logger.info(f"[LiveTrader] GPT filter: {'ENABLED' if enable_gpt else 'DISABLED'}")
         
         self.config_dir: str = config_dir
         self.enable_trading: bool = enable_trading
@@ -55,53 +55,53 @@ class LiveTrader:
         self.connected: bool = False
         
         # Загрузка конфигов
-        logger.info("[LiveTrader] 📂 Загрузка конфигурационных файлов...")
+        logger.info("[LiveTrader] Loading configuration files...")
         self.load_configs()
         
         # Подключение к MT5
-        logger.info("[LiveTrader] 🔌 Подключение к MetaTrader 5...")
+        logger.info("[LiveTrader] Connecting to MetaTrader 5...")
         self.connect_mt5()
         
         # Инициализация стратегий
-        logger.info("[LiveTrader] 📊 Инициализация торговых стратегий...")
+        logger.info("[LiveTrader] Initializing trading strategies...")
         self.init_strategies()
         
         # Инициализация фильтров
-        logger.info("[LiveTrader] 🔍 Инициализация фильтров (GPT, ML)...")
+        logger.info("[LiveTrader] Initializing filters (GPT, ML)...")
         self.init_filters()
         
         # Инициализация executor
-        logger.info("[LiveTrader] ⚙️ Инициализация Executor...")
+        logger.info("[LiveTrader] Initializing Executor...")
         from src.core.executor import Executor
         self.executor = Executor(mt5_connector=self.mt5_connector)
-        logger.info("[LiveTrader] ✅ Executor готов")
+        logger.info("[LiveTrader] Executor ready")
         
         # Инициализация AI Signal Manager
         self.ai_signal_manager = None
         if AI_SIGNAL_MANAGER_AVAILABLE:
             try:
-                logger.info("[LiveTrader] 🤖 Инициализация AI Signal Manager...")
+                logger.info("[LiveTrader] Initializing AI Signal Manager...")
                 self.ai_signal_manager = AISignalManager()
-                logger.info("[LiveTrader] ✅ AI Signal Manager инициализирован")
+                logger.info("[LiveTrader] AI Signal Manager initialized")
             except Exception as e:
-                logger.error(f"[LiveTrader] ❌ Failed to init AI Signal Manager: {e}")
+                logger.error(f"[LiveTrader] Failed to init AI Signal Manager: {e}")
         else:
-            logger.warning("[LiveTrader] ⚠️ AI Signal Manager недоступен")
+            logger.warning("[LiveTrader] AI Signal Manager unavailable")
         
         # Инициализация мониторинга
-        logger.info("[LiveTrader] 📱 Инициализация мониторинга (Telegram)...")
+        logger.info("[LiveTrader] Initializing monitoring (Telegram)...")
         self.telegram = None
         self.alert_manager = None
         self.notify_config = {}
         if MONITORING_AVAILABLE:
             self._init_monitoring()
         else:
-            logger.warning("[LiveTrader] ⚠️ Модули мониторинга недоступны")
+            logger.warning("[LiveTrader] Monitoring modules unavailable")
         
         # Отслеживание открытых позиций для Telegram уведомлений
         self.tracked_positions = {}  # {ticket: {symbol, direction, entry_time, ...}}
         
-        logger.info("[LiveTrader] ✅ LiveTrader полностью инициализирован")
+        logger.info("[LiveTrader] LiveTrader fully initialized")
         logger.info("="*80)
     
     def start(self) -> None:
