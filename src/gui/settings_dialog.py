@@ -555,17 +555,65 @@ class SettingsDialog:
         
         # Bot Token
         token_frame = self._create_setting_row(content, "Bot Token:")
-        self.telegram_token = tk.Entry(token_frame, font=('Arial', 10), width=35, show='*')
+        
+        token_entry_frame = tk.Frame(token_frame, bg=Colors.BG_DARK)
+        token_entry_frame.pack(side='right')
+        
+        self.telegram_token = tk.Entry(token_entry_frame, font=('Arial', 10), width=30, show='*')
         self.telegram_token.insert(0, telegram_settings.get('bot_token', ''))
-        self.telegram_token.pack(side='right')
+        self.telegram_token.pack(side='left', padx=(0, 5))
         self._bind_paste(self.telegram_token)
+        
+        # Paste button for token
+        def paste_token():
+            try:
+                text = self.dialog.clipboard_get()
+                if text:
+                    self.telegram_token.delete(0, tk.END)
+                    self.telegram_token.insert(0, text)
+                    logger.info(f"[SETTINGS] Pasted Telegram token: {len(text)} chars")
+            except Exception as e:
+                logger.error(f"[SETTINGS] Paste token failed: {e}")
+                messagebox.showerror("Paste Error", f"Failed to paste: {e}")
+        
+        tk.Button(token_entry_frame, text="📋",
+                 font=('Arial', 9),
+                 bg=Colors.SUCCESS,
+                 fg='white',
+                 relief='flat',
+                 padx=8, pady=3,
+                 command=paste_token).pack(side='left')
         
         # Chat ID
         chat_frame = self._create_setting_row(content, "Chat ID:")
-        self.telegram_chat_id = tk.Entry(chat_frame, font=('Arial', 10), width=35)
+        
+        chat_entry_frame = tk.Frame(chat_frame, bg=Colors.BG_DARK)
+        chat_entry_frame.pack(side='right')
+        
+        self.telegram_chat_id = tk.Entry(chat_entry_frame, font=('Arial', 10), width=30)
         self.telegram_chat_id.insert(0, telegram_settings.get('chat_id', ''))
-        self.telegram_chat_id.pack(side='right')
+        self.telegram_chat_id.pack(side='left', padx=(0, 5))
         self._bind_paste(self.telegram_chat_id)
+        
+        # Paste button for chat_id
+        def paste_chat_id():
+            try:
+                text = self.dialog.clipboard_get()
+                if text:
+                    self.telegram_chat_id.delete(0, tk.END)
+                    self.telegram_chat_id.insert(0, text)
+                    logger.info(f"[SETTINGS] Pasted Chat ID: {len(text)} chars")
+            except Exception as e:
+                logger.error(f"[SETTINGS] Paste chat_id failed: {e}")
+                messagebox.showerror("Paste Error", f"Failed to paste: {e}")
+        
+        tk.Button(chat_entry_frame, text="📋",
+                 font=('Arial', 9),
+                 bg=Colors.SUCCESS,
+                 fg='white',
+                 relief='flat',
+                 padx=8, pady=3,
+                 command=paste_chat_id).pack(side='left')
         
         # Enable Bot with buttons
         enable_bot_frame = self._create_setting_row(content, "Enable interactive bot")
