@@ -431,8 +431,8 @@ class BotManager:
                 except Exception as e:
                     self.log(f"Error checking closed positions: {e}")
                 
-                # Ждём перед следующей проверкой
-                self.stop_event.wait(60)  # 60 секунд
+                # Ждём перед следующей проверкой (сокращено с 60 до 15 секунд для быстрой реакции на AI сигналы)
+                self.stop_event.wait(15)  # 15 секунд
                 
         except Exception as e:
             self.log(f"Error: {str(e)}")

@@ -525,6 +525,9 @@ class AISignalManager:
         """Check if any signals should trigger with TTL and price validation."""
         triggered_signals = []
         
+        # Reload signals from file to catch new signals from GPT analysis
+        self._load_state()
+        
         with self._lock:
             for signal in self.active_signals:
                 if signal.status != "pending" or signal.symbol != symbol:

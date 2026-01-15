@@ -298,6 +298,12 @@ class SettingsDialog:
         self.min_rr.pack(side='right')
         self._bind_paste(self.min_rr)
         
+        validity_frame = self._create_setting_row(content, "Signal lifetime (minutes)")
+        self.signal_validity = tk.Entry(validity_frame, font=('Arial', 10), width=10)
+        self.signal_validity.insert(0, str(signals_config.get('validity_minutes', 60)))
+        self.signal_validity.pack(side='right')
+        self._bind_paste(self.signal_validity)
+        
         # Time restrictions
         self._create_section(content, "Time Restrictions")
         
@@ -692,6 +698,7 @@ class SettingsDialog:
             
             ai_config['market_analyst']['signals']['min_confidence'] = int(self.min_confidence.get())
             ai_config['market_analyst']['signals']['min_rr'] = float(self.min_rr.get())
+            ai_config['market_analyst']['signals']['validity_minutes'] = int(self.signal_validity.get())
             
             # Обновить Portfolio config
             portfolio_config = self.configs.get('portfolio.yaml', {})
