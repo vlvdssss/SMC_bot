@@ -1145,21 +1145,22 @@ class SettingsDialog:
             if 'portfolio' not in portfolio_config:
                 portfolio_config['portfolio'] = {}
             
-            portfolio_config['portfolio']['default_lot_size'] = float(self.default_lot.get())
-            portfolio_config['portfolio']['risk_per_trade'] = float(self.risk_per_trade.get())
+            # Сохраняем только risk_per_trade (max_total_exposure)
+            if 'risk_model' not in portfolio_config.get('portfolio', {}):
+                portfolio_config['portfolio']['risk_model'] = {}
+            portfolio_config['portfolio']['risk_model']['max_total_exposure'] = float(self.risk_per_trade.get())
             
             # Обновить Trading config
             trading_config = self.configs.get('trading.yaml', {})
             if 'trading' not in trading_config:
                 trading_config['trading'] = {}
             
-            trading_config['trading']['mode'] = self.trading_mode.get()
-            trading_config['trading']['max_positions'] = int(self.max_positions.get())
-            trading_config['trading']['max_lot_size'] = float(self.max_lot_size.get())
-            
-            # Stop loss / Take profit
-            trading_config['trading']['stop_loss_pips'] = int(self.stop_loss.get())
-            trading_config['trading']['take_profit_pips'] = int(self.take_profit.get())
+            # Risk settings
+            if 'risk' not in trading_config['trading']:
+                trading_config['trading']['risk'] = {}
+            trading_config['trading']['risk']['max_lot_size'] = float(self.max_lot.get())
+            trading_config['trading']['risk']['default_sl_pips'] = int(self.default_sl.get())
+            trading_config['trading']['risk']['default_tp_pips'] = int(self.default_tp.get())
             
             # Trailing stop
             if 'trailing_stop' not in trading_config['trading']:

@@ -1,9 +1,11 @@
 {
-    "latest_version": "1.2.1",
-    "download_url": "https://github.com/vlvdssss/SMC_bot/releases/download/v1.2.1/BAZA_TradingBot.exe",
+    "latest_version": "1.2.3",
+    "download_url": "https://github.com/vlvdssss/SMC_bot/releases/download/v1.2.3/BAZA_TradingBot.exe",
   "release_date": "2026-01-16",
   "size_mb": 206.0,
   "changelog": [
+    "🐛 Исправлена критическая ошибка Settings Dialog (AttributeError: trading_mode, max_positions)",
+    "🐛 Исправлена критическая ошибка Settings Dialog (AttributeError: default_lot)",
     "🐛 Исправлена ошибка отображения AI Market Analyst (signal.direction -> signal.type)",
     "📈 Новая вкладка Instruments - раздельные настройки для EURUSD и XAUUSD",
     "💶 Добавлена полная поддержка EURUSD (анализ + торговля)",
