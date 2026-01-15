@@ -855,12 +855,26 @@ class SettingsDialog:
         """Добавить поддержку Ctrl+V для Entry виджета"""
         def paste(event=None):
             try:
-                text = entry_widget.clipboard_get()
-                entry_widget.delete(0, 'end')
-                entry_widget.insert(0, text)
+                # Получить текст из буфера обмена через Tkinter
+                text = self.dialog.clipboard_get()
+                if text:
+                    # Очистить поле и вставить текст
+                    entry_widget.delete(0, tk.END)
+                    entry_widget.insert(0, text)
+                    logger.info(f"[SETTINGS] Pasted text via Ctrl+V: {len(text)} chars")
                 return 'break'
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"[SETTINGS] Paste failed: {e}")
+                return 'break'
         
+        # Привязать Ctrl+V
         entry_widget.bind('<Control-v>', paste)
         entry_widget.bind('<Control-V>', paste)
+        
+        # Добавить контекстное меню (правая кнопка мыши)
+        def show_menu(event):
+            menu = tk.Menu(entry_widget, tearoff=0)
+            menu.add_command(label="Paste (Ctrl+V)", command=lambda: paste())
+            menu.post(event.x_root, event.y_root)
+        
+        entry_widget.bind('<Button-3>', show_menu)
