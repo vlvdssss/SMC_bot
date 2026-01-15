@@ -11,7 +11,19 @@ from datetime import datetime
 from typing import Optional, Callable
 import json
 from pathlib import Path
+import sys
 from src.core.logger import logger
+
+# Helper для работы с путями в EXE
+def get_data_path(filename):
+    """Получить абсолютный путь к файлу в data директории (работает в EXE и python)"""
+    if getattr(sys, 'frozen', False):
+        # Если запущен как EXE, используем директорию где находится EXE
+        base_path = Path(sys.executable).parent
+    else:
+        # Если запущен как python скрипт, используем корневую директорию проекта
+        base_path = Path(__file__).parent.parent.parent
+    return base_path / 'data' / filename
 
 # Мониторинг
 try:
@@ -519,7 +531,7 @@ class BotManager:
     
     def save_trade(self, trade: dict):
         """Сохранение сделки в файл."""
-        trades_file = Path('data/trades_history.json')
+        trades_file = get_data_path('trades_history.json')
         trades_file.parent.mkdir(exist_ok=True)
         
         trades = []
@@ -552,7 +564,7 @@ class BotManager:
     
     def save_stats(self):
         """Сохранение статистики."""
-        stats_file = Path('data/bot_stats.json')
+        stats_file = get_data_path('bot_stats.json')
         stats_file.parent.mkdir(exist_ok=True)
         
         # Добавляем дополнительные поля для Telegram бота
@@ -566,7 +578,7 @@ class BotManager:
     
     def load_stats(self):
         """Загрузка статистики."""
-        stats_file = Path('data/bot_stats.json')
+        stats_file = get_data_path('bot_stats.json')
         
         if stats_file.exists():
             with open(stats_file, 'r') as f:
@@ -576,7 +588,7 @@ class BotManager:
 
         # Попробуем загрузить историю сделок и пересчитать агрегаты (если файл есть)
         
-        trades_file = Path('data/trades_history.json')
+        trades_file = get_data_path('trades_history.json')
         if trades_file.exists():
             with open(trades_file, 'r') as f:
                 trades = json.load(f)
@@ -622,7 +634,7 @@ class BotManager:
                 return
             
             # Загружаем существующие ID сделок
-            trades_file = Path('data/trades_history.json')
+            trades_file = get_data_path('trades_history.json')
             existing_trades = []
             existing_ids = set()
             

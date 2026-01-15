@@ -6,9 +6,20 @@ import logging
 import time
 from typing import Optional, Dict, Any, Tuple
 from pathlib import Path
+import sys
 
 logger = logging.getLogger(__name__)
 
+# Helper для работы с путями в EXE
+def get_data_path(filename):
+    """Получить абсолютный путь к файлу в data директории (работает в EXE и python)"""
+    if getattr(sys, 'frozen', False):
+        # Если запущен как EXE, используем директорию где находится EXE
+        base_path = Path(sys.executable).parent
+    else:
+        # Если запущен как python скрипт, используем корневую директорию проекта
+        base_path = Path(__file__).parent.parent.parent
+    return base_path / 'data' / filename
 
 class MT5Manager:
     """Менеджер MT5 подключения (Singleton)."""
@@ -296,7 +307,7 @@ class MT5Manager:
                 try:
                     import json
                     from pathlib import Path
-                    tf = Path('data/trades_history.json')
+                    tf = get_data_path('trades_history.json')
                     if tf.exists():
                         with open(tf, 'r', encoding='utf-8') as f:
                             trades = json.load(f)

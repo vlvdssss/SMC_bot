@@ -9,7 +9,19 @@ from typing import Dict, Tuple
 import threading
 import json
 from pathlib import Path
+import sys
 from src.core.logger import logger
+
+# Helper для работы с путями в EXE
+def get_data_path(filename):
+    """Получить абсолютный путь к файлу в data директории (работает в EXE и python)"""
+    if getattr(sys, 'frozen', False):
+        # Если запущен как EXE, используем директорию где находится EXE
+        base_path = Path(sys.executable).parent
+    else:
+        # Если запущен как python скрипт, используем корневую директорию проекта
+        base_path = Path(__file__).parent.parent.parent
+    return base_path / 'data' / filename
 
 # Добавить импорт
 try:
@@ -235,7 +247,7 @@ class LiveTrader:
                         
                         # Применяем пользовательские настройки из config.json
                         try:
-                            config_file = Path('data/config.json')
+                            config_file = get_data_path('config.json')
                             if config_file.exists():
                                 import json
                                 with open(config_file, 'r') as f:
@@ -739,7 +751,7 @@ class LiveTrader:
         import json
         from pathlib import Path
         
-        trades_file = Path('data/trades_history.json')
+        trades_file = get_data_path('trades_history.json')
         trades_file.parent.mkdir(exist_ok=True)
         
         trades = []

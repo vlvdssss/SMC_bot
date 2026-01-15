@@ -38,6 +38,17 @@ except ImportError:
     AI_ANALYSIS_AVAILABLE = False
 
 
+# ==================== DATA PATH HELPER ====================
+def get_data_path(filename):
+    """Получить абсолютный путь к файлу в data директории (работает в EXE и python)"""
+    if getattr(sys, 'frozen', False):
+        # Если запущен как EXE, используем директорию где находится EXE
+        base_path = Path(sys.executable).parent
+    else:
+        # Если запущен как python скрипт, используем корневую директорию проекта
+        base_path = Path(__file__).parent.parent.parent
+    return base_path / 'data' / filename
+
 # ==================== COLOR SCHEME ====================
 class Colors:
     """Цветовая схема в стиле TradingView"""
@@ -973,7 +984,7 @@ class BazaApp:
                     equity = float(account_info.get('equity', 0))
                     
                     # СИНХРОНИЗАЦИЯ: Берем все данные из bot_stats.json (единый источник правды)
-                    stats_file = Path('data/bot_stats.json')
+                    stats_file = get_data_path('bot_stats.json')
                     total_pnl = 0
                     today_pnl = 0
                     
@@ -1364,8 +1375,7 @@ class BazaApp:
     def _show_first_run_lot_hint(self):
         """Показать подсказку о размере лота при первом запуске"""
         try:
-            from pathlib import Path
-            hint_flag = Path('data/.lot_hint_shown')
+            hint_flag = get_data_path('.lot_hint_shown')
             
             # Если подсказка уже показывалась, пропускаем
             if hint_flag.exists():
