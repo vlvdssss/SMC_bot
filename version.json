@@ -1,17 +1,17 @@
 {
-    "latest_version": "1.0.9",
-    "download_url": "https://github.com/vlvdssss/SMC_bot/releases/download/v1.0.9/BAZA_TradingBot.exe",
+    "latest_version": "1.1.0",
+    "download_url": "https://github.com/vlvdssss/SMC_bot/releases/download/v1.1.0/BAZA_TradingBot.exe",
   "release_date": "2026-01-15",
-  "size_mb": 205.91,
+  "size_mb": 206.0,
   "changelog": [
+    "🔧 Исправлен планировщик AI сигналов - теперь запускается по расписанию",
+    "📋 Добавлены кнопки Paste для API ключа, Telegram токена и Chat ID",
     "🔄 Ускорена проверка AI сигналов (60с → 15с)",
     "⚙️ Добавлена настройка времени жизни сигналов в интерфейсе",
     "🔁 Автоматическая перезагрузка активных сигналов",
-    "🔑 Обновлен OpenAI API ключ",
-    "📐 Уменьшена панель Current Settings",
-    "📋 Добавлена поддержка Ctrl+V в полях ввода",
-    "✅ Кнопка обновления теперь всегда видна",
-    "🐛 Исправлена ошибка 401 при подключении к GPT"
+    "📝 Исправлена кодировка логов - убраны красные символы",
+    "🖱️ Добавлено контекстное меню (правый клик) для вставки",
+    "🔑 Убрана автозагрузка старого API ключа из .env"
   ],
   "minimum_version": "1.0.0",
   "critical_update": false
