@@ -80,10 +80,12 @@ class AnalystScheduler:
     def _parse_time(self, time_str: str) -> dt_time:
         """Parse time string to dt_time."""
         try:
+            # Remove quotes if present
+            time_str = str(time_str).strip().strip("'\"")
             hour, minute = map(int, time_str.split(':'))
             return dt_time(hour, minute)
-        except:
-            logger.warning(f"[AI-Scheduler] Invalid time format: {time_str}")
+        except Exception as e:
+            logger.warning(f"[AI-Scheduler] Invalid time format '{time_str}': {e}")
             return dt_time(6, 0)
     
     def is_ai_enabled(self) -> bool:
@@ -128,9 +130,10 @@ class AnalystScheduler:
                 # Check if it's time to run
                 for schedule_time in self.schedule_times:
                     if self._should_run(current_time, schedule_time):
-                        logger.info(f"[AI-Scheduler] Triggered at {schedule_time}")
+                        logger.info(f"[AI-Scheduler] ✓ Triggered at {current_time.strftime('%H:%M')} (scheduled: {schedule_time.strftime('%H:%M')})")
                         self._run_analysis("XAUUSD")
                         self.last_run = now
+                        break  # Only run once per minute
                 
                 # Sleep 60 seconds
                 time.sleep(60)
@@ -149,9 +152,14 @@ class AnalystScheduler:
         if self.last_run:
             time_since_last = (datetime.now() - self.last_run).total_seconds()
             if time_since_last < 300:  # 5 minutes
+                logger.debug(f"[AI-Scheduler] Skipping {schedule_time.strftime('%H:%M')} - last run {int(time_since_last)}s ago")
                 return False
         
-        return hour_match and minute_match
+        if hour_match and minute_match:
+            logger.info(f"[AI-Scheduler] Time match: {current_time.strftime('%H:%M')} ≈ {schedule_time.strftime('%H:%M')}")
+            return True
+        
+        return False
     
     def run_now(self, symbol: str = "XAUUSD") -> dict:
         """
