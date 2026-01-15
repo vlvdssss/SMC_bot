@@ -593,7 +593,7 @@ class AnalystPanel(tk.Frame):
             
             if active_signals:
                 for i, signal in enumerate(active_signals, 1):
-                    signal_text = f"#{i} {signal.symbol} - {signal.direction.upper()}\n"
+                    signal_text = f"#{i} {signal.symbol} - {signal.type.upper()}\n"
                     signal_text += f"   Entry: {signal.entry_price:.5f}\n"
                     signal_text += f"   SL: {signal.stop_loss:.5f} | TP: {signal.take_profit:.5f}\n"
                     signal_text += f"   Created: {signal.created_at.strftime('%Y-%m-%d %H:%M:%S')}\n"
@@ -611,7 +611,7 @@ class AnalystPanel(tk.Frame):
             if triggered_signals:
                 self.summary_text.insert('end', f"━━━ TRIGGERED SIGNALS (Last {len(triggered_signals)}) ━━━\n\n", 'header')
                 for i, signal in enumerate(triggered_signals, 1):
-                    signal_text = f"✓ {signal.symbol} {signal.direction.upper()}\n"
+                    signal_text = f"✓ {signal.symbol} {signal.type.upper()}\n"
                     signal_text += f"   Entry: {signal.entry_price:.5f}\n"
                     signal_text += f"   Triggered: {signal.triggered_at.strftime('%H:%M:%S') if signal.triggered_at else 'N/A'}\n\n"
                     self.summary_text.insert('end', signal_text, 'triggered')

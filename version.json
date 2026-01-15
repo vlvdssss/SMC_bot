@@ -1,9 +1,10 @@
 {
-    "latest_version": "1.2.0",
-    "download_url": "https://github.com/vlvdssss/SMC_bot/releases/download/v1.2.0/BAZA_TradingBot.exe",
-  "release_date": "2026-01-15",
+    "latest_version": "1.2.1",
+    "download_url": "https://github.com/vlvdssss/SMC_bot/releases/download/v1.2.1/BAZA_TradingBot.exe",
+  "release_date": "2026-01-16",
   "size_mb": 206.0,
   "changelog": [
+    "🐛 Исправлена ошибка отображения AI Market Analyst (signal.direction -> signal.type)",
     "📈 Новая вкладка Instruments - раздельные настройки для EURUSD и XAUUSD",
     "💶 Добавлена полная поддержка EURUSD (анализ + торговля)",
     "🎛️ Раздельный контроль анализа и торговли для каждого инструмента",
@@ -12,8 +13,7 @@
     "💰 Total P&L и Today P&L из единого источника (bot_stats.json)",
     "🌙 Автоматический сброс Today P&L в полночь",
     "🔧 Исправлены ошибки Colors в настройках",
-    "⚡ Автоматическая загрузка пропущенных сделок из MT5",
-    "✨ Улучшенная стабильность и точность статистики"
+    "⚡ Автоматическая загрузка пропущенных сделок из MT5"
   ],
   "minimum_version": "1.0.0",
   "critical_update": false
