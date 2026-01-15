@@ -447,10 +447,7 @@ class SettingsDialog:
                 anchor='w').pack(side='left')
         
         self.gpt_api_key = tk.Entry(api_key_frame, font=('Arial', 10), width=45, show='*')
-        # Load from environment or config
-        import os
-        current_key = os.getenv('OPENAI_API_KEY', '')
-        self.gpt_api_key.insert(0, current_key)
+        # Поле пустое по умолчанию - пользователь должен вставить свой ключ
         self.gpt_api_key.pack(side='left', padx=(0, 10))
         
         # Добавить поддержку вставки Ctrl+V
@@ -858,7 +855,7 @@ class SettingsDialog:
         """Добавить поддержку Ctrl+V для Entry виджета"""
         def paste(event=None):
             try:
-                text = self.dialog.clipboard_get()
+                text = entry_widget.clipboard_get()
                 entry_widget.delete(0, 'end')
                 entry_widget.insert(0, text)
                 return 'break'
