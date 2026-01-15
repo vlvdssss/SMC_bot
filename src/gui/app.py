@@ -587,6 +587,17 @@ class AnalystPanel(tk.Frame):
             tag = 'blocked' if signal_manager.block_type.value != "none" else 'active'
             self.summary_text.insert('end', block_info, tag)
             
+            # Вспомогательная функция для форматирования дат (datetime или str)
+            def format_datetime(dt, fmt='%Y-%m-%d %H:%M:%S'):
+                if dt is None:
+                    return 'N/A'
+                if isinstance(dt, str):
+                    return dt  # Уже строка, возвращаем как есть
+                try:
+                    return dt.strftime(fmt)
+                except:
+                    return str(dt)
+            
             # Активные сигналы
             active_signals = [s for s in signal_manager.active_signals if s.status == "pending"]
             self.summary_text.insert('end', f"━━━ ACTIVE SIGNALS ({len(active_signals)}) ━━━\n\n", 'header')
@@ -596,8 +607,8 @@ class AnalystPanel(tk.Frame):
                     signal_text = f"#{i} {signal.symbol} - {signal.type.upper()}\n"
                     signal_text += f"   Entry: {signal.entry_price:.5f}\n"
                     signal_text += f"   SL: {signal.stop_loss:.5f} | TP: {signal.take_profit:.5f}\n"
-                    signal_text += f"   Created: {signal.created_at.strftime('%Y-%m-%d %H:%M:%S')}\n"
-                    signal_text += f"   Expires: {signal.expires_at.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    signal_text += f"   Created: {format_datetime(signal.created_at)}\n"
+                    signal_text += f"   Expires: {format_datetime(signal.expires_at)}\n"
                     signal_text += f"   Priority: {signal.priority} | Confidence: {signal.confidence}%\n"
                     if signal.reasoning:
                         signal_text += f"   💡 {signal.reasoning[:100]}...\n"
@@ -613,7 +624,7 @@ class AnalystPanel(tk.Frame):
                 for i, signal in enumerate(triggered_signals, 1):
                     signal_text = f"✓ {signal.symbol} {signal.type.upper()}\n"
                     signal_text += f"   Entry: {signal.entry_price:.5f}\n"
-                    signal_text += f"   Triggered: {signal.triggered_at.strftime('%H:%M:%S') if signal.triggered_at else 'N/A'}\n\n"
+                    signal_text += f"   Triggered: {format_datetime(signal.triggered_at, '%H:%M:%S')}\n\n"
                     self.summary_text.insert('end', signal_text, 'triggered')
             
             # История (последние 10)
