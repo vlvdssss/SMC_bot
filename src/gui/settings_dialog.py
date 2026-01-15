@@ -432,6 +432,9 @@ class SettingsDialog:
         self.gpt_api_key.insert(0, current_key)
         self.gpt_api_key.pack(side='left', padx=(0, 10))
         
+        # Добавить поддержку вставки Ctrl+V
+        self._bind_paste(self.gpt_api_key)
+        
         # Show/Hide button
         self.show_api_key = tk.BooleanVar(value=False)
         

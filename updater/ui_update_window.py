@@ -305,9 +305,19 @@ class UpdateWindow:
                 if not os.path.exists(update_exe):
                     raise FileNotFoundError(f"Update file not found: {update_exe}")
                 
-                # Запускаем обновленную версию
-                logger.info(f"Launching update: {update_exe}")
-                subprocess.Popen([update_exe], cwd=exe_dir)
+                # Создаем batch скрипт для замены файлов
+                batch_script = os.path.join(exe_dir, "_update.bat")
+                with open(batch_script, 'w') as f:
+                    f.write('@echo off\n')
+                    f.write('timeout /t 2 /nobreak >nul\n')  # Ждем 2 секунды
+                    f.write(f'del /f /q "{current_exe}"\n')  # Удаляем старый EXE
+                    f.write(f'ren "{update_exe}" "BAZA_TradingBot.exe"\n')  # Переименовываем новый
+                    f.write(f'start "" "{os.path.join(exe_dir, "BAZA_TradingBot.exe")}"\n')  # Запускаем
+                    f.write(f'del /f /q "{batch_script}"\n')  # Удаляем сам скрипт
+                
+                # Запускаем batch скрипт
+                logger.info(f"Launching update script: {batch_script}")
+                subprocess.Popen([batch_script], cwd=exe_dir, creationflags=subprocess.CREATE_NO_WINDOW)
                 
                 # Закрываем текущее приложение
                 logger.info("Closing current application")
