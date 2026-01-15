@@ -160,12 +160,14 @@ class SettingsDialog:
         self.risk_per_trade = tk.Entry(risk_frame, font=('Arial', 10), width=10)
         self.risk_per_trade.insert(0, str(portfolio_config.get('portfolio', {}).get('risk_model', {}).get('max_total_exposure', 1.25)))
         self.risk_per_trade.pack(side='right')
+        self._bind_paste(self.risk_per_trade)
         
         # Max lot size
         lot_frame = self._create_setting_row(content, "Maximum lot size")
         self.max_lot = tk.Entry(lot_frame, font=('Arial', 10), width=10)
         self.max_lot.insert(0, str(risk_config.get('max_lot_size', 1.0)))
         self.max_lot.pack(side='right')
+        self._bind_paste(self.max_lot)
         
         # Stop Loss / Take Profit
         self._create_section(content, "Stop Loss / Take Profit")
@@ -174,11 +176,13 @@ class SettingsDialog:
         self.default_sl = tk.Entry(sl_frame, font=('Arial', 10), width=10)
         self.default_sl.insert(0, str(risk_config.get('default_sl_pips', 50)))
         self.default_sl.pack(side='right')
+        self._bind_paste(self.default_sl)
         
         tp_frame = self._create_setting_row(content, "Default TP (pips)")
         self.default_tp = tk.Entry(tp_frame, font=('Arial', 10), width=10)
         self.default_tp.insert(0, str(risk_config.get('default_tp_pips', 100)))
         self.default_tp.pack(side='right')
+        self._bind_paste(self.default_tp)
         
         # Trailing Stop
         self._create_section(content, "Trailing Stop")
@@ -195,6 +199,7 @@ class SettingsDialog:
         self.trail_distance = tk.Entry(trail_dist_frame, font=('Arial', 10), width=10)
         self.trail_distance.insert(0, str(trailing_config.get('distance_pips', 20)))
         self.trail_distance.pack(side='right')
+        self._bind_paste(self.trail_distance)
         
         # Trading Hours
         self._create_section(content, "Trading Hours (UTC)")
@@ -205,11 +210,13 @@ class SettingsDialog:
         self.trade_start = tk.Entry(start_frame, font=('Arial', 10), width=10)
         self.trade_start.insert(0, hours_config.get('start', '02:00'))
         self.trade_start.pack(side='right')
+        self._bind_paste(self.trade_start)
         
         end_frame = self._create_setting_row(content, "End time")
         self.trade_end = tk.Entry(end_frame, font=('Arial', 10), width=10)
         self.trade_end.insert(0, hours_config.get('end', '22:00'))
         self.trade_end.pack(side='right')
+        self._bind_paste(self.trade_end)
         
         content.update_idletasks()
         canvas.config(scrollregion=canvas.bbox('all'))
@@ -255,6 +262,7 @@ class SettingsDialog:
         current_temp = ai_config.get('market_analyst', {}).get('gpt', {}).get('temperature', 0.3)
         self.temperature.insert(0, str(current_temp))
         self.temperature.pack(side='right')
+        self._bind_paste(self.temperature)
         
         # Analysis Schedule
         self._create_section(content, "Analysis Schedule")
@@ -271,6 +279,7 @@ class SettingsDialog:
         self.analysis_times = tk.Entry(times_frame, font=('Arial', 10), width=30)
         self.analysis_times.insert(0, ', '.join(current_times))
         self.analysis_times.pack(side='right')
+        self._bind_paste(self.analysis_times)
         
         # Filters
         self._create_section(content, "Signal Filters")
@@ -281,11 +290,13 @@ class SettingsDialog:
         self.min_confidence = tk.Entry(conf_frame, font=('Arial', 10), width=10)
         self.min_confidence.insert(0, str(signals_config.get('min_confidence', 70)))
         self.min_confidence.pack(side='right')
+        self._bind_paste(self.min_confidence)
         
         rr_frame = self._create_setting_row(content, "Min Risk/Reward ratio")
         self.min_rr = tk.Entry(rr_frame, font=('Arial', 10), width=10)
         self.min_rr.insert(0, str(signals_config.get('min_rr', 1.5)))
         self.min_rr.pack(side='right')
+        self._bind_paste(self.min_rr)
         
         # Time restrictions
         self._create_section(content, "Time Restrictions")
@@ -332,6 +343,7 @@ class SettingsDialog:
         current_tfs = indicators_config.get('timeframes', ['M15', 'M30', 'H1', 'H4'])
         self.timeframes.insert(0, ', '.join(current_tfs))
         self.timeframes.pack(side='right')
+        self._bind_paste(self.timeframes)
         
         # Indicators
         self._create_section(content, "Indicators")
@@ -341,16 +353,19 @@ class SettingsDialog:
         current_emas = indicators_config.get('ema_periods', [20, 50, 200])
         self.ema_periods.insert(0, ', '.join(map(str, current_emas)))
         self.ema_periods.pack(side='right')
+        self._bind_paste(self.ema_periods)
         
         rsi_frame = self._create_setting_row(content, "RSI period")
         self.rsi_period = tk.Entry(rsi_frame, font=('Arial', 10), width=10)
         self.rsi_period.insert(0, str(indicators_config.get('rsi_period', 14)))
         self.rsi_period.pack(side='right')
+        self._bind_paste(self.rsi_period)
         
         atr_frame = self._create_setting_row(content, "ATR period")
         self.atr_period = tk.Entry(atr_frame, font=('Arial', 10), width=10)
         self.atr_period.insert(0, str(indicators_config.get('atr_period', 14)))
         self.atr_period.pack(side='right')
+        self._bind_paste(self.atr_period)
         
         # SMC Settings
         self._create_section(content, "Smart Money Concepts")
@@ -519,12 +534,14 @@ class SettingsDialog:
         self.telegram_token = tk.Entry(token_frame, font=('Arial', 10), width=35, show='*')
         self.telegram_token.insert(0, telegram_settings.get('bot_token', ''))
         self.telegram_token.pack(side='right')
+        self._bind_paste(self.telegram_token)
         
         # Chat ID
         chat_frame = self._create_setting_row(content, "Chat ID:")
         self.telegram_chat_id = tk.Entry(chat_frame, font=('Arial', 10), width=35)
         self.telegram_chat_id.insert(0, telegram_settings.get('chat_id', ''))
         self.telegram_chat_id.pack(side='right')
+        self._bind_paste(self.telegram_chat_id)
         
         # Enable Bot with buttons
         enable_bot_frame = self._create_setting_row(content, "Enable interactive bot")
