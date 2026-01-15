@@ -446,12 +446,33 @@ class SettingsDialog:
                 width=15,
                 anchor='w').pack(side='left')
         
-        self.gpt_api_key = tk.Entry(api_key_frame, font=('Arial', 10), width=45, show='*')
+        self.gpt_api_key = tk.Entry(api_key_frame, font=('Arial', 10), width=40, show='*')
         # Поле пустое по умолчанию - пользователь должен вставить свой ключ
-        self.gpt_api_key.pack(side='left', padx=(0, 10))
+        self.gpt_api_key.pack(side='left', padx=(0, 5))
         
         # Добавить поддержку вставки Ctrl+V
         self._bind_paste(self.gpt_api_key)
+        
+        # Paste button
+        def paste_api_key():
+            try:
+                text = self.dialog.clipboard_get()
+                if text:
+                    self.gpt_api_key.delete(0, tk.END)
+                    self.gpt_api_key.insert(0, text)
+                    logger.info(f"[SETTINGS] Pasted API key via Paste button: {len(text)} chars")
+            except Exception as e:
+                logger.error(f"[SETTINGS] Paste button failed: {e}")
+                messagebox.showerror("Paste Error", f"Failed to paste from clipboard: {e}")
+        
+        paste_btn = tk.Button(api_key_frame, text="📋 Paste",
+                             font=('Arial', 9),
+                             bg=Colors.SUCCESS,
+                             fg='white',
+                             relief='flat',
+                             padx=10, pady=3,
+                             command=paste_api_key)
+        paste_btn.pack(side='left', padx=(0, 5))
         
         # Show/Hide button
         self.show_api_key = tk.BooleanVar(value=False)
