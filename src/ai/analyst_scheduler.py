@@ -186,11 +186,11 @@ class AnalystScheduler:
             if time_since_last > 3600:  # 1 час
                 logger.info(f"[AI-Scheduler] Resetting last_run (>1h ago: {int(time_since_last)}s)")
                 self.last_run = None
-            elif time_since_last < 300:  # 5 minutes cooldown
+            elif time_since_last <= 290:  # 4.8 минут cooldown (чуть меньше 5 для надёжности)
                 # Более детальное логирование для диагностики
                 logger.debug(
                     f"[AI-Scheduler] Skipping {schedule_time.strftime('%H:%M')} - "
-                    f"last run {int(time_since_last)}s ago (< 300s cooldown)"
+                    f"last run {int(time_since_last)}s ago (< 290s cooldown)"
                 )
                 return False
         
