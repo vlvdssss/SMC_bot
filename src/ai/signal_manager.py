@@ -627,10 +627,11 @@ class AISignalManager:
         """Remove expired, time_expired, price_invalidated, and triggered signals."""
         original_count = len(self.active_signals)
         
-        # Удаляем все сигналы кроме pending и активных
+        # Удаляем истекшие сигналы (проверяем дату + статус)
+        now = datetime.now()
         self.active_signals = [
             s for s in self.active_signals
-            if s.status == "pending"  # Оставляем только ожидающие сигналы
+            if s.status == "pending" and not s.is_expired()  # Только активные не истекшие
         ]
         
         removed = original_count - len(self.active_signals)
@@ -792,6 +793,9 @@ class AISignalManager:
             
             # Load history
             self.signal_history = state.get("signal_history", [])
+            
+            # Очистка истекших сигналов сразу после загрузки
+            self._cleanup_expired_signals()
             
             # Only log if (verbose AND first load) OR state changed
             new_signal_count = len(self.active_signals)
