@@ -145,18 +145,26 @@ class AnalystScheduler:
                 for schedule_time in self.schedule_times:
                     if self._should_run(current_time, schedule_time):
                         logger.info(f"[AI-Scheduler] ✓ Triggered at {current_time.strftime('%H:%M')} (scheduled: {schedule_time.strftime('%H:%M')})")
+                        
                         # Анализируем инструменты если включены
+                        analysis_ran = False
                         if self._is_instrument_analysis_enabled("XAUUSD"):
                             self._run_analysis("XAUUSD")
+                            analysis_ran = True
                         else:
                             logger.info("[AI-Scheduler] XAUUSD analysis disabled in config")
                         
                         if self._is_instrument_analysis_enabled("EURUSD"):
                             self._run_analysis("EURUSD")
+                            analysis_ran = True
                         else:
                             logger.info("[AI-Scheduler] EURUSD analysis disabled in config")
                         
-                        self.last_run = now
+                        # Обновляем last_run ТОЛЬКО если анализ действительно запустился
+                        if analysis_ran:
+                            self.last_run = now
+                            logger.info(f"[AI-Scheduler] last_run updated: {now.strftime('%H:%M:%S')}")
+                        
                         break  # Only run once per minute
                 
                 # Sleep 60 seconds
@@ -172,11 +180,18 @@ class AnalystScheduler:
         hour_match = current_time.hour == schedule_time.hour
         minute_match = abs(current_time.minute - schedule_time.minute) <= 1
         
-        # Don't run if already ran in last 5 minutes
+        # Сброс last_run если прошло более 1 часа (защита от застревания)
         if self.last_run:
             time_since_last = (datetime.now() - self.last_run).total_seconds()
-            if time_since_last < 300:  # 5 minutes
-                logger.debug(f"[AI-Scheduler] Skipping {schedule_time.strftime('%H:%M')} - last run {int(time_since_last)}s ago")
+            if time_since_last > 3600:  # 1 час
+                logger.info(f"[AI-Scheduler] Resetting last_run (>1h ago: {int(time_since_last)}s)")
+                self.last_run = None
+            elif time_since_last < 300:  # 5 minutes cooldown
+                # Более детальное логирование для диагностики
+                logger.debug(
+                    f"[AI-Scheduler] Skipping {schedule_time.strftime('%H:%M')} - "
+                    f"last run {int(time_since_last)}s ago (< 300s cooldown)"
+                )
                 return False
         
         if hour_match and minute_match:
