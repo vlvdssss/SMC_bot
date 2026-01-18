@@ -528,6 +528,7 @@ class AISignalManager:
     ) -> List[AISignal]:
         """Check if any signals should trigger with TTL and price validation."""
         triggered_signals = []
+        expired_signals = []  # Сигналы для удаления
         
         # Note: State is loaded at init and when signals are added.
         # No need to reload every check - reduces log spam.
@@ -540,6 +541,7 @@ class AISignalManager:
                 # Check standard expiration (24h)
                 if signal.is_expired():
                     signal.status = "expired"
+                    expired_signals.append(signal)
                     logger.info(f"[AI-Signal] Signal {signal.id} expired (24h TTL)")
                     continue
                 
@@ -549,6 +551,7 @@ class AISignalManager:
                 age_minutes = (current_time - created_time).total_seconds() / 60
                 if age_minutes > validity_minutes:
                     signal.status = "time_expired"
+                    expired_signals.append(signal)
                     logger.info(f"[AI-Signal] Signal {signal.id} expired ({validity_minutes}min TTL, age: {age_minutes:.1f}min)")
                     continue
                 
@@ -557,6 +560,7 @@ class AISignalManager:
                 price_diff = abs(current_price - signal.entry_price) * pip_multiplier
                 if price_diff > 30:  # 30 pips
                     signal.status = "price_invalidated"
+                    expired_signals.append(signal)
                     logger.info(f"[AI-Signal] Signal {signal.id} invalidated (price moved {price_diff:.1f} pips from entry)")
                     continue
                 
@@ -565,10 +569,12 @@ class AISignalManager:
                 # For SELL: if current < entry - 20 pips (price already ran down)
                 if signal.type == "BUY" and (current_price - signal.entry_price) * pip_multiplier > 20:
                     signal.status = "price_invalidated"
+                    expired_signals.append(signal)
                     logger.info(f"[AI-Signal] BUY signal {signal.id} invalidated (price already ran up {price_diff:.1f} pips above entry)")
                     continue
                 elif signal.type == "SELL" and (signal.entry_price - current_price) * pip_multiplier > 20:
                     signal.status = "price_invalidated"
+                    expired_signals.append(signal)
                     logger.info(f"[AI-Signal] SELL signal {signal.id} invalidated (price already ran down {price_diff:.1f} pips below entry)")
                     continue
                 
@@ -592,12 +598,29 @@ class AISignalManager:
                     })
                     
                     logger.info(f"[AI-Signal] Triggered: {signal.id} at price {current_price}")
-                    
-                    # КРИТИЧНО: Немедленно удаляем triggered сигнал из active_signals
-                    # Это предотвращает повторную проверку этого же старого сигнала
-                    self.active_signals.remove(signal)
             
-            if triggered_signals:
+            # Удаляем все triggered сигналы (удаляем ПОСЛЕ цикла, чтобы не сломать итератор)
+            for signal in triggered_signals:
+                try:
+                    self.active_signals.remove(signal)
+                except ValueError:
+                    pass  # Сигнал уже удалён
+            
+            # Удаляем expired/invalidated сигналы
+            for signal in expired_signals:
+                try:
+                    self.active_signals.remove(signal)
+                    # Добавляем в историю
+                    self.signal_history.append({
+                        "action": signal.status,
+                        "signal_id": signal.id,
+                        "timestamp": current_time.isoformat(),
+                        "reason": f"Status: {signal.status}"
+                    })
+                except ValueError:
+                    pass  # Сигнал уже удалён
+            
+            if triggered_signals or expired_signals:
                 self._save_state()
         
         return triggered_signals
@@ -629,9 +652,14 @@ class AISignalManager:
         
         # Удаляем истекшие сигналы (проверяем дату + статус)
         now = datetime.now()
+        
+        # Список статусов, которые нужно удалить
+        expired_statuses = {"expired", "time_expired", "price_invalidated", "triggered"}
+        
+        # Оставляем только pending сигналы, которые не истекли
         self.active_signals = [
             s for s in self.active_signals
-            if s.status == "pending" and not s.is_expired()  # Только активные не истекшие
+            if s.status == "pending" and not s.is_expired()
         ]
         
         removed = original_count - len(self.active_signals)
@@ -732,6 +760,12 @@ class AISignalManager:
     def _save_state(self):
         """Save state to file."""
         try:
+            # Сохраняем только pending сигналы, которые не истекли
+            active_pending_signals = [
+                s.to_dict() for s in self.active_signals 
+                if s.status == "pending" and not s.is_expired()
+            ]
+            
             state = {
                 "block_type": self.block_type.value,
                 "block_reason": self.block_reason,
@@ -739,7 +773,7 @@ class AISignalManager:
                 "risk_multiplier": self.risk_multiplier,
                 "latest_analysis_time": self.latest_analysis_time,
                 "latest_analysis_version": self.latest_analysis_version,
-                "active_signals": [s.to_dict() for s in self.active_signals],
+                "active_signals": active_pending_signals,
                 "signal_history": self.signal_history[-100:],  # Last 100
                 "updated_at": datetime.now().isoformat()
             }
@@ -783,11 +817,30 @@ class AISignalManager:
             
             # Load signals
             self.active_signals = []  # Clear and reload
+            validity_minutes = self.config.get('market_analyst', {}).get('signals', {}).get('validity_minutes', 60)
+            now = datetime.now()
+            
             for signal_data in state.get("active_signals", []):
                 try:
                     signal = AISignal(**signal_data)
-                    if not signal.is_expired():
-                        self.active_signals.append(signal)
+                    
+                    # Проверяем статус
+                    if signal.status != "pending":
+                        continue
+                    
+                    # Проверяем 24h expiration
+                    if signal.is_expired():
+                        continue
+                    
+                    # Проверяем TTL (validity_minutes)
+                    created_time = datetime.fromisoformat(signal.created_at)
+                    age_minutes = (now - created_time).total_seconds() / 60
+                    if age_minutes > validity_minutes:
+                        logger.info(f"[AI-Signal] Signal {signal.id} skipped on load (age: {age_minutes:.1f}min > {validity_minutes}min)")
+                        continue
+                    
+                    # Сигнал валиден - загружаем
+                    self.active_signals.append(signal)
                 except Exception as e:
                     logger.warning(f"[AI-Signal] Failed to load signal: {e}")
             
@@ -796,6 +849,13 @@ class AISignalManager:
             
             # Очистка истекших сигналов сразу после загрузки
             self._cleanup_expired_signals()
+            
+            # Если какие-то сигналы были отфильтрованы при загрузке, пересохраняем файл
+            loaded_count = len(state.get("active_signals", []))
+            current_count = len(self.active_signals)
+            if loaded_count != current_count:
+                logger.info(f"[AI-Signal] Filtered out {loaded_count - current_count} expired signals from file")
+                self._save_state()
             
             # Only log if (verbose AND first load) OR state changed
             new_signal_count = len(self.active_signals)
