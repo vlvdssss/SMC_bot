@@ -34,6 +34,14 @@ except ImportError:
     MONITORING_AVAILABLE = False
     logger.warning("Monitoring modules not available")
 
+# Cleanup Service
+try:
+    from src.core.cleanup_service import CleanupService
+    CLEANUP_AVAILABLE = True
+except ImportError:
+    CLEANUP_AVAILABLE = False
+    logger.warning("Cleanup service not available")
+
 
 class BotStatus(Enum):
     STOPPED = "stopped"
@@ -98,6 +106,11 @@ class BotManager:
         self.alert_manager = None
         if MONITORING_AVAILABLE:
             self._init_monitoring()
+        
+        # Система автоочистки
+        self.cleanup_service = None
+        if CLEANUP_AVAILABLE:
+            self._init_cleanup()
         
         # Загружаем историю
         self.load_stats()
@@ -182,6 +195,17 @@ class BotManager:
             
         except Exception as e:
             logger.error(f"Failed to initialize monitoring: {e}")
+    
+    def _init_cleanup(self):
+        """Инициализация системы автоочистки."""
+        try:
+            # Cleanup Service загрузит конфиг сам из config/cleanup.yaml
+            self.cleanup_service = CleanupService()
+            self.cleanup_service.start()  # Запускаем фоновый поток
+            logger.info("🧹 Cleanup service initialized and started")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize cleanup service: {e}")
     
     def reload_config(self):
         """
@@ -351,6 +375,11 @@ class BotManager:
         
         if self.bot_thread:
             self.bot_thread.join(timeout=5)
+        
+        # Останавливаем cleanup service
+        if self.cleanup_service:
+            self.cleanup_service.stop()
+            logger.info("🧹 Cleanup service stopped")
         
         self.log("Bot stopped")
         
