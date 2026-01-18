@@ -840,12 +840,19 @@ class AnalystPanel(tk.Frame):
             if parts:
                 symbol = parts[0]
         
-        # Time
+        # Time with date
         time_display = "N/A"
         if timestamp_str:
             try:
                 dt = datetime.fromisoformat(timestamp_str)
-                time_display = dt.strftime("%H:%M:%S")
+                # Умное отображение: если сегодня - только время, иначе дата + время
+                now = datetime.now()
+                if dt.date() == now.date():
+                    # Сегодня - показываем только время
+                    time_display = dt.strftime("%H:%M:%S")
+                else:
+                    # Вчера или старше - показываем дату + время
+                    time_display = dt.strftime("%d.%m %H:%M")
             except:
                 time_display = timestamp_str[:19] if len(timestamp_str) >= 19 else timestamp_str
         
