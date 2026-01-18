@@ -461,12 +461,17 @@ class AnalystPanel(tk.Frame):
         self.notebook.add(self.summary_tab, text='📊 Analysis')
     
     def _create_summary_tab(self):
-        """Создать вкладку AI Analysis & Signals"""
+        """Создать вкладку AI Analysis & Signals с двухколоночным layout"""
         frame = tk.Frame(self.notebook, bg=Colors.BG_PANEL)
         
         # Верхняя панель с кнопкой обновления
         top_panel = tk.Frame(frame, bg=Colors.BG_PANEL)
-        top_panel.pack(fill='x', padx=10, pady=5)
+        top_panel.pack(fill='x', padx=15, pady=10)
+        
+        tk.Label(top_panel, text="AI ANALYSIS & SIGNALS",
+                font=('Arial', 14, 'bold'),
+                bg=Colors.BG_PANEL,
+                fg=Colors.ACCENT).pack(side='left')
         
         refresh_btn = tk.Button(top_panel, text="🔄 Refresh", 
                                 font=('Arial', 10),
@@ -479,36 +484,48 @@ class AnalystPanel(tk.Frame):
                                 command=self.refresh_analysis)
         refresh_btn.pack(side='right')
         
-        # Скроллинг
-        canvas = tk.Canvas(frame, bg=Colors.BG_PANEL, highlightthickness=0)
-        scrollbar = tk.Scrollbar(frame, orient="vertical", command=canvas.yview)
-        scrollable = tk.Frame(canvas, bg=Colors.BG_PANEL)
+        # ===== ДВУХКОЛОНОЧНЫЙ LAYOUT =====
+        content_frame = tk.Frame(frame, bg=Colors.BG_PANEL)
+        content_frame.pack(fill='both', expand=True, padx=15, pady=(0, 15))
         
-        scrollable.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=scrollable, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        # ЛЕВАЯ КОЛОНКА (60%) - Сигналы и История
+        left_column = tk.Frame(content_frame, bg=Colors.BG_PANEL)
+        left_column.pack(side='left', fill='both', expand=True, padx=(0, 10))
         
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        # Скроллинг для левой колонки
+        left_canvas = tk.Canvas(left_column, bg=Colors.BG_PANEL, highlightthickness=0)
+        left_scrollbar = tk.Scrollbar(left_column, orient="vertical", command=left_canvas.yview)
+        left_scrollable = tk.Frame(left_canvas, bg=Colors.BG_PANEL)
         
-        # Контент
-        self.summary_text = tk.Text(scrollable, 
-                                    font=('Consolas', 10),
-                                    bg=Colors.BG_PANEL,
-                                    fg=Colors.TEXT_PRIMARY,
-                                    wrap='word',
-                                    relief='flat',
-                                    state='disabled',
-                                    padx=15, pady=15)
-        self.summary_text.pack(fill='both', expand=True)
+        left_scrollable.bind("<Configure>", lambda e: left_canvas.configure(scrollregion=left_canvas.bbox("all")))
+        left_canvas.create_window((0, 0), window=left_scrollable, anchor="nw")
+        left_canvas.configure(yscrollcommand=left_scrollbar.set)
         
-        # Цветовые теги
-        self.summary_text.tag_config('header', foreground=Colors.ACCENT, font=('Consolas', 12, 'bold'))
-        self.summary_text.tag_config('active', foreground=Colors.SUCCESS, font=('Consolas', 10, 'bold'))
-        self.summary_text.tag_config('expired', foreground=Colors.TEXT_MUTED)
-        self.summary_text.tag_config('triggered', foreground=Colors.BUY, font=('Consolas', 10, 'bold'))
-        self.summary_text.tag_config('blocked', foreground=Colors.ERROR, font=('Consolas', 10, 'bold'))
-        self.summary_text.tag_config('timestamp', foreground=Colors.TEXT_SECONDARY)
+        left_canvas.pack(side="left", fill="both", expand=True)
+        left_scrollbar.pack(side="right", fill="y")
+        
+        # Сохраняем для обновления
+        self.summary_left_scrollable = left_scrollable
+        
+        # ПРАВАЯ КОЛОНКА (40%) - Информационная панель
+        right_column = tk.Frame(content_frame, bg=Colors.BG_PANEL, width=400)
+        right_column.pack(side='right', fill='both', padx=(10, 0))
+        right_column.pack_propagate(False)
+        
+        # Скроллинг для правой колонки
+        right_canvas = tk.Canvas(right_column, bg=Colors.BG_PANEL, highlightthickness=0)
+        right_scrollbar = tk.Scrollbar(right_column, orient="vertical", command=right_canvas.yview)
+        right_scrollable = tk.Frame(right_canvas, bg=Colors.BG_PANEL)
+        
+        right_scrollable.bind("<Configure>", lambda e: right_canvas.configure(scrollregion=right_canvas.bbox("all")))
+        right_canvas.create_window((0, 0), window=right_scrollable, anchor="nw")
+        right_canvas.configure(yscrollcommand=right_scrollbar.set)
+        
+        right_canvas.pack(side="left", fill="both", expand=True)
+        right_scrollbar.pack(side="right", fill="y")
+        
+        # Сохраняем для обновления
+        self.summary_right_scrollable = right_scrollable
         
         return frame
     
@@ -567,154 +584,495 @@ class AnalystPanel(tk.Frame):
         self.logs_text.config(state='disabled')
     
     def refresh_analysis(self):
-        """Обновить AI Analysis & Signals"""
+        """Обновить AI Analysis & Signals с новым UI"""
         if not AI_ANALYSIS_AVAILABLE:
-            self.summary_text.config(state='normal')
-            self.summary_text.delete('1.0', 'end')
-            self.summary_text.insert('1.0', "⚠️ AI Analysis not available\n\nInstall required packages:\npip install openai pyyaml")
-            self.summary_text.config(state='disabled')
+            # Показать ошибку в левой колонке
+            for widget in self.summary_left_scrollable.winfo_children():
+                widget.destroy()
+            
+            error_label = tk.Label(self.summary_left_scrollable,
+                                  text="⚠️ AI Analysis not available\n\nInstall required packages:\npip install openai pyyaml",
+                                  font=('Arial', 11),
+                                  bg=Colors.BG_PANEL,
+                                  fg=Colors.ERROR,
+                                  justify='center')
+            error_label.pack(pady=50)
             return
         
         try:
-            # Получить данные из signal_manager
+            # Получить данные
             signal_manager = AISignalManager()
             
-            self.summary_text.config(state='normal')
-            self.summary_text.delete('1.0', 'end')
+            # Очистить обе колонки
+            for widget in self.summary_left_scrollable.winfo_children():
+                widget.destroy()
+            for widget in self.summary_right_scrollable.winfo_children():
+                widget.destroy()
             
-            # Заголовок
-            self.summary_text.insert('end', "═══════════════════════════════════════════\n", 'header')
-            self.summary_text.insert('end', "        AI ANALYSIS & SIGNALS STATUS        \n", 'header')
-            self.summary_text.insert('end', "═══════════════════════════════════════════\n\n", 'header')
+            # ===== ЛЕВАЯ КОЛОНКА: ACTIVE SIGNALS =====
+            self._create_active_signals_section(signal_manager)
             
-            # Статус блокировки
-            block_info = f"🔒 Trading Block: {signal_manager.block_type.value.upper()}\n"
-            if signal_manager.block_type.value != "none":
-                block_info += f"   Reason: {signal_manager.block_reason or 'N/A'}\n"
-                if signal_manager.block_until:
-                    block_info += f"   Until: {signal_manager.block_until}\n"
-            block_info += f"📊 Risk Multiplier: {signal_manager.risk_multiplier}x\n\n"
+            # ===== ЛЕВАЯ КОЛОНКА: HISTORY =====
+            self._create_history_section(signal_manager)
             
-            tag = 'blocked' if signal_manager.block_type.value != "none" else 'active'
-            self.summary_text.insert('end', block_info, tag)
-            
-            # Вспомогательная функция для форматирования дат (datetime или str)
-            def format_datetime(dt, fmt='%Y-%m-%d %H:%M:%S'):
-                if dt is None:
-                    return 'N/A'
-                if isinstance(dt, str):
-                    return dt  # Уже строка, возвращаем как есть
-                try:
-                    return dt.strftime(fmt)
-                except:
-                    return str(dt)
-            
-            # Активные сигналы
-            active_signals = [s for s in signal_manager.active_signals if s.status == "pending"]
-            self.summary_text.insert('end', f"━━━ ACTIVE SIGNALS ({len(active_signals)}) ━━━\n\n", 'header')
-            
-            if active_signals:
-                for i, signal in enumerate(active_signals, 1):
-                    signal_text = f"#{i} {signal.symbol} - {signal.type.upper()}\n"
-                    signal_text += f"   Entry: {signal.entry_price:.5f}\n"
-                    signal_text += f"   SL: {signal.stop_loss:.5f} | TP: {signal.take_profit:.5f}\n"
-                    signal_text += f"   Created: {format_datetime(signal.created_at)}\n"
-                    signal_text += f"   Expires: {format_datetime(signal.expires_at)}\n"
-                    signal_text += f"   Priority: {signal.priority} | Confidence: {signal.confidence}%\n"
-                    if signal.reasoning:
-                        signal_text += f"   💡 {signal.reasoning[:100]}...\n"
-                    signal_text += "\n"
-                    self.summary_text.insert('end', signal_text, 'active')
-            else:
-                self.summary_text.insert('end', "   No active signals\n\n", 'timestamp')
-            
-            # Триггернутые сигналы (последние 5)
-            triggered_signals = [s for s in signal_manager.active_signals if s.status == "triggered"][:5]
-            if triggered_signals:
-                self.summary_text.insert('end', f"━━━ TRIGGERED SIGNALS (Last {len(triggered_signals)}) ━━━\n\n", 'header')
-                for i, signal in enumerate(triggered_signals, 1):
-                    signal_text = f"✓ {signal.symbol} {signal.type.upper()}\n"
-                    signal_text += f"   Entry: {signal.entry_price:.5f}\n"
-                    signal_text += f"   Triggered: {format_datetime(signal.triggered_at, '%H:%M:%S')}\n\n"
-                    self.summary_text.insert('end', signal_text, 'triggered')
-            
-            # История (последние 10)
-            if signal_manager.signal_history:
-                recent_history = signal_manager.signal_history[-10:]
-                self.summary_text.insert('end', f"━━━ HISTORY (Last {len(recent_history)}) ━━━\n\n", 'header')
-                for entry in reversed(recent_history):
-                    # Parse signal_id to get symbol and time
-                    signal_id = entry.get('signal_id', '')
-                    action = entry.get('action', 'unknown')
-                    timestamp_str = entry.get('timestamp', '')
-                    
-                    # Extract symbol from signal_id (format: SYMBOL_YYYYMMDD_HHMMSS)
-                    symbol = "Unknown"
-                    if signal_id:
-                        parts = signal_id.split('_')
-                        if parts:
-                            symbol = parts[0]
-                    
-                    # Format timestamp nicely (HH:MM:SS)
-                    time_display = "N/A"
-                    if timestamp_str:
-                        try:
-                            dt = datetime.fromisoformat(timestamp_str)
-                            time_display = dt.strftime("%H:%M:%S")
-                        except:
-                            time_display = timestamp_str[:19] if len(timestamp_str) >= 19 else timestamp_str
-                    
-                    # Create action emoji and text
-                    action_emoji = {
-                        "created": "✨",
-                        "triggered": "🎯",
-                        "time_expired": "⏰",
-                        "price_invalidated": "❌",
-                        "cancelled": "🚫"
-                    }.get(action, "•")
-                    
-                    action_text = {
-                        "created": "Created",
-                        "triggered": "Triggered",
-                        "time_expired": "Expired (time)",
-                        "price_invalidated": "Expired (price)",
-                        "cancelled": "Cancelled"
-                    }.get(action, action)
-                    
-                    # Build details line
-                    details = []
-                    
-                    # Add price for triggered signals
-                    if action == "triggered" and 'price' in entry:
-                        details.append(f"Price: {entry['price']:.2f}")
-                    
-                    # Add reason for expired signals
-                    if 'reason' in entry:
-                        details.append(entry['reason'])
-                    
-                    # Format output
-                    hist_text = f"{action_emoji} {time_display} - {symbol} {action_text}\n"
-                    if details:
-                        hist_text += f"  {' | '.join(details)}\n"
-                    hist_text += "\n"
-                    
-                    self.summary_text.insert('end', hist_text, 'timestamp')
-            
-            # Последний анализ
-            if signal_manager.latest_analysis_time:
-                self.summary_text.insert('end', "━━━ LAST ANALYSIS ━━━\n\n", 'header')
-                analysis_text = f"🕐 Time: {signal_manager.latest_analysis_time}\n"
-                if signal_manager.latest_analysis_version:
-                    analysis_text += f"📌 Version: {signal_manager.latest_analysis_version}\n"
-                self.summary_text.insert('end', analysis_text, 'timestamp')
-            
-            self.summary_text.config(state='disabled')
+            # ===== ПРАВАЯ КОЛОНКА: INFO PANELS =====
+            self._create_info_panels(signal_manager)
             
         except Exception as e:
-            self.summary_text.config(state='normal')
-            self.summary_text.delete('1.0', 'end')
-            self.summary_text.insert('1.0', f"❌ Error loading analysis:\n{str(e)}")
-            self.summary_text.config(state='disabled')
+            for widget in self.summary_left_scrollable.winfo_children():
+                widget.destroy()
+            
+            error_label = tk.Label(self.summary_left_scrollable,
+                                  text=f"❌ Error loading analysis:\n{str(e)}",
+                                  font=('Arial', 11),
+                                  bg=Colors.BG_PANEL,
+                                  fg=Colors.ERROR,
+                                  justify='left')
+            error_label.pack(pady=20, padx=15)
+    
+    def _create_active_signals_section(self, signal_manager):
+        """Создать секцию активных сигналов"""
+        # Заголовок секции
+        header_frame = tk.Frame(self.summary_left_scrollable, bg=Colors.BG_PANEL)
+        header_frame.pack(fill='x', pady=(0, 15))
+        
+        active_signals = [s for s in signal_manager.active_signals if s.status == "pending"]
+        
+        tk.Label(header_frame,
+                text=f"ACTIVE SIGNALS ({len(active_signals)})",
+                font=('Arial', 13, 'bold'),
+                bg=Colors.BG_PANEL,
+                fg=Colors.ACCENT).pack(side='left')
+        
+        # Сигналы как карточки
+        if active_signals:
+            for signal in active_signals:
+                self._create_signal_card(self.summary_left_scrollable, signal)
+        else:
+            # Placeholder если нет сигналов
+            placeholder = tk.Frame(self.summary_left_scrollable, bg=Colors.BG_CARD,
+                                  highlightbackground=Colors.BORDER, highlightthickness=1)
+            placeholder.pack(fill='x', pady=(0, 15))
+            
+            tk.Label(placeholder,
+                    text="No active signals",
+                    font=('Arial', 11),
+                    bg=Colors.BG_CARD,
+                    fg=Colors.TEXT_MUTED).pack(pady=30)
+    
+    def _create_signal_card(self, parent, signal):
+        """Создать карточку сигнала"""
+        # Карточка с темным фоном и рамкой
+        card = tk.Frame(parent, bg=Colors.BG_CARD,
+                       highlightbackground=Colors.BORDER, highlightthickness=1)
+        card.pack(fill='x', pady=(0, 12))
+        
+        # Внутренние отступы
+        card_content = tk.Frame(card, bg=Colors.BG_CARD)
+        card_content.pack(fill='both', padx=15, pady=12)
+        
+        # Верхняя строка: BUY/SELL + Symbol
+        top_row = tk.Frame(card_content, bg=Colors.BG_CARD)
+        top_row.pack(fill='x', pady=(0, 10))
+        
+        # BUY/SELL badge
+        type_color = Colors.BUY if signal.type.upper() == "BUY" else Colors.SELL
+        type_label = tk.Label(top_row,
+                             text=f" {signal.type.upper()} ",
+                             font=('Arial', 12, 'bold'),
+                             bg=type_color,
+                             fg='white',
+                             padx=10, pady=2)
+        type_label.pack(side='left', padx=(0, 10))
+        
+        # Symbol
+        tk.Label(top_row,
+                text=signal.symbol,
+                font=('Arial', 12, 'bold'),
+                bg=Colors.BG_CARD,
+                fg=Colors.TEXT_PRIMARY).pack(side='left')
+        
+        # Priority badge (справа)
+        priority_colors = {
+            0: (Colors.TEXT_MUTED, "LOW"),
+            1: (Colors.WARNING, "MID"),
+            2: (Colors.ERROR, "HIGH")
+        }
+        priority_color, priority_text = priority_colors.get(signal.priority, (Colors.TEXT_MUTED, "LOW"))
+        
+        priority_label = tk.Label(top_row,
+                                 text=f" {priority_text} ",
+                                 font=('Arial', 9, 'bold'),
+                                 bg=Colors.BG_PANEL,
+                                 fg=priority_color,
+                                 padx=8, pady=2)
+        priority_label.pack(side='right')
+        
+        # Разделитель
+        tk.Frame(card_content, bg=Colors.BORDER, height=1).pack(fill='x', pady=(0, 10))
+        
+        # Prices Grid
+        prices_frame = tk.Frame(card_content, bg=Colors.BG_CARD)
+        prices_frame.pack(fill='x', pady=(0, 10))
+        
+        # Entry
+        entry_frame = tk.Frame(prices_frame, bg=Colors.BG_CARD)
+        entry_frame.pack(side='left', expand=True, fill='x')
+        tk.Label(entry_frame,
+                text="ENTRY",
+                font=('Arial', 8),
+                bg=Colors.BG_CARD,
+                fg=Colors.TEXT_MUTED).pack(anchor='w')
+        tk.Label(entry_frame,
+                text=f"{signal.entry_price:.5f}",
+                font=('Consolas', 11, 'bold'),
+                bg=Colors.BG_CARD,
+                fg=Colors.TEXT_PRIMARY).pack(anchor='w')
+        
+        # SL
+        sl_frame = tk.Frame(prices_frame, bg=Colors.BG_CARD)
+        sl_frame.pack(side='left', expand=True, fill='x')
+        tk.Label(sl_frame,
+                text="STOP LOSS",
+                font=('Arial', 8),
+                bg=Colors.BG_CARD,
+                fg=Colors.TEXT_MUTED).pack(anchor='w')
+        tk.Label(sl_frame,
+                text=f"{signal.stop_loss:.5f}",
+                font=('Consolas', 11, 'bold'),
+                bg=Colors.BG_CARD,
+                fg=Colors.ERROR).pack(anchor='w')
+        
+        # TP
+        tp_frame = tk.Frame(prices_frame, bg=Colors.BG_CARD)
+        tp_frame.pack(side='left', expand=True, fill='x')
+        tk.Label(tp_frame,
+                text="TAKE PROFIT",
+                font=('Arial', 8),
+                bg=Colors.BG_CARD,
+                fg=Colors.TEXT_MUTED).pack(anchor='w')
+        tk.Label(tp_frame,
+                text=f"{signal.take_profit:.5f}",
+                font=('Consolas', 11, 'bold'),
+                bg=Colors.BG_CARD,
+                fg=Colors.SUCCESS).pack(anchor='w')
+        
+        # Confidence Progress Bar
+        confidence_frame = tk.Frame(card_content, bg=Colors.BG_CARD)
+        confidence_frame.pack(fill='x', pady=(0, 8))
+        
+        tk.Label(confidence_frame,
+                text=f"Confidence: {signal.confidence}%",
+                font=('Arial', 9),
+                bg=Colors.BG_CARD,
+                fg=Colors.TEXT_SECONDARY).pack(anchor='w', pady=(0, 3))
+        
+        # Progress bar canvas
+        progress_canvas = tk.Canvas(confidence_frame, height=6, bg=Colors.BG_PANEL,
+                                   highlightthickness=0)
+        progress_canvas.pack(fill='x')
+        
+        # Background bar
+        progress_canvas.create_rectangle(0, 0, 1000, 6, fill=Colors.BG_PANEL, outline='')
+        
+        # Progress bar (зеленый градиент в зависимости от confidence)
+        progress_width = int((signal.confidence / 100) * 1000)
+        if signal.confidence >= 80:
+            progress_color = Colors.SUCCESS
+        elif signal.confidence >= 60:
+            progress_color = Colors.BUY
+        else:
+            progress_color = Colors.WARNING
+        
+        progress_canvas.create_rectangle(0, 0, progress_width, 6,
+                                        fill=progress_color, outline='')
+        
+        # Reasoning (если есть)
+        if signal.reasoning:
+            reasoning_text = signal.reasoning[:120] + "..." if len(signal.reasoning) > 120 else signal.reasoning
+            tk.Label(card_content,
+                    text=f"💡 {reasoning_text}",
+                    font=('Arial', 9),
+                    bg=Colors.BG_CARD,
+                    fg=Colors.TEXT_SECONDARY,
+                    wraplength=500,
+                    justify='left').pack(anchor='w', pady=(5, 0))
+    
+    def _create_history_section(self, signal_manager):
+        """Создать секцию истории"""
+        if not signal_manager.signal_history:
+            return
+        
+        # Заголовок
+        header_frame = tk.Frame(self.summary_left_scrollable, bg=Colors.BG_PANEL)
+        header_frame.pack(fill='x', pady=(20, 15))
+        
+        recent_history = signal_manager.signal_history[-10:]
+        
+        tk.Label(header_frame,
+                text=f"RECENT HISTORY ({len(recent_history)})",
+                font=('Arial', 13, 'bold'),
+                bg=Colors.BG_PANEL,
+                fg=Colors.ACCENT).pack(side='left')
+        
+        # История в виде списка
+        history_container = tk.Frame(self.summary_left_scrollable, bg=Colors.BG_CARD,
+                                    highlightbackground=Colors.BORDER, highlightthickness=1)
+        history_container.pack(fill='x')
+        
+        for entry in reversed(recent_history):
+            self._create_history_item(history_container, entry)
+    
+    def _create_history_item(self, parent, entry):
+        """Создать элемент истории"""
+        item_frame = tk.Frame(parent, bg=Colors.BG_CARD)
+        item_frame.pack(fill='x', padx=12, pady=6)
+        
+        # Parse данных
+        signal_id = entry.get('signal_id', '')
+        action = entry.get('action', 'unknown')
+        timestamp_str = entry.get('timestamp', '')
+        
+        # Symbol
+        symbol = "Unknown"
+        if signal_id:
+            parts = signal_id.split('_')
+            if parts:
+                symbol = parts[0]
+        
+        # Time
+        time_display = "N/A"
+        if timestamp_str:
+            try:
+                dt = datetime.fromisoformat(timestamp_str)
+                time_display = dt.strftime("%H:%M:%S")
+            except:
+                time_display = timestamp_str[:19] if len(timestamp_str) >= 19 else timestamp_str
+        
+        # Action emoji and text
+        action_emoji = {
+            "created": "✨",
+            "triggered": "🎯",
+            "time_expired": "⏰",
+            "price_invalidated": "❌",
+            "cancelled": "🚫"
+        }.get(action, "•")
+        
+        action_text = {
+            "created": "Created",
+            "triggered": "Triggered",
+            "time_expired": "Expired (time)",
+            "price_invalidated": "Expired (price)",
+            "cancelled": "Cancelled"
+        }.get(action, action)
+        
+        # Color
+        action_colors = {
+            "created": Colors.SUCCESS,
+            "triggered": Colors.BUY,
+            "time_expired": Colors.TEXT_MUTED,
+            "price_invalidated": Colors.TEXT_MUTED,
+            "cancelled": Colors.ERROR
+        }
+        action_color = action_colors.get(action, Colors.TEXT_SECONDARY)
+        
+        # Left side: emoji + time + symbol + action
+        left_frame = tk.Frame(item_frame, bg=Colors.BG_CARD)
+        left_frame.pack(side='left', fill='x', expand=True)
+        
+        main_text = f"{action_emoji} {time_display}  {symbol} {action_text}"
+        tk.Label(left_frame,
+                text=main_text,
+                font=('Arial', 10),
+                bg=Colors.BG_CARD,
+                fg=action_color,
+                anchor='w').pack(side='left')
+        
+        # Right side: details
+        if action == "triggered" and 'price' in entry:
+            detail_text = f"@ {entry['price']:.2f}"
+            tk.Label(item_frame,
+                    text=detail_text,
+                    font=('Consolas', 9),
+                    bg=Colors.BG_CARD,
+                    fg=Colors.TEXT_MUTED).pack(side='right')
+        
+        # Separator
+        tk.Frame(parent, bg=Colors.BORDER, height=1).pack(fill='x')
+    
+    def _create_info_panels(self, signal_manager):
+        """Создать информационные панели в правой колонке"""
+        # ===== AI COMMENTARY PANEL =====
+        commentary_panel = tk.Frame(self.summary_right_scrollable, bg=Colors.BG_CARD,
+                                   highlightbackground=Colors.BORDER, highlightthickness=1)
+        commentary_panel.pack(fill='x', pady=(0, 15))
+        
+        # Заголовок
+        tk.Label(commentary_panel,
+                text="AI COMMENTARY",
+                font=('Arial', 11, 'bold'),
+                bg=Colors.BG_CARD,
+                fg=Colors.ACCENT,
+                anchor='w').pack(fill='x', padx=12, pady=(12, 8))
+        
+        # Разделитель
+        tk.Frame(commentary_panel, bg=Colors.BORDER, height=1).pack(fill='x', padx=12)
+        
+        # Контент
+        if signal_manager.block_type.value != "none":
+            # Блокировка активна
+            block_frame = tk.Frame(commentary_panel, bg=Colors.BG_CARD)
+            block_frame.pack(fill='x', padx=12, pady=12)
+            
+            tk.Label(block_frame,
+                    text="🔒 TRADING BLOCKED",
+                    font=('Arial', 10, 'bold'),
+                    bg=Colors.BG_CARD,
+                    fg=Colors.ERROR).pack(anchor='w', pady=(0, 5))
+            
+            tk.Label(block_frame,
+                    text=f"Type: {signal_manager.block_type.value.upper()}",
+                    font=('Arial', 9),
+                    bg=Colors.BG_CARD,
+                    fg=Colors.TEXT_SECONDARY).pack(anchor='w')
+            
+            if signal_manager.block_reason:
+                tk.Label(block_frame,
+                        text=f"Reason: {signal_manager.block_reason}",
+                        font=('Arial', 9),
+                        bg=Colors.BG_CARD,
+                        fg=Colors.TEXT_SECONDARY,
+                        wraplength=350,
+                        justify='left').pack(anchor='w', pady=(3, 0))
+            
+            if signal_manager.block_until:
+                tk.Label(block_frame,
+                        text=f"Until: {signal_manager.block_until}",
+                        font=('Arial', 9),
+                        bg=Colors.BG_CARD,
+                        fg=Colors.TEXT_MUTED).pack(anchor='w', pady=(3, 0))
+        else:
+            # Нет блокировки - показываем риск мультипликатор
+            info_frame = tk.Frame(commentary_panel, bg=Colors.BG_CARD)
+            info_frame.pack(fill='x', padx=12, pady=12)
+            
+            tk.Label(info_frame,
+                    text="✓ Trading Active",
+                    font=('Arial', 10, 'bold'),
+                    bg=Colors.BG_CARD,
+                    fg=Colors.SUCCESS).pack(anchor='w', pady=(0, 8))
+            
+            tk.Label(info_frame,
+                    text=f"Risk Multiplier: {signal_manager.risk_multiplier}x",
+                    font=('Arial', 9),
+                    bg=Colors.BG_CARD,
+                    fg=Colors.TEXT_SECONDARY).pack(anchor='w')
+        
+        # ===== MARKET BIAS PANEL =====
+        bias_panel = tk.Frame(self.summary_right_scrollable, bg=Colors.BG_CARD,
+                             highlightbackground=Colors.BORDER, highlightthickness=1)
+        bias_panel.pack(fill='x', pady=(0, 15))
+        
+        tk.Label(bias_panel,
+                text="MARKET BIAS",
+                font=('Arial', 11, 'bold'),
+                bg=Colors.BG_CARD,
+                fg=Colors.ACCENT,
+                anchor='w').pack(fill='x', padx=12, pady=(12, 8))
+        
+        tk.Frame(bias_panel, bg=Colors.BORDER, height=1).pack(fill='x', padx=12)
+        
+        # Показать активные сигналы по типу
+        active_signals = [s for s in signal_manager.active_signals if s.status == "pending"]
+        buy_count = len([s for s in active_signals if s.type.upper() == "BUY"])
+        sell_count = len([s for s in active_signals if s.type.upper() == "SELL"])
+        
+        bias_content = tk.Frame(bias_panel, bg=Colors.BG_CARD)
+        bias_content.pack(fill='x', padx=12, pady=12)
+        
+        if buy_count > sell_count:
+            bias_text = "Bullish"
+            bias_color = Colors.BUY
+        elif sell_count > buy_count:
+            bias_text = "Bearish"
+            bias_color = Colors.SELL
+        else:
+            bias_text = "Neutral"
+            bias_color = Colors.TEXT_SECONDARY
+        
+        tk.Label(bias_content,
+                text=f"Current: {bias_text}",
+                font=('Arial', 10, 'bold'),
+                bg=Colors.BG_CARD,
+                fg=bias_color).pack(anchor='w', pady=(0, 8))
+        
+        tk.Label(bias_content,
+                text=f"Buy Signals: {buy_count}",
+                font=('Arial', 9),
+                bg=Colors.BG_CARD,
+                fg=Colors.BUY).pack(anchor='w')
+        
+        tk.Label(bias_content,
+                text=f"Sell Signals: {sell_count}",
+                font=('Arial', 9),
+                bg=Colors.BG_CARD,
+                fg=Colors.SELL).pack(anchor='w', pady=(2, 0))
+        
+        # ===== SIGNAL LIFECYCLE PANEL =====
+        lifecycle_panel = tk.Frame(self.summary_right_scrollable, bg=Colors.BG_CARD,
+                                  highlightbackground=Colors.BORDER, highlightthickness=1)
+        lifecycle_panel.pack(fill='x', pady=(0, 15))
+        
+        tk.Label(lifecycle_panel,
+                text="SIGNAL LIFECYCLE",
+                font=('Arial', 11, 'bold'),
+                bg=Colors.BG_CARD,
+                fg=Colors.ACCENT,
+                anchor='w').pack(fill='x', padx=12, pady=(12, 8))
+        
+        tk.Frame(lifecycle_panel, bg=Colors.BORDER, height=1).pack(fill='x', padx=12)
+        
+        lifecycle_content = tk.Frame(lifecycle_panel, bg=Colors.BG_CARD)
+        lifecycle_content.pack(fill='x', padx=12, pady=12)
+        
+        # Triggered
+        triggered_count = len([s for s in signal_manager.active_signals if s.status == "triggered"])
+        tk.Label(lifecycle_content,
+                text=f"🎯 Triggered: {triggered_count}",
+                font=('Arial', 9),
+                bg=Colors.BG_CARD,
+                fg=Colors.TEXT_SECONDARY).pack(anchor='w', pady=(0, 3))
+        
+        # Expired
+        if signal_manager.signal_history:
+            recent = signal_manager.signal_history[-20:]
+            expired_count = len([e for e in recent if 'expired' in e.get('action', '')])
+            tk.Label(lifecycle_content,
+                    text=f"⏰ Expired (recent): {expired_count}",
+                    font=('Arial', 9),
+                    bg=Colors.BG_CARD,
+                    fg=Colors.TEXT_SECONDARY).pack(anchor='w', pady=(0, 3))
+        
+        # Last Analysis
+        if signal_manager.latest_analysis_time:
+            tk.Label(lifecycle_content,
+                    text=f"🕐 Last Analysis:",
+                    font=('Arial', 9),
+                    bg=Colors.BG_CARD,
+                    fg=Colors.TEXT_SECONDARY).pack(anchor='w', pady=(8, 2))
+            
+            tk.Label(lifecycle_content,
+                    text=signal_manager.latest_analysis_time,
+                    font=('Consolas', 8),
+                    bg=Colors.BG_CARD,
+                    fg=Colors.TEXT_MUTED).pack(anchor='w')
+            
+            if signal_manager.latest_analysis_version:
+                tk.Label(lifecycle_content,
+                        text=f"Version: {signal_manager.latest_analysis_version}",
+                        font=('Consolas', 8),
+                        bg=Colors.BG_CARD,
+                        fg=Colors.TEXT_MUTED).pack(anchor='w', pady=(2, 0))
     
     def update_summary(self, analysis_data):
         """Обновить Analysis Summary (deprecated - use refresh_analysis)"""
