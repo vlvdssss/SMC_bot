@@ -1,22 +1,22 @@
 {
-    "latest_version": "1.2.3",
-    "download_url": "https://github.com/vlvdssss/SMC_bot/releases/download/v1.2.3/BAZA_TradingBot.exe",
-  "release_date": "2026-01-16",
+    "latest_version": "1.2.4",
+    "download_url": "https://github.com/vlvdssss/SMC_bot/releases/download/v1.2.4/BAZA_TradingBot.exe",
+  "release_date": "2026-01-18",
   "size_mb": 206.0,
   "changelog": [
+    "🎯 ИСПРАВЛЕНА система истечения AI сигналов (критический баг)",
+    "⏰ Сигналы теперь корректно истекают через 60 минут (настраивается)",
+    "🗑️ Старые сигналы автоматически удаляются и не используются повторно",
+    "📁 Файл active_signals.json всегда содержит только валидные сигналы",
+    "🔄 При рестарте бота старые сигналы не загружаются",
     "🐛 Исправлена критическая ошибка Settings Dialog (AttributeError: trading_mode, max_positions)",
     "🐛 Исправлена критическая ошибка Settings Dialog (AttributeError: default_lot)",
     "🐛 Исправлена ошибка отображения AI Market Analyst (signal.direction -> signal.type)",
     "📈 Новая вкладка Instruments - раздельные настройки для EURUSD и XAUUSD",
     "💶 Добавлена полная поддержка EURUSD (анализ + торговля)",
     "🎛️ Раздельный контроль анализа и торговли для каждого инструмента",
-    "🔄 Apply & Restart - автоматический перезапуск бота после изменения настроек",
-    "📊 Синхронизация P&L с MT5 при запуске бота",
-    "💰 Total P&L и Today P&L из единого источника (bot_stats.json)",
-    "🌙 Автоматический сброс Today P&L в полночь",
-    "🔧 Исправлены ошибки Colors в настройках",
-    "⚡ Автоматическая загрузка пропущенных сделок из MT5"
+    "🔄 Apply & Restart - автоматический перезапуск бота после изменения настроек"
   ],
   "minimum_version": "1.0.0",
-  "critical_update": false
+  "critical_update": true
 }
