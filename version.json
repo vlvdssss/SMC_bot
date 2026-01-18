@@ -1,9 +1,13 @@
 {
-    "latest_version": "1.2.4",
-    "download_url": "https://github.com/vlvdssss/SMC_bot/releases/download/v1.2.4/BAZA_TradingBot.exe",
+    "latest_version": "1.2.5",
+    "download_url": "https://github.com/vlvdssss/SMC_bot/releases/download/v1.2.5/BAZA_TradingBot.exe",
   "release_date": "2026-01-18",
   "size_mb": 206.0,
   "changelog": [
+    "✨ Улучшено отображение истории сигналов во вкладке Analysis",
+    "📊 История теперь показывает: символ, действие, время, цену триггера",
+    "🎨 Добавлены эмодзи для разных типов действий (✨ Created, 🎯 Triggered, ⏰ Expired)",
+    "🕐 Время отображается в читабельном формате (HH:MM:SS)",
     "🎯 ИСПРАВЛЕНА система истечения AI сигналов (критический баг)",
     "⏰ Сигналы теперь корректно истекают через 60 минут (настраивается)",
     "🗑️ Старые сигналы автоматически удаляются и не используются повторно",
