@@ -643,8 +643,61 @@ class AnalystPanel(tk.Frame):
                 recent_history = signal_manager.signal_history[-10:]
                 self.summary_text.insert('end', f"━━━ HISTORY (Last {len(recent_history)}) ━━━\n\n", 'header')
                 for entry in reversed(recent_history):
-                    hist_text = f"• {entry.get('timestamp', 'N/A')} - {entry.get('action', 'N/A')}\n"
-                    hist_text += f"  {entry.get('details', 'N/A')}\n\n"
+                    # Parse signal_id to get symbol and time
+                    signal_id = entry.get('signal_id', '')
+                    action = entry.get('action', 'unknown')
+                    timestamp_str = entry.get('timestamp', '')
+                    
+                    # Extract symbol from signal_id (format: SYMBOL_YYYYMMDD_HHMMSS)
+                    symbol = "Unknown"
+                    if signal_id:
+                        parts = signal_id.split('_')
+                        if parts:
+                            symbol = parts[0]
+                    
+                    # Format timestamp nicely (HH:MM:SS)
+                    time_display = "N/A"
+                    if timestamp_str:
+                        try:
+                            dt = datetime.fromisoformat(timestamp_str)
+                            time_display = dt.strftime("%H:%M:%S")
+                        except:
+                            time_display = timestamp_str[:19] if len(timestamp_str) >= 19 else timestamp_str
+                    
+                    # Create action emoji and text
+                    action_emoji = {
+                        "created": "✨",
+                        "triggered": "🎯",
+                        "time_expired": "⏰",
+                        "price_invalidated": "❌",
+                        "cancelled": "🚫"
+                    }.get(action, "•")
+                    
+                    action_text = {
+                        "created": "Created",
+                        "triggered": "Triggered",
+                        "time_expired": "Expired (time)",
+                        "price_invalidated": "Expired (price)",
+                        "cancelled": "Cancelled"
+                    }.get(action, action)
+                    
+                    # Build details line
+                    details = []
+                    
+                    # Add price for triggered signals
+                    if action == "triggered" and 'price' in entry:
+                        details.append(f"Price: {entry['price']:.2f}")
+                    
+                    # Add reason for expired signals
+                    if 'reason' in entry:
+                        details.append(entry['reason'])
+                    
+                    # Format output
+                    hist_text = f"{action_emoji} {time_display} - {symbol} {action_text}\n"
+                    if details:
+                        hist_text += f"  {' | '.join(details)}\n"
+                    hist_text += "\n"
+                    
                     self.summary_text.insert('end', hist_text, 'timestamp')
             
             # Последний анализ
