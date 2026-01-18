@@ -184,6 +184,10 @@ class TelegramBotWithButtons:
             self.application.add_handler(CommandHandler("start", self.start_command))
             self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
             
+            # Очищаем старые команды и устанавливаем новые (только /start)
+            logger.info("🧹 Очистка старых команд Telegram бота...")
+            loop.run_until_complete(self._setup_bot_commands())
+            
             # Запускаем polling
             logger.info("🤖 Telegram бот запущен с кнопками")
             loop.run_until_complete(self.application.run_polling(allowed_updates=Update.ALL_TYPES))
@@ -192,3 +196,21 @@ class TelegramBotWithButtons:
             logger.error(f"Ошибка polling Telegram бота: {e}")
         finally:
             loop.close()
+    
+    async def _setup_bot_commands(self):
+        """Настройка команд бота (удаление старых + установка новых)"""
+        try:
+            # Удалить все старые команды
+            await self.application.bot.delete_my_commands()
+            logger.info("✅ Старые команды удалены")
+            
+            # Установить только /start (остальное через кнопки)
+            from telegram import BotCommand
+            commands = [
+                BotCommand("start", "🤖 Запустить бота и показать меню")
+            ]
+            await self.application.bot.set_my_commands(commands)
+            logger.info(f"✅ Установлены новые команды: {[cmd.command for cmd in commands]}")
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка настройки команд: {e}")

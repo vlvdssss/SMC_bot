@@ -610,7 +610,21 @@ class SettingsDialog:
                 anchor='w').pack(side='left')
         
         self.gpt_api_key = tk.Entry(api_key_frame, font=('Arial', 10), width=40, show='*')
-        # Поле пустое по умолчанию - пользователь должен вставить свой ключ
+        
+        # Загрузить существующий API ключ из .env
+        try:
+            import os
+            from dotenv import load_dotenv
+            env_path = Path('.env')
+            if env_path.exists():
+                load_dotenv(env_path)
+                existing_key = os.getenv('OPENAI_API_KEY', '')
+                if existing_key:
+                    self.gpt_api_key.insert(0, existing_key)
+                    logger.info(f"[SETTINGS] Loaded existing API key: {len(existing_key)} chars")
+        except Exception as e:
+            logger.warning(f"[SETTINGS] Failed to load API key from .env: {e}")
+        
         self.gpt_api_key.pack(side='left', padx=(0, 5))
         
         # Добавить поддержку вставки Ctrl+V

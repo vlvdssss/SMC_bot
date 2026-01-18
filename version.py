@@ -4,7 +4,7 @@ BAZA Trading Bot - Version Information
 """
 
 # Версия приложения
-APP_VERSION = "1.2.6"
+APP_VERSION = "1.2.7"
 
 # URL для проверки обновлений
 VERSION_CHECK_URL = "https://raw.githubusercontent.com/vlvdssss/SMC_bot/main/version.json"
