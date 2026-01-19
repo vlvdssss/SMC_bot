@@ -832,9 +832,19 @@ class AISignalManager:
             validity_minutes = self.config.get('market_analyst', {}).get('signals', {}).get('validity_minutes', 60)
             now = datetime.now()
             
+            # Список допустимых полей AISignal
+            valid_fields = {
+                'id', 'symbol', 'type', 'entry_price', 'stop_loss', 'take_profit',
+                'trigger_time', 'reasoning', 'confidence', 'risk_reward', 
+                'created_at', 'expires_at', 'analysis_version', 'status', 
+                'triggered_at', 'priority'
+            }
+            
             for signal_data in state.get("active_signals", []):
                 try:
-                    signal = AISignal(**signal_data)
+                    # Фильтруем только допустимые поля (убираем 'direction' и другие старые поля)
+                    filtered_data = {k: v for k, v in signal_data.items() if k in valid_fields}
+                    signal = AISignal(**filtered_data)
                     
                     # Проверяем статус
                     if signal.status != "pending":
