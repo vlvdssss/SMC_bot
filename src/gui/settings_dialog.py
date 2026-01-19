@@ -494,7 +494,7 @@ class SettingsDialog:
         scrollbar.pack(side='right', fill='y')
         
         # Load current config
-        ai_config = self._load_ai_config()
+        ai_config = self.configs.get('ai.yaml', {})
         schedule_config = ai_config.get('market_analyst', {}).get('schedule', {})
         
         # === HEADER ===
