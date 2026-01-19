@@ -142,12 +142,9 @@ class Logger:
                 # Вызов callback для вставки в GUI (timestamp добавляется в GUI)
                 self.gui_callback(message, level)
             except Exception as e:
-                # Fallback в консоль при ошибке GUI
-                print(f"GUI logging error: {e}")
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}")
-        else:
-            # Если callback не установлен, выводим в консоль
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}")
+                # Ошибка GUI - логируем только в debug
+                self.logger.debug(f"GUI logging error: {e}")
+        # НЕ печатаем в консоль - это делает console_handler!
 
     def debug(self, message: str, *args, **kwargs):
         """Debug сообщение (только в файл)."""
