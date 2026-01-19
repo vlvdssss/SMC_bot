@@ -41,12 +41,14 @@ class AnalystScheduler:
         self, 
         analyst: Optional[MarketAnalystService] = None,
         signal_manager: Optional[AISignalManager] = None,
-        callback: Optional[Callable] = None
+        callback: Optional[Callable] = None,
+        executor: Optional[object] = None
     ):
         """Initialize scheduler v2.0."""
         self.analyst = analyst or MarketAnalystService()
         self.signal_manager = signal_manager or AISignalManager()
         self.callback = callback
+        self.executor = executor  # For position checking
         
         # Load config
         self.config = self._load_config()
@@ -219,18 +221,29 @@ class AnalystScheduler:
         
         Steps:
         1. Check kill-switch
-        2. Check time restrictions
-        3. Run market analysis (GPT + charts) with fallback
-        4. Process signals through SignalManager
-        5. Save history
-        6. Execute callback
-        7. Return results
+        2. Check open position (NEW)
+        3. Check time restrictions
+        4. Run market analysis (GPT + charts) with fallback
+        5. Process signals through SignalManager
+        6. Save history
+        7. Execute callback
+        8. Return results
         """
         try:
             # Check kill-switch
             if not self.is_ai_enabled():
                 logger.warning("[AI-Scheduler] AI disabled, using fallback")
                 return self._get_fallback_analysis(symbol)
+            
+            # Check if position already open - skip AI analysis to save API calls
+            if hasattr(self, 'executor') and self.executor and self.executor.has_position():
+                logger.info("[AI-Scheduler] Position open - skipping AI analysis (save API cost)")
+                return {
+                    "error": "position_open",
+                    "reason": "Position already open, AI analysis skipped",
+                    "symbol": symbol,
+                    "timestamp": datetime.now().isoformat()
+                }
             
             # Check time restrictions
             time_allowed, time_reason = self.signal_manager._is_trading_time_allowed()
@@ -420,10 +433,10 @@ def get_scheduler() -> AnalystScheduler:
     return _scheduler_instance
 
 
-def init_scheduler(callback: Optional[Callable] = None) -> AnalystScheduler:
+def init_scheduler(callback: Optional[Callable] = None, executor: Optional[object] = None) -> AnalystScheduler:
     """Initialize and start global scheduler."""
     global _scheduler_instance
-    _scheduler_instance = AnalystScheduler(callback=callback)
+    _scheduler_instance = AnalystScheduler(callback=callback, executor=executor)
     _scheduler_instance.start()
     return _scheduler_instance
 
