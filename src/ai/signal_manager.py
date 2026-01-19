@@ -800,6 +800,18 @@ class AISignalManager:
             with open(filepath, 'r', encoding='utf-8') as f:
                 state = json.load(f)
             
+            # Backward compatibility: если state это список (старый формат), создаём новый формат
+            if isinstance(state, list):
+                logger.info(f"[AI-Signal] Converting old format (list) to new format (dict)")
+                state = {
+                    "active_signals": state,
+                    "block_type": "none",
+                    "block_reason": None,
+                    "block_until": None,
+                    "risk_multiplier": 1.0,
+                    "signal_history": []
+                }
+            
             # Track if state changed
             old_signal_count = len(self.active_signals)
             old_block_type = self.block_type.value

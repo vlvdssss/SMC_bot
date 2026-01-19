@@ -594,7 +594,7 @@ class SettingsDialog:
         
         tk.Button(picker_frame, text="Clear All",
                  font=('Arial', 9),
-                 bg=Colors.DANGER,
+                 bg=Colors.ERROR,
                  fg='white',
                  relief='flat',
                  padx=10, pady=5,
@@ -713,7 +713,7 @@ class SettingsDialog:
             # Remove button
             tk.Button(row, text="Remove",
                      font=('Arial', 9),
-                     bg=Colors.DANGER,
+                     bg=Colors.ERROR,
                      fg='white',
                      relief='flat',
                      padx=10, pady=2,
