@@ -1,64 +1,44 @@
-# Instruments Configuration - XAUUSD & EURUSD
-# Trading Bot optimized for Gold and Euro/Dollar trading with SMC strategy
-
+global_settings:
+  data_source: backtest
+  leverage: 100
+  timezone: UTC
 instruments:
-  XAUUSD:
-    name: "Gold (XAU/USD)"
-    type: "Metal"
+  EURUSD:
+    analysis_enabled: true
+    commission_per_lot: 7.0
+    contract_size: 100000
     enabled: true
-    analysis_enabled: true    # GPT анализ включен
-    trading_enabled: true     # Торговля включена
-    
-    # Contract specifications
-    contract_size: 100          # 100 oz per lot
-    pip_value: 1.0              # $1 per 0.01 move per lot
-    pip_size: 0.01
-    spread_points: 20.0         # 20 points = $0.20
-    spread_multiplier: 0.01
-    commission_per_lot: 7.0     # Round turn commission
-    price_decimals: 2           # Display format (2150.45)
-    
-    # Risk management
-    risk_per_trade: 2.0         # % of balance
-    max_trades_per_day: 3       # Maximum trades per day
-    
-    # Strategy
-    strategy_class: "StrategyXAUUSD"
-    strategy_version: "Phase 2 Baseline v1.1 (Fixed Entry)"
-    
-    # Performance (backtest 2024)
+    max_trades_per_day: 3
+    name: Euro / US Dollar
+    pip_size: 0.0001
+    pip_value: 10.0
+    price_decimals: 5
+    risk_per_trade: 2.0
+    spread_multiplier: 0.0001
+    spread_points: 0.00015
+    strategy_class: StrategyEURUSD
+    strategy_version: SMC v1.0
+    trading_enabled: true
+    type: Forex
+  XAUUSD:
+    analysis_enabled: true
     baseline_performance:
-      win_rate: 52.6
       max_dd: 9.43
       roi: 243.52
       total_trades: 97
-
-  EURUSD:
-    name: "Euro / US Dollar"
-    type: "Forex"
+      win_rate: 52.6
+    commission_per_lot: 7.0
+    contract_size: 100
     enabled: true
-    analysis_enabled: true    # GPT анализ включен
-    trading_enabled: true     # Торговля включена
-    
-    # Contract specifications
-    contract_size: 100000       # 100k per lot
-    pip_value: 10.0             # $10 per 0.0001 move per lot
-    pip_size: 0.0001
-    spread_points: 0.00015      # 1.5 pips
-    spread_multiplier: 0.0001
-    commission_per_lot: 7.0     # Round turn commission
-    price_decimals: 5           # Display format (1.08450)
-    
-    # Risk management
-    risk_per_trade: 2.0         # % of balance
-    max_trades_per_day: 3       # Maximum trades per day
-    
-    # Strategy
-    strategy_class: "StrategyEURUSD"
-    strategy_version: "SMC v1.0"
-
-# Global settings
-global_settings:
-  leverage: 100
-  timezone: "UTC"
-  data_source: "backtest"  # backtest, demo, live
+    max_trades_per_day: 3
+    name: Gold (XAU/USD)
+    pip_size: 0.01
+    pip_value: 1.0
+    price_decimals: 2
+    risk_per_trade: 2.0
+    spread_multiplier: 0.01
+    spread_points: 20.0
+    strategy_class: StrategyXAUUSD
+    strategy_version: Phase 2 Baseline v1.1 (Fixed Entry)
+    trading_enabled: true
+    type: Metal

@@ -19,9 +19,9 @@ market_analyst:
     temperature: 0.3
   prompt_version: 2026-01
   safety:
-    max_daily_calls: 10
-    max_monthly_cost: 20.0
-    min_minutes_between_calls: 30
+    max_daily_calls: 50
+    max_monthly_cost: 50.0
+    min_minutes_between_calls: 15
   schedule:
     enabled: true
     restrictions:
@@ -37,6 +37,7 @@ market_analyst:
     - 03:00
     - 03:15
     - 06:00
+    - 06:15
     - 09:00
     - '11:15'
     - '12:00'
@@ -51,14 +52,14 @@ market_analyst:
     timeframes:
     - M15
     - H1
+  signal_validity_minutes: 60
   signals:
     auto_cleanup: true
     confidence_decay: true
     default_ttl_hours: 24
     min_confidence: 70
     min_rr: 1.5
-    validity_minutes: 60  # TTL сигнала: 15/30/60 минут на выбор пользователя
-    # После истечения validity_minutes сигнал либо отыгрывает, либо анулируется
+    validity_minutes: 60
 news_filter:
   cache_duration: 3600
   enabled: true

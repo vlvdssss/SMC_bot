@@ -353,6 +353,11 @@ class LiveTrader:
         """Проверка сигналов для всех стратегий."""
         signals = []
         
+        # КРИТИЧНО: Если уже есть открытая позиция, не проверяем новые сигналы
+        if self.executor and self.executor.has_position():
+            logger.debug("[LiveTrader] Position already open - skipping signal checks")
+            return signals
+        
         # Проверяем AI сигналы если доступны
         if self.ai_signal_manager:
             logger.debug("[LiveTrader] Checking AI signals...")
@@ -512,6 +517,11 @@ class LiveTrader:
     def execute_trade(self, symbol: str, signal: dict):
         """Исполнение сделки."""
         try:
+            # КРИТИЧНО: Проверяем нет ли уже открытой позиции
+            if self.executor.has_position():
+                logger.warning(f"[TRADE] Position already open - ignoring new signal for {symbol}")
+                return None
+            
             # Проверяем включена ли торговля для этого инструмента
             if not self._is_trading_enabled_for_instrument(symbol):
                 logger.info(f"[TRADE] Trading disabled for {symbol} in config - signal ignored")

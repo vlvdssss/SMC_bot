@@ -108,15 +108,37 @@ class MT5Dialog:
         
         # Login
         login_frame = self._create_field_row(content, "Login:")
-        self.login_entry = tk.Entry(login_frame, font=('Arial', 11), width=25)
+        login_input_frame = tk.Frame(login_frame, bg=Colors.BG_DARK)
+        login_input_frame.pack(side='right')
+        
+        self.login_entry = tk.Entry(login_input_frame, font=('Arial', 11), width=22)
         self.login_entry.insert(0, str(connection_config.get('login', '')))
-        self.login_entry.pack(side='right')
+        self.login_entry.pack(side='left', padx=(0, 5))
+        
+        tk.Button(login_input_frame, text="📋 Paste",
+                 font=('Arial', 9),
+                 bg=Colors.BG_CARD,
+                 fg=Colors.TEXT_PRIMARY,
+                 relief='flat',
+                 padx=8, pady=3,
+                 command=lambda: self._paste_from_clipboard(self.login_entry)).pack(side='left')
         
         # Password
         password_frame = self._create_field_row(content, "Password:")
-        self.password_entry = tk.Entry(password_frame, font=('Arial', 11), width=25, show='*')
+        password_input_frame = tk.Frame(password_frame, bg=Colors.BG_DARK)
+        password_input_frame.pack(side='right')
+        
+        self.password_entry = tk.Entry(password_input_frame, font=('Arial', 11), width=22, show='*')
         self.password_entry.insert(0, connection_config.get('password', ''))
-        self.password_entry.pack(side='right')
+        self.password_entry.pack(side='left', padx=(0, 5))
+        
+        tk.Button(password_input_frame, text="📋 Paste",
+                 font=('Arial', 9),
+                 bg=Colors.BG_CARD,
+                 fg=Colors.TEXT_PRIMARY,
+                 relief='flat',
+                 padx=8, pady=3,
+                 command=lambda: self._paste_from_clipboard(self.password_entry)).pack(side='left')
         
         # Server
         server_frame = self._create_field_row(content, "Server:")
@@ -227,6 +249,15 @@ class MT5Dialog:
             self.path_entry.delete(0, tk.END)
             self.path_entry.insert(0, path)
     
+    def _paste_from_clipboard(self, entry_widget):
+        """Вставить текст из буфера обмена"""
+        try:
+            clipboard_text = self.dialog.clipboard_get()
+            entry_widget.delete(0, tk.END)
+            entry_widget.insert(0, clipboard_text.strip())
+        except Exception as e:
+            logger.warning(f"[MT5] Failed to paste from clipboard: {e}")
+    
     def _test_connection(self):
         """Тестировать подключение"""
         try:
@@ -323,12 +354,16 @@ class MT5Dialog:
             with open(config_path, 'w', encoding='utf-8') as f:
                 yaml.dump(full_config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
             
-            logger.info("[MT5] Configuration saved")
-            messagebox.showinfo("Success", "MT5 settings saved!\nRestart application to apply changes.")
+            logger.info("[MT5] Configuration saved successfully")
+            messagebox.showinfo("Success", "MT5 configuration saved!\n\n⚠️ Please restart the bot to apply changes.")
             
-            # Вызвать callback
+            # Вызов callback для перезапуска LiveTrader
             if self.on_save_callback:
-                self.on_save_callback()
+                try:
+                    self.on_save_callback()
+                    logger.info("[MT5] LiveTrader reconnected with new settings")
+                except Exception as cb_error:
+                    logger.error(f"[MT5] Failed to reconnect LiveTrader: {cb_error}")
             
             self.dialog.destroy()
             
