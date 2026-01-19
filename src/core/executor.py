@@ -50,6 +50,20 @@ class Executor:
 
     def has_position(self) -> bool:
         """Check if position is open."""
+        # Для live режима проверяем реальные позиции в MT5
+        if self.is_live and hasattr(self, 'mt5'):
+            try:
+                positions = self.mt5.positions_total()
+                has_pos = positions > 0
+                if has_pos:
+                    logger.debug(f"[Executor] Live MT5 positions: {positions}")
+                return has_pos
+            except Exception as e:
+                logger.warning(f"[Executor] Failed to check MT5 positions: {e}")
+                # Fallback to self.position
+                return self.position is not None
+        
+        # Для backtest режима используем self.position
         return self.position is not None
 
     def execute_signal(self, symbol: str, signal: dict) -> bool:
@@ -369,8 +383,27 @@ class Executor:
 
         # Clear position
         self.position = None
+        
+        # Trigger immediate signal check after position close
+        self._trigger_signal_check_after_close()
 
         return pnl
+    
+    def _trigger_signal_check_after_close(self):
+        """Trigger immediate signal check after position closes."""
+        try:
+            from src.core.logger import logger
+            logger.info("[Executor] Position closed - triggering immediate signal check")
+            
+            # Reset AI scheduler last_run to allow immediate analysis
+            from src.ai.analyst_scheduler import get_scheduler
+            scheduler = get_scheduler()
+            if scheduler and scheduler.running:
+                scheduler.last_run = None  # Reset cooldown
+                logger.info("[Executor] AI Scheduler cooldown reset - next analysis will run immediately")
+        except Exception as e:
+            from src.core.logger import logger
+            logger.debug(f"[Executor] Failed to trigger signal check: {e}")
 
     def get_used_margin(self, current_price: float) -> float:
         """Get currently used margin."""
