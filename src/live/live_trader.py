@@ -432,7 +432,9 @@ class LiveTrader:
             return h1_data, m15_data
             
         except Exception as e:
-            logger.error(f"Failed to load data for {symbol}: {e}")
+            # Только в файл лог, не спамить консоль
+            logger.debug(f"Failed to load data for {symbol}: {e}")
+            logger.debug("Backtest data file not found - normal for live trading")
             return None, None
     
     def process_signal(self, instrument: str, signal: dict, h1_data=None, m15_data=None, m15_idx=None):

@@ -1,0 +1,33 @@
+# Конфигурация логирования BAZA Trading Bot v2.0
+
+console:
+  # Уровень логов в консоли: DEBUG, INFO, WARNING, ERROR
+  level: INFO
+  
+  # Какие категории показывать в консоли
+  show_categories:
+    - STARTUP   # Запуск системы
+    - AI        # AI анализ
+    - SIGNAL    # Сигналы
+    - TRADE     # Торговые операции
+    - PROFIT    # Результаты сделок
+    - SCHEDULER # Расписание
+    - ERROR     # Ошибки
+
+file:
+  # Уровень логов в файле (DEBUG = всё)
+  level: DEBUG
+  
+  # Максимальный размер файла (MB)
+  max_size_mb: 10
+  
+  # Количество backup файлов
+  backup_count: 7
+
+# Фильтры спама (автоматически скрываются из консоли)
+spam_filters:
+  - "Failed to load data for"
+  - "Backtest data file not found"
+  - "Backtest mode requires CSV"
+  - "For live trading, this error can be ignored"
+  - "ML Predictor not trained"

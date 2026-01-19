@@ -210,6 +210,11 @@ class Executor:
         except Exception:
             self.position.instrument = None
         
+        # ЧИСТОЕ ЛОГИРОВАНИЕ ОТКРЫТИЯ
+        symbol = self.position.instrument or "UNKNOWN"
+        direction = "BUY" if signal['direction'] == 'long' else "SELL"
+        logger.trade(f"Position opened - {direction} {symbol} @ {entry_price:.2f}, waiting...")
+        
         # Telegram уведомление об открытии
         self._notify_position_opened(signal, lot_size, entry_price)
 
@@ -360,6 +365,9 @@ class Executor:
             pips = abs(exit_price - self.position.entry_price) * (10000 if 'JPY' not in symbol else 100)
             duration = exit_time - self.position.entry_time
             duration_str = str(duration).split('.')[0]  # Убираем микросекунды
+            
+            # ЧИСТОЕ ЛОГИРОВАНИЕ ЗАКРЫТИЯ
+            logger.profit(f"Position closed - {direction} {symbol}", amount=pnl)
             
             self._notify_position_closed(symbol, direction, pnl, pips, duration_str)
             

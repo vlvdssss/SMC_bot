@@ -1581,8 +1581,17 @@ class BazaApp:
                     
                     messagebox.showwarning("System Diagnostics", warning_text)
                     app_logger.warning("[Diagnostics] Issues detected - user notified")
+                else:
+                    # Подсчет работающих систем
+                    total_systems = 3  # API, Config, Data
+                    working = sum([
+                        results["openai_api"]["status"],
+                        results["config_files"]["status"],
+                        results["data_folders"]["status"]
+                    ])
+                    app_logger.startup(f"All systems operational ({working}/{total_systems})")
             else:
-                app_logger.info("[Diagnostics] ✅ All systems operational")
+                app_logger.startup("All systems operational")
                 
         except Exception as e:
             app_logger.error(f"[Diagnostics] Failed to run diagnostics: {e}")

@@ -267,7 +267,7 @@ class AnalystScheduler:
                     "timestamp": datetime.now().isoformat()
                 }
             
-            logger.info(f"[AI-Scheduler] Starting analysis for {symbol} ({vol_reason})...")
+            logger.ai(f"Starting analysis for {symbol} ({vol_reason})")
             
             # Step 1: Run analysis with fallback on error
             try:
@@ -308,24 +308,22 @@ class AnalystScheduler:
             signals = analysis.get("signals", [])
             blocks = analysis.get("trading_blocks", {})
             
-            logger.info(
-                f"[AI-Scheduler] Analysis complete - "
-                f"Sentiment: {summary.get('sentiment', 'N/A')}, "
-                f"Confidence: {summary.get('confidence', 0)}%, "
-                f"Signals: {len(signals)}, "
-                f"Blocked: {blocks.get('block_trading', False)}"
-            )
+            # Чистый вывод результата
+            sentiment = summary.get('sentiment', 'N/A')
+            confidence = summary.get('confidence', 0)
+            sig_count = len(signals)
             
-            # Log signals
+            logger.ai(f"Analysis complete - {sentiment.upper()} (Confidence: {confidence}%)")
+            
+            # Log signals с категорией SIGNAL
             for signal in signals:
-                logger.info(
-                    f"[AI-Scheduler] Signal: {signal['type']} @ {signal['entry_price']} "
-                    f"(SL: {signal['stop_loss']}, TP: {signal['take_profit']}, "
-                    f"Conf: {signal['confidence']}%)"
+                logger.signal(
+                    f"{signal['type']} @ {signal['entry_price']} "
+                    f"(SL: {signal['stop_loss']}, TP: {signal['take_profit']}, Conf: {signal['confidence']}%)"
                 )
             
         except Exception as e:
-            logger.error(f"[AI-Scheduler] Failed to log summary: {e}")
+            logger.debug(f"Failed to log summary: {e}")
     
     def _save_analysis_history(self, analysis: dict):
         """Save analysis to timestamped file for history."""
