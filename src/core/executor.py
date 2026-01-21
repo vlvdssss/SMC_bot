@@ -184,8 +184,11 @@ class Executor:
         if not self.broker.can_open_position(balance, equity, used_margin, lot_size, current_price):
             return False
 
+        # Use signal entry_price if provided, otherwise use current_price
+        desired_entry = signal.get('entry_price', current_price)
+        
         # Apply spread
-        entry_price = self.broker.apply_spread(current_price, signal['direction'])
+        entry_price = self.broker.apply_spread(desired_entry, signal['direction'])
 
         # Apply slippage
         entry_price = self.broker.apply_slippage(entry_price, signal['direction'])

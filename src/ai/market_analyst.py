@@ -9,12 +9,13 @@ Returns structured JSON with trading signals, blocks, and confidence levels.
 import base64
 import json
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 import MetaTrader5 as mt5
 import pandas as pd
-from openai import OpenAI
+from openai import OpenAI, APIError, RateLimitError, APIConnectionError, Timeout
 
 from src.core.logger import logger
 from src.ai.news_fetcher import RealTimeNewsFetcher
@@ -36,15 +37,54 @@ class MarketAnalystService:
     def __init__(self, api_key: str = None):
         """Initialize Market Analyst Service v2.0."""
         self.api_key = api_key or os.getenv('OPENAI_API_KEY')
+        
+        # Детальная проверка API ключа
         if not self.api_key:
-            logger.error("[AI] ❌ OpenAI API key not found! Set OPENAI_API_KEY in config/.env or pass to constructor")
+            logger.error("[AI] ❌ OpenAI API key not found!")
+            logger.error("[AI] 💡 Решение:")
+            logger.error("[AI]    1. Создай файл config/.env")
+            logger.error("[AI]    2. Добавь строку: OPENAI_API_KEY=sk-proj-...")
+            logger.error("[AI]    3. Или передай api_key в конструктор")
             raise ValueError("OpenAI API key not found. Please configure API key in Settings.")
         
-        logger.info(f"[AI] API Key found: {self.api_key[:15]}...{self.api_key[-4:]}")
+        # Проверка формата ключа
+        if not self.api_key.startswith('sk-'):
+            logger.error(f"[AI] ❌ INVALID API KEY FORMAT!")
+            logger.error(f"[AI] Текущий ключ: {self.api_key[:30]}...")
+            logger.error(f"[AI] 💡 OpenAI ключи начинаются с 'sk-' или 'sk-proj-'")
+            logger.error(f"[AI] 🔧 Проверь правильность ключа в config/.env или Settings")
+            raise ValueError(f"Invalid OpenAI API key format. Key should start with 'sk-'")
+        
+        logger.info(f"[AI] ✅ API Key validated: {self.api_key[:15]}...{self.api_key[-4:]}")
         
         try:
             self.client = OpenAI(api_key=self.api_key)
             logger.info("[AI] ✅ OpenAI client initialized successfully")
+            
+            # Test connection with a minimal request
+            try:
+                logger.info("[AI] 🔍 Testing API connection...")
+                test_response = self.client.models.list()
+                logger.info("[AI] ✅ API connection test successful")
+                logger.debug(f"[AI] Available models: {len(test_response.data)} models found")
+            except RateLimitError as e:
+                logger.error("[AI] ⚠️ API ключ работает, но превышен лимит запросов")
+                logger.error(f"[AI] Детали: {e}")
+                logger.error("[AI] 💡 Проверь квоту: https://platform.openai.com/account/usage")
+                # Don't raise - allow initialization, will fail later with better error
+            except APIError as e:
+                if "invalid" in str(e).lower() and "key" in str(e).lower():
+                    logger.error("[AI] ❌ API ключ НЕВЕРНЫЙ!")
+                    logger.error(f"[AI] Детали: {e}")
+                    logger.error("[AI] 💡 Проверь ключ на: https://platform.openai.com/api-keys")
+                    raise ValueError(f"Invalid API key: {e}")
+                else:
+                    logger.warning(f"[AI] ⚠️ API test failed: {e}")
+                    logger.warning("[AI] Продолжаю инициализацию, но API может не работать")
+            except Exception as e:
+                logger.warning(f"[AI] ⚠️ Connection test failed: {type(e).__name__}: {e}")
+                logger.warning("[AI] Продолжаю инициализацию...")
+                
         except Exception as e:
             logger.error(f"[AI] ❌ Failed to initialize OpenAI client: {e}")
             raise
@@ -348,25 +388,80 @@ Provide ONLY the JSON response, no additional text."""
                 })
                 logger.info(f"[AI] Added {timeframe} screenshot to request")
             
-            # Call API
+            # Call API with retry logic
             logger.info("[AI] Calling OpenAI API...")
-            response = self.client.chat.completions.create(
-                model="gpt-4o",  # or "gpt-4-vision-preview"
-                messages=messages,
-                max_tokens=2000,
-                temperature=0.3  # Lower temperature for more consistent analysis
-            )
             
-            logger.info("[AI] ✅ Received response from OpenAI")
+            max_retries = 3
+            retry_delay = 2  # seconds
+            
+            for attempt in range(1, max_retries + 1):
+                try:
+                    response = self.client.chat.completions.create(
+                        model="gpt-4o",  # or "gpt-4-vision-preview"
+                        messages=messages,
+                        max_tokens=2000,
+                        temperature=0.3  # Lower temperature for more consistent analysis
+                    )
+                    
+                    logger.info("[AI] ✅ Received response from OpenAI")
+                    break  # Success - exit retry loop
+                    
+                except RateLimitError as e:
+                    logger.error(f"[AI] ❌ RATE LIMIT ERROR (попытка {attempt}/{max_retries})")
+                    logger.error(f"[AI] Детали: {e}")
+                    logger.error("[AI] 💡 Проблема: превышен лимит запросов API. Проверь квоту на https://platform.openai.com/account/usage")
+                    if attempt < max_retries:
+                        wait_time = retry_delay * attempt * 2  # Exponential backoff
+                        logger.warning(f"[AI] ⏳ Жду {wait_time} секунд перед повтором...")
+                        time.sleep(wait_time)
+                    else:
+                        raise  # Last attempt failed
+                
+                except APIConnectionError as e:
+                    logger.error(f"[AI] ❌ CONNECTION ERROR (попытка {attempt}/{max_retries})")
+                    logger.error(f"[AI] Детали: {e}")
+                    logger.error("[AI] 💡 Проблема: нет соединения с OpenAI. Проверь интернет или proxy")
+                    if attempt < max_retries:
+                        logger.warning(f"[AI] ⏳ Жду {retry_delay} секунд перед повтором...")
+                        time.sleep(retry_delay)
+                    else:
+                        raise
+                
+                except Timeout as e:
+                    logger.error(f"[AI] ❌ TIMEOUT ERROR (попытка {attempt}/{max_retries})")
+                    logger.error(f"[AI] Детали: {e}")
+                    logger.error("[AI] 💡 Проблема: запрос к API занял слишком много времени")
+                    if attempt < max_retries:
+                        logger.warning(f"[AI] ⏳ Жду {retry_delay} секунд перед повтором...")
+                        time.sleep(retry_delay)
+                    else:
+                        raise
+                
+                except APIError as e:
+                    logger.error(f"[AI] ❌ API ERROR (попытка {attempt}/{max_retries})")
+                    logger.error(f"[AI] Код ошибки: {e.code if hasattr(e, 'code') else 'N/A'}")
+                    logger.error(f"[AI] Детали: {e}")
+                    
+                    # Check if it's an invalid API key error
+                    if "invalid" in str(e).lower() and "api" in str(e).lower() and "key" in str(e).lower():
+                        logger.error("[AI] 💡 КРИТИЧЕСКАЯ ОШИБКА: неверный API ключ!")
+                        logger.error("[AI] 🔧 Решение: проверь OPENAI_API_KEY в config/.env или Settings")
+                        logger.error(f"[AI] Текущий ключ: {self.api_key[:15]}...{self.api_key[-4:]}")
+                    
+                    if attempt < max_retries and "server" in str(e).lower():
+                        logger.warning(f"[AI] ⏳ Серверная ошибка - жду {retry_delay} секунд...")
+                        time.sleep(retry_delay)
+                    else:
+                        raise
             
             # Parse response
             content = response.choices[0].message.content.strip()
             
             # Логируем полный ответ для отладки
-            logger.info("[AI] 📝 Полный ответ GPT:")
-            logger.info("-" * 80)
-            logger.info(content)
-            logger.info("-" * 80)
+            logger.debug("[AI] 📝 Полный ответ GPT:")
+            logger.debug("-" * 80)
+            logger.debug(content)
+            logger.debug("-" * 80)
             
             # Extract JSON if wrapped in markdown
             if content.startswith("```"):
@@ -378,8 +473,33 @@ Provide ONLY the JSON response, no additional text."""
             logger.info("[AI] ✅ Successfully parsed GPT response")
             return analysis
             
+        except RateLimitError as e:
+            logger.error(f"[AI] ❌ ОКОНЧАТЕЛЬНАЯ ОШИБКА: Rate Limit")
+            logger.error("[AI] 🚫 Все попытки исчерпаны - превышен лимит API")
+            logger.error("[AI] 💡 Проверь квоту: https://platform.openai.com/account/usage")
+            raise
+        
+        except APIConnectionError as e:
+            logger.error(f"[AI] ❌ ОКОНЧАТЕЛЬНАЯ ОШИБКА: Connection Failed")
+            logger.error("[AI] 🚫 Не удалось подключиться к OpenAI API")
+            logger.error("[AI] 💡 Проверь интернет, firewall, proxy настройки")
+            raise
+        
+        except APIError as e:
+            logger.error(f"[AI] ❌ ОКОНЧАТЕЛЬНАЯ ОШИБКА: API Error")
+            logger.error(f"[AI] Код: {e.code if hasattr(e, 'code') else 'N/A'}")
+            logger.error(f"[AI] Детали: {e}")
+            raise
+        
+        except json.JSONDecodeError as e:
+            logger.error(f"[AI] ❌ JSON PARSE ERROR: {e}")
+            logger.error(f"[AI] Не удалось распарсить ответ GPT")
+            logger.error(f"[AI] Ответ: {content[:500]}...")
+            raise
+        
         except Exception as e:
-            logger.error(f"[AI] ❌ GPT API call failed: {type(e).__name__}: {e}")
+            logger.error(f"[AI] ❌ НЕИЗВЕСТНАЯ ОШИБКА: {type(e).__name__}")
+            logger.error(f"[AI] Детали: {e}")
             raise
     
     def _validate_analysis(self, analysis: Dict[str, Any]) -> Dict[str, Any]:

@@ -599,14 +599,10 @@ class AISignalManager:
                     
                     logger.info(f"[AI-Signal] Triggered: {signal.id} at price {current_price}")
             
-            # Удаляем все triggered сигналы (удаляем ПОСЛЕ цикла, чтобы не сломать итератор)
-            for signal in triggered_signals:
-                try:
-                    self.active_signals.remove(signal)
-                except ValueError:
-                    pass  # Сигнал уже удалён
+            # НЕ удаляем triggered сигналы сразу - они нужны для исполнения!
+            # Удалим их ПОСЛЕ успешного открытия позиции (в mark_signal_filled)
             
-            # Удаляем expired/invalidated сигналы
+            # Удаляем только expired/invalidated сигналы
             for signal in expired_signals:
                 try:
                     self.active_signals.remove(signal)
@@ -730,6 +726,42 @@ class AISignalManager:
                     return True
         return False
     
+    def mark_signal_filled(self, signal_id: str, filled_price: float = None) -> bool:
+        """
+        Mark signal as filled after position opened.
+        This removes the signal from active list.
+        
+        Args:
+            signal_id: Signal ID (or symbol for backwards compatibility)
+            filled_price: Actual fill price
+        
+        Returns:
+            True if signal was found and marked, False otherwise
+        """
+        with self._lock:
+            for signal in self.active_signals:
+                # Match by ID or by symbol (for backwards compatibility)
+                if signal.id == signal_id or signal.symbol == signal_id:
+                    signal.status = "filled"
+                    
+                    # Log to history
+                    self.signal_history.append({
+                        "action": "filled",
+                        "signal_id": signal.id,
+                        "timestamp": datetime.now().isoformat(),
+                        "filled_price": filled_price
+                    })
+                    
+                    # Remove from active list
+                    self.active_signals.remove(signal)
+                    self._save_state()
+                    
+                    logger.info(f"[AI-Signal] Signal {signal.id} marked as FILLED @ {filled_price}")
+                    return True
+        
+        logger.warning(f"[AI-Signal] Signal {signal_id} not found for marking as filled")
+        return False
+    
     def clear_all_signals(self):
         """Clear all signals."""
         with self._lock:
@@ -760,10 +792,10 @@ class AISignalManager:
     def _save_state(self):
         """Save state to file."""
         try:
-            # Сохраняем только pending сигналы, которые не истекли
-            active_pending_signals = [
+            # Сохраняем pending и triggered сигналы (triggered нужны для исполнения после перезапуска)
+            active_signals_to_save = [
                 s.to_dict() for s in self.active_signals 
-                if s.status == "pending" and not s.is_expired()
+                if s.status in ["pending", "triggered"] and not s.is_expired()
             ]
             
             state = {
@@ -773,7 +805,7 @@ class AISignalManager:
                 "risk_multiplier": self.risk_multiplier,
                 "latest_analysis_time": self.latest_analysis_time,
                 "latest_analysis_version": self.latest_analysis_version,
-                "active_signals": active_pending_signals,
+                "active_signals": active_signals_to_save,
                 "signal_history": self.signal_history[-100:],  # Last 100
                 "updated_at": datetime.now().isoformat()
             }
@@ -832,6 +864,9 @@ class AISignalManager:
             validity_minutes = self.config.get('market_analyst', {}).get('signals', {}).get('validity_minutes', 60)
             now = datetime.now()
             
+            # Track loaded signals to prevent duplicates
+            loaded_signal_ids = set()
+            
             # Список допустимых полей AISignal
             valid_fields = {
                 'id', 'symbol', 'type', 'entry_price', 'stop_loss', 'take_profit',
@@ -846,8 +881,13 @@ class AISignalManager:
                     filtered_data = {k: v for k, v in signal_data.items() if k in valid_fields}
                     signal = AISignal(**filtered_data)
                     
-                    # Проверяем статус
-                    if signal.status != "pending":
+                    # Проверка дубликатов (по ID)
+                    if signal.id in loaded_signal_ids:
+                        logger.warning(f"[AI-Signal] Duplicate signal {signal.id} skipped on load")
+                        continue
+                    
+                    # Проверяем статус (pending или triggered - оба допустимы)
+                    if signal.status not in ["pending", "triggered"]:
                         continue
                     
                     # Проверяем 24h expiration
@@ -863,6 +903,7 @@ class AISignalManager:
                     
                     # Сигнал валиден - загружаем
                     self.active_signals.append(signal)
+                    loaded_signal_ids.add(signal.id)  # Отмечаем как загруженный
                 except Exception as e:
                     logger.warning(f"[AI-Signal] Failed to load signal: {e}")
             

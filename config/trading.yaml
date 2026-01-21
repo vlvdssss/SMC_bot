@@ -1,6 +1,6 @@
 trading:
   hours:
-    end: '22:00'
+    end: '23:00'
     start: 02:00
   indicators:
     atr_period: 14
@@ -23,7 +23,9 @@ trading:
     fair_value_gaps: true
     order_blocks: true
   trailing_stop:
+    activation_profit_pips: 15
     distance_pips: 20
-    enabled: false
+    enabled: true
+    step_pips: 5
   trend_filter:
     enabled: true

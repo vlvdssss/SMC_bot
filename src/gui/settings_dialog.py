@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import yaml
 from pathlib import Path
+from datetime import datetime
 from src.core.logger import logger
 
 
@@ -339,22 +340,223 @@ class SettingsDialog:
         self.default_tp.pack(side='right')
         self._bind_paste(self.default_tp)
         
-        # Trailing Stop
-        self._create_section(content, "Trailing Stop")
+        # === TRAILING STOP - ДЕТАЛЬНЫЕ НАСТРОЙКИ ===
+        self._create_section(content, "🎯 Trailing Stop (Автоматическая защита прибыли)")
         
         trailing_config = trading_config.get('trading', {}).get('trailing_stop', {})
         
-        trail_frame = self._create_setting_row(content, "Enable trailing stop")
+        # Enable checkbox
+        trail_frame = self._create_setting_row(content, "✅ Включить trailing stop")
         self.trail_enabled = tk.BooleanVar(value=trailing_config.get('enabled', False))
         tk.Checkbutton(trail_frame, variable=self.trail_enabled,
                       bg=Colors.BG_DARK, fg=Colors.TEXT_PRIMARY,
-                      selectcolor=Colors.BG_CARD).pack(side='right')
+                      selectcolor=Colors.BG_CARD,
+                      font=('Arial', 10, 'bold')).pack(side='right')
         
-        trail_dist_frame = self._create_setting_row(content, "Trailing distance (pips)")
-        self.trail_distance = tk.Entry(trail_dist_frame, font=('Arial', 10), width=10)
-        self.trail_distance.insert(0, str(trailing_config.get('distance_pips', 20)))
-        self.trail_distance.pack(side='right')
-        self._bind_paste(self.trail_distance)
+        # Info panel с объяснением
+        info_frame = tk.Frame(content, bg=Colors.BG_CARD,
+                             highlightbackground=Colors.BORDER,
+                             highlightthickness=1)
+        info_frame.pack(fill='x', pady=(5, 15), padx=20)
+        
+        info_text = """ℹ️ Что такое Trailing Stop?
+Автоматически двигает Stop Loss за ценой, защищая вашу прибыль.
+Пример: позиция в +30 пипсов → trailing держит SL на 20 пипсов от цены.
+Если цена откатит на 20 пипсов → закроется с профитом +10 пипсов."""
+        
+        tk.Label(info_frame,
+                text=info_text,
+                font=('Arial', 9),
+                bg=Colors.BG_CARD,
+                fg=Colors.TEXT_SECONDARY,
+                justify='left',
+                wraplength=650).pack(padx=15, pady=10, anchor='w')
+        
+        # === ПАРАМЕТР 1: Activation Profit ===
+        tk.Label(content,
+                text="📊 Активация (после какого профита включить)",
+                font=('Arial', 10, 'bold'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_PRIMARY).pack(anchor='w', padx=20, pady=(10, 5))
+        
+        activation_frame = tk.Frame(content, bg=Colors.BG_DARK)
+        activation_frame.pack(fill='x', padx=40, pady=5)
+        
+        tk.Label(activation_frame, text="Профит (пипсы):",
+                font=('Arial', 10),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_SECONDARY).pack(side='left')
+        
+        self.trail_activation = tk.Scale(activation_frame,
+                                        from_=5, to=50,
+                                        orient='horizontal',
+                                        length=300,
+                                        bg=Colors.BG_CARD,
+                                        fg=Colors.TEXT_PRIMARY,
+                                        activebackground=Colors.PRIMARY,
+                                        highlightthickness=0,
+                                        troughcolor=Colors.BG_PANEL,
+                                        font=('Arial', 9))
+        self.trail_activation.set(trailing_config.get('activation_profit_pips', 15))
+        self.trail_activation.pack(side='left', padx=10)
+        
+        self.trail_activation_label = tk.Label(activation_frame,
+                                              text=f"{self.trail_activation.get()} пипсов",
+                                              font=('Arial', 10, 'bold'),
+                                              bg=Colors.BG_DARK,
+                                              fg=Colors.SUCCESS,
+                                              width=12)
+        self.trail_activation_label.pack(side='left')
+        
+        # Update label on change
+        def update_activation_label(val):
+            self.trail_activation_label.config(text=f"{int(float(val))} пипсов")
+        
+        self.trail_activation.config(command=update_activation_label)
+        
+        # Подсказка
+        tk.Label(content, 
+                text="💡 Пример: 15 пипсов = trailing включится когда профит >= 15 пипсов",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED,
+                justify='left').pack(fill='x', pady=(2, 5), padx=40)
+        
+        # === ПАРАМЕТР 2: Distance ===
+        tk.Label(content,
+                text="📏 Расстояние (как далеко от цены держать SL)",
+                font=('Arial', 10, 'bold'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_PRIMARY).pack(anchor='w', padx=20, pady=(10, 5))
+        
+        distance_frame = tk.Frame(content, bg=Colors.BG_DARK)
+        distance_frame.pack(fill='x', padx=40, pady=5)
+        
+        tk.Label(distance_frame, text="Расстояние (пипсы):",
+                font=('Arial', 10),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_SECONDARY).pack(side='left')
+        
+        self.trail_distance = tk.Scale(distance_frame,
+                                      from_=10, to=100,
+                                      orient='horizontal',
+                                      length=300,
+                                      bg=Colors.BG_CARD,
+                                      fg=Colors.TEXT_PRIMARY,
+                                      activebackground=Colors.PRIMARY,
+                                      highlightthickness=0,
+                                      troughcolor=Colors.BG_PANEL,
+                                      font=('Arial', 9))
+        self.trail_distance.set(trailing_config.get('distance_pips', 20))
+        self.trail_distance.pack(side='left', padx=10)
+        
+        self.trail_distance_label = tk.Label(distance_frame,
+                                            text=f"{self.trail_distance.get()} пипсов",
+                                            font=('Arial', 10, 'bold'),
+                                            bg=Colors.BG_DARK,
+                                            fg=Colors.SUCCESS,
+                                            width=12)
+        self.trail_distance_label.pack(side='left')
+        
+        # Update label on change
+        def update_distance_label(val):
+            self.trail_distance_label.config(text=f"{int(float(val))} пипсов")
+        
+        self.trail_distance.config(command=update_distance_label)
+        
+        # Подсказка
+        tk.Label(content, 
+                text="💡 Пример: 20 пипсов = SL будет на 20 пипсов ниже текущей цены (для BUY)",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED,
+                justify='left').pack(fill='x', pady=(2, 5), padx=40)
+        
+        # === ПАРАМЕТР 3: Step ===
+        tk.Label(content,
+                text="⚙️ Шаг обновления (как часто двигать SL)",
+                font=('Arial', 10, 'bold'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_PRIMARY).pack(anchor='w', padx=20, pady=(10, 5))
+        
+        step_frame = tk.Frame(content, bg=Colors.BG_DARK)
+        step_frame.pack(fill='x', padx=40, pady=5)
+        
+        tk.Label(step_frame, text="Шаг (пипсы):",
+                font=('Arial', 10),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_SECONDARY).pack(side='left')
+        
+        self.trail_step = tk.Scale(step_frame,
+                                  from_=1, to=20,
+                                  orient='horizontal',
+                                  length=300,
+                                  bg=Colors.BG_CARD,
+                                  fg=Colors.TEXT_PRIMARY,
+                                  activebackground=Colors.PRIMARY,
+                                  highlightthickness=0,
+                                  troughcolor=Colors.BG_PANEL,
+                                  font=('Arial', 9))
+        self.trail_step.set(trailing_config.get('step_pips', 5))
+        self.trail_step.pack(side='left', padx=10)
+        
+        self.trail_step_label = tk.Label(step_frame,
+                                        text=f"{self.trail_step.get()} пипсов",
+                                        font=('Arial', 10, 'bold'),
+                                        bg=Colors.BG_DARK,
+                                        fg=Colors.SUCCESS,
+                                        width=12)
+        self.trail_step_label.pack(side='left')
+        
+        # Update label on change
+        def update_step_label(val):
+            self.trail_step_label.config(text=f"{int(float(val))} пипсов")
+        
+        self.trail_step.config(command=update_step_label)
+        
+        # Подсказка
+        tk.Label(content, 
+                text="💡 Пример: 5 пипсов = SL обновится только когда цена уйдет на 5+ пипсов\n"
+                     "   (защита от слишком частых изменений в MT5)",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED,
+                justify='left').pack(fill='x', pady=(2, 5), padx=40)
+        
+        # === ЖИВОЙ ПРИМЕР ===
+        example_frame = tk.Frame(content, bg=Colors.BG_CARD,
+                                highlightbackground=Colors.SUCCESS,
+                                highlightthickness=2)
+        example_frame.pack(fill='x', pady=(15, 10), padx=20)
+        
+        tk.Label(example_frame,
+                text="📝 Пример работы с текущими настройками:",
+                font=('Arial', 10, 'bold'),
+                bg=Colors.BG_CARD,
+                fg=Colors.SUCCESS).pack(anchor='w', padx=15, pady=(10, 5))
+        
+        self.trail_example = tk.Label(example_frame,
+                                      text=self._generate_trail_example(
+                                          self.trail_activation.get(),
+                                          self.trail_distance.get(),
+                                          self.trail_step.get()),
+                                      font=('Arial', 9),
+                                      bg=Colors.BG_CARD,
+                                      fg=Colors.TEXT_SECONDARY,
+                                      justify='left',
+                                      wraplength=650)
+        self.trail_example.pack(padx=15, pady=(0, 10), anchor='w')
+        
+        # Update example on slider change
+        def update_example(*args):
+            self.trail_example.config(text=self._generate_trail_example(
+                int(self.trail_activation.get()),
+                int(self.trail_distance.get()),
+                int(self.trail_step.get())))
+        
+        self.trail_activation.config(command=lambda v: (update_activation_label(v), update_example()))
+        self.trail_distance.config(command=lambda v: (update_distance_label(v), update_example()))
+        self.trail_step.config(command=lambda v: (update_step_label(v), update_example()))
         
         # Trading Hours
         self._create_section(content, "Trading Hours (UTC)")
@@ -1109,6 +1311,70 @@ class SettingsDialog:
         self.alert_min_level.set(telegram_settings.get('alert_min_level', 'WARNING'))
         self.alert_min_level.pack(side='right')
         
+        # === TEST TELEGRAM CONNECTION ===
+        self._create_section(content, "🧪 Test Connection")
+        
+        test_frame = tk.Frame(content, bg=Colors.BG_DARK)
+        test_frame.pack(fill='x', pady=5)
+        
+        tk.Label(test_frame,
+                text="Test if Telegram is working correctly:",
+                font=('Arial', 10),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_SECONDARY).pack(side='left')
+        
+        def test_telegram():
+            """Test Telegram connection"""
+            token = self.telegram_token.get().strip()
+            chat_id = self.telegram_chat_id.get().strip()
+            
+            if not token or not chat_id:
+                messagebox.showerror("Error", "Please enter both Bot Token and Chat ID before testing!")
+                return
+            
+            logger.info(f"[SETTINGS] Testing Telegram: token={len(token)} chars, chat_id={chat_id}")
+            
+            # Create test notifier
+            from src.monitoring.telegram_notifier import TelegramNotifier
+            test_notifier = TelegramNotifier(token=token, chat_id=chat_id)
+            
+            # Send test message
+            test_message = f"""
+🧪 <b>BAZA Bot - Test Message</b>
+
+✅ Telegram connection is working!
+
+⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+📱 Bot Token: {token[:20]}...
+💬 Chat ID: {chat_id}
+
+If you received this message, Telegram notifications are configured correctly! 🎉
+"""
+            
+            success = test_notifier.send_message(test_message.strip())
+            
+            if success:
+                messagebox.showinfo("Success", "✅ Test message sent!\n\nCheck your Telegram chat.")
+                logger.info("[SETTINGS] Telegram test: SUCCESS")
+            else:
+                messagebox.showerror("Failed", 
+                                   "❌ Failed to send test message.\n\n"
+                                   "Possible reasons:\n"
+                                   "• Invalid Bot Token\n"
+                                   "• Invalid Chat ID\n"
+                                   "• Bot not added to chat\n"
+                                   "• Network connection issue\n\n"
+                                   "Check logs for details.")
+                logger.error("[SETTINGS] Telegram test: FAILED")
+        
+        tk.Button(test_frame, text="📤 Send Test Message",
+                 font=('Arial', 10, 'bold'),
+                 bg=Colors.PRIMARY,
+                 fg='white',
+                 relief='flat',
+                 padx=15, pady=8,
+                 command=test_telegram).pack(side='right')
+        
         # Info panel
         info_frame = tk.Frame(content, bg=Colors.BG_CARD,
                              highlightbackground=Colors.BORDER,
@@ -1234,7 +1500,9 @@ class SettingsDialog:
                 trading_config['trading']['trailing_stop'] = {}
             
             trading_config['trading']['trailing_stop']['enabled'] = self.trail_enabled.get()
+            trading_config['trading']['trailing_stop']['activation_profit_pips'] = int(self.trail_activation.get())
             trading_config['trading']['trailing_stop']['distance_pips'] = int(self.trail_distance.get())
+            trading_config['trading']['trailing_stop']['step_pips'] = int(self.trail_step.get())
             
             # Trading hours
             if 'hours' not in trading_config['trading']:
@@ -1440,7 +1708,9 @@ class SettingsDialog:
                 trading_config['trading']['trailing_stop'] = {}
             
             trading_config['trading']['trailing_stop']['enabled'] = self.trail_enabled.get()
+            trading_config['trading']['trailing_stop']['activation_profit_pips'] = int(self.trail_activation.get())
             trading_config['trading']['trailing_stop']['distance_pips'] = int(self.trail_distance.get())
+            trading_config['trading']['trailing_stop']['step_pips'] = int(self.trail_step.get())
             
             # Trading hours
             if 'hours' not in trading_config['trading']:
@@ -1625,6 +1895,29 @@ class SettingsDialog:
         except Exception as e:
             logger.error(f"[SETTINGS] Failed to open guide: {e}")
             messagebox.showerror("Ошибка", f"Не удалось открыть руководство:\n{e}")
+    
+    def _generate_trail_example(self, activation: int, distance: int, step: int) -> str:
+        """Генерирует живой пример работы trailing stop"""
+        entry = 2650.0
+        current = entry + (activation + 10) * 0.0001  # Цена в профите
+        sl_initial = entry - 50 * 0.0001
+        sl_trailing = current - distance * 0.0001
+        profit = activation + 10
+        
+        example = f"""1️⃣ Вход в сделку BUY @ {entry:.4f}, SL @ {sl_initial:.4f}, TP @ {entry + 100*0.0001:.4f}
+
+2️⃣ Цена выросла до {current:.4f} (+{profit} пипсов профита)
+   ✅ Профит >= {activation} пипсов → Trailing активирован!
+
+3️⃣ Trailing двигает SL на {distance} пипсов от цены:
+   SL {sl_initial:.4f} → {sl_trailing:.4f}
+   
+4️⃣ Цена продолжает расти → SL постоянно следует за ценой
+   (обновление каждые {step} пипсов движения)
+
+5️⃣ Если цена откатит на {distance} пипсов → позиция закроется с профитом!"""
+        
+        return example
     
     def _bind_paste(self, entry_widget):
         """Добавить поддержку Ctrl+V для Entry виджета"""

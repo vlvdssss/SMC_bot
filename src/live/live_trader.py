@@ -284,47 +284,86 @@ class LiveTrader:
             config_path = Path('config/telegram.yaml')
             
             if not config_path.exists():
-                logger.info("Telegram config not found")
+                logger.warning("📱 [TELEGRAM] Config not found at config/telegram.yaml")
                 return
             
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = yaml.safe_load(f)
             
             tg_config = config.get('telegram', {})
-            if tg_config.get('enabled', False):
-                self.telegram = TelegramNotifier(
-                    token=tg_config.get('bot_token'),
-                    chat_id=tg_config.get('chat_id')
-                )
-                self.notify_config = tg_config.get('notify', {})
-                logger.info("Telegram notifications enabled in LiveTrader")
-                
-                # AlertManager
-                self.alert_manager = AlertManager()
-                
-                # Связываем с Telegram
-                def telegram_alert_handler(alert):
-                    if self.telegram and self.notify_config.get('alerts', True):
-                        if alert.level.value in ['WARNING', 'ERROR', 'CRITICAL']:
-                            self.telegram.send_alert(
-                                alert_type=alert.type.value,
-                                message=alert.message,
-                                level=alert.level.value
-                            )
-                
-                self.alert_manager.add_handler(telegram_alert_handler)
+            enabled = tg_config.get('enabled', False)
+            bot_token = tg_config.get('bot_token', '').strip()
+            chat_id = tg_config.get('chat_id', '').strip()
+            
+            logger.info(f"📱 [TELEGRAM] Config loaded: enabled={enabled}, token_len={len(bot_token)}, chat_id={chat_id}")
+            
+            if not enabled:
+                logger.info("📱 [TELEGRAM] Notifications DISABLED in config (enabled: false)")
+                return
+            
+            if not bot_token or not chat_id:
+                logger.error(f"📱 [TELEGRAM] ❌ Cannot initialize: Missing credentials!")
+                logger.error(f"📱 [TELEGRAM]    bot_token: {'EMPTY' if not bot_token else f'{len(bot_token)} chars'}")
+                logger.error(f"📱 [TELEGRAM]    chat_id: {'EMPTY' if not chat_id else chat_id}")
+                logger.error(f"📱 [TELEGRAM]    Please configure in Settings -> Telegram tab")
+                return
+            
+            # Create TelegramNotifier
+            self.telegram = TelegramNotifier(
+                token=bot_token,
+                chat_id=chat_id
+            )
+            self.notify_config = tg_config.get('notify', {})
+            
+            if self.telegram.enabled:
+                logger.info("📱 [TELEGRAM] ✅ Notifications ENABLED and ready!")
+                logger.info(f"📱 [TELEGRAM]    Notify on trade_opened: {self.notify_config.get('trade_opened', True)}")
+                logger.info(f"📱 [TELEGRAM]    Notify on trade_closed: {self.notify_config.get('trade_closed', True)}")
+                logger.info(f"📱 [TELEGRAM]    Notify on startup: {self.notify_config.get('startup', True)}")
+            else:
+                logger.error("📱 [TELEGRAM] ❌ Notifier created but NOT enabled (check token/chat_id)")
+            
+            # AlertManager
+            self.alert_manager = AlertManager()
+            
+            # Связываем с Telegram
+            def telegram_alert_handler(alert):
+                if self.telegram and self.notify_config.get('alerts', True):
+                    if alert.level.value in ['WARNING', 'ERROR', 'CRITICAL']:
+                        self.telegram.send_alert(
+                            alert_type=alert.type.value,
+                            message=alert.message,
+                            level=alert.level.value
+                        )
+            
+            self.alert_manager.add_handler(telegram_alert_handler)
                 
         except Exception as e:
-            logger.error(f"Failed to init monitoring in LiveTrader: {e}")
+            logger.error(f"📱 [TELEGRAM] Failed to init monitoring: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     def init_filters(self):
         """Инициализация фильтров."""
         # Инициализация GPT фильтра
         self.gpt_filter = None
-        if self.enable_gpt and GPT_AVAILABLE:
+        
+        # Проверяем конфиг на enabled флаг
+        try:
+            import yaml
+            with open('config/ai.yaml', 'r', encoding='utf-8') as f:
+                ai_config = yaml.safe_load(f)
+                news_filter_enabled = ai_config.get('news_filter', {}).get('enabled', False)
+        except Exception as e:
+            logger.warning(f"Failed to load news_filter config: {e}")
+            news_filter_enabled = False
+        
+        if not news_filter_enabled:
+            logger.info("📰 [NEWS FILTER] DISABLED by config (news_filter.enabled=false)")
+        elif self.enable_gpt and GPT_AVAILABLE and news_filter_enabled:
             try:
                 self.gpt_filter = GPTNewsFilter()
-                logger.info("GPT News Filter initialized")
+                logger.info("📰 [NEWS FILTER] ENABLED")
             except Exception as e:
                 logger.warning(f"GPT Filter disabled: {e}")
         elif not self.enable_gpt:
@@ -353,12 +392,7 @@ class LiveTrader:
         """Проверка сигналов для всех стратегий."""
         signals = []
         
-        # КРИТИЧНО: Если уже есть открытая позиция, не проверяем новые сигналы
-        if self.executor and self.executor.has_position():
-            logger.debug("[LiveTrader] Position already open - skipping signal checks")
-            return signals
-        
-        # Проверяем AI сигналы если доступны
+        # Проверяем AI сигналы ПЕРЕД проверкой позиций (AI сигналы сохраняются и ждут)
         if self.ai_signal_manager:
             logger.debug("[LiveTrader] Checking AI signals...")
             ai_signals = self._check_ai_signals()
@@ -366,16 +400,27 @@ class LiveTrader:
                 logger.info(f"[LiveTrader] Found {len(ai_signals)} AI signals")
                 signals.extend(ai_signals)
                 
+                # КРИТИЧНО: Проверяем нет ли открытой позиции ПЕРЕД исполнением
+                if self.executor and self.executor.has_position():
+                    logger.warning("[LiveTrader] Position already open - AI signals saved but NOT executed yet")
+                    return signals  # Сигналы сохранены, исполним после закрытия позиции
+                
                 # Исполняем AI сигналы (только один раз здесь)
                 if self.enable_trading:
                     for ai_signal in ai_signals:
                         symbol = ai_signal.get('symbol')
                         logger.info(f"[LiveTrader] Executing AI signal for {symbol}")
                         self.execute_trade(symbol, ai_signal)
+                        break  # ← ВАЖНО: Только 1 сделка за раз
             else:
                 logger.debug("[LiveTrader] No triggered AI signals found")
         else:
             logger.debug("[LiveTrader] AI signal manager not available")
+        
+        # Проверка обычных стратегий: SKIP если есть позиция
+        if self.executor and self.executor.has_position():
+            logger.debug("[LiveTrader] Position already open - skipping strategy signal checks")
+            return signals
         
         for symbol, strategy in self.strategies.items():
             try:
@@ -534,6 +579,17 @@ class LiveTrader:
             if result:
                 logger.info(f"Trade executed for {symbol}: {result}")
                 
+                # Отмечаем AI сигнал как исполненный (если есть)
+                if self.ai_signal_manager and signal.get('ai_signal_id'):
+                    try:
+                        filled_price = signal.get('entry_price', 0)
+                        self.ai_signal_manager.mark_signal_filled(
+                            signal_id=signal['ai_signal_id'],
+                            filled_price=filled_price
+                        )
+                    except Exception as e:
+                        logger.error(f"[TRADE] Failed to mark AI signal as filled: {e}")
+                
                 # Отправка Telegram уведомления
                 if self.telegram:
                     try:
@@ -596,96 +652,159 @@ class LiveTrader:
             logger.error(f"Trade execution failed for {symbol}: {e}")
     
     def check_trailing_stop(self):
-        """Проверяет открытые позиции и перемещает SL при достижении 60% к TP."""
+        """
+        Продвинутый trailing stop с настраиваемыми параметрами.
+        
+        Логика:
+        1. Проверяет профит каждой позиции
+        2. Если профит >= activation_profit_pips → активирует trailing
+        3. Постоянно двигает SL на distance_pips от текущей цены
+        4. Обновляет только если цена ушла >= step_pips (защита от спама)
+        """
         if not self.tracked_positions:
+            return
+        
+        # Загрузить конфиг trailing stop
+        try:
+            import yaml
+            with open('config/trading.yaml', 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            trailing_config = config.get('trading', {}).get('trailing_stop', {})
+            
+            if not trailing_config.get('enabled', False):
+                return  # Trailing отключен в конфиге
+            
+            activation_profit = trailing_config.get('activation_profit_pips', 15)
+            distance_pips = trailing_config.get('distance_pips', 20)
+            step_pips = trailing_config.get('step_pips', 5)
+            
+        except Exception as e:
+            logger.error(f"[TrailingSL] Failed to load config: {e}")
             return
         
         try:
             for ticket, pos_info in list(self.tracked_positions.items()):
-                # Пропускаем если SL уже перемещен
-                if pos_info.get('sl_moved', False):
-                    continue
-                
                 # Проверяем что позиция еще открыта
                 positions = self.mt5_connector.positions_get(ticket=ticket)
                 if not positions or len(positions) == 0:
                     continue
                 
                 current_position = positions[0]
+                symbol = current_position.symbol
                 current_price = current_position.price_current
                 entry = pos_info['entry_price']
-                sl = pos_info['sl']
-                tp = pos_info['tp']
+                current_sl = pos_info.get('current_sl', pos_info['sl'])  # Текущий SL (может быть обновлен)
                 direction = pos_info['direction']
                 
-                # Вычисляем расстояние до TP
+                # Получаем point для символа (для конвертации пипсов)
+                symbol_info = self.mt5_connector.symbol_info(symbol)
+                if not symbol_info:
+                    continue
+                
+                point = symbol_info.point
+                pip_size = point * 10 if 'JPY' not in symbol else point  # 1 пип = 10 поинтов (кроме JPY)
+                
+                # Вычисляем текущий профит в пипсах
                 if direction == 'BUY':
-                    # Для BUY: цена должна расти к TP
-                    distance_to_tp = tp - entry
-                    current_profit_distance = current_price - entry
+                    profit_pips = (current_price - entry) / pip_size
                     
-                    # Проверяем достигнуто ли 60% пути к TP
-                    if current_profit_distance >= distance_to_tp * 0.6:
-                        # Перемещаем SL на 50% профита
-                        new_sl = entry + (distance_to_tp * 0.5)
-                        
-                        # Обновляем SL в MT5
-                        if self._modify_position_sl(ticket, new_sl):
-                            pos_info['sl_moved'] = True
-                            logger.info(f"[TrailingSL] Position #{ticket} SL moved to 50% profit: {new_sl:.5f}")
+                    # Проверяем достигнут ли порог активации
+                    if profit_pips < activation_profit:
+                        continue  # Еще мало профита для trailing
+                    
+                    # Вычисляем новый SL (distance_pips ниже текущей цены)
+                    new_sl = current_price - (distance_pips * pip_size)
+                    
+                    # Проверяем что новый SL выше текущего (защита от откатов)
+                    if new_sl <= current_sl:
+                        continue  # Не двигаем SL назад
+                    
+                    # Проверяем что цена ушла на достаточное расстояние (step_pips)
+                    sl_movement_pips = (new_sl - current_sl) / pip_size
+                    if sl_movement_pips < step_pips:
+                        continue  # Слишком маленький шаг, не обновляем
+                    
+                    # Обновляем SL в MT5
+                    if self._modify_position_sl(ticket, new_sl, symbol):
+                        pos_info['current_sl'] = new_sl
+                        logger.info(f"[TrailingSL] ✅ #{ticket} {symbol} BUY: SL moved {current_sl:.5f} → {new_sl:.5f} (+{sl_movement_pips:.1f} pips)")
+                        logger.info(f"[TrailingSL]    Current profit: +{profit_pips:.1f} pips, Distance from price: {distance_pips} pips")
                 
                 elif direction == 'SELL':
-                    # Для SELL: цена должна падать к TP
-                    distance_to_tp = entry - tp
-                    current_profit_distance = entry - current_price
+                    profit_pips = (entry - current_price) / pip_size
                     
-                    # Проверяем достигнуто ли 60% пути к TP
-                    if current_profit_distance >= distance_to_tp * 0.6:
-                        # Перемещаем SL на 50% профита
-                        new_sl = entry - (distance_to_tp * 0.5)
-                        
-                        # Обновляем SL в MT5
-                        if self._modify_position_sl(ticket, new_sl):
-                            pos_info['sl_moved'] = True
-                            logger.info(f"[TrailingSL] Position #{ticket} SL moved to 50% profit: {new_sl:.5f}")
+                    # Проверяем достигнут ли порог активации
+                    if profit_pips < activation_profit:
+                        continue  # Еще мало профита для trailing
+                    
+                    # Вычисляем новый SL (distance_pips выше текущей цены)
+                    new_sl = current_price + (distance_pips * pip_size)
+                    
+                    # Проверяем что новый SL ниже текущего (защита от откатов)
+                    if new_sl >= current_sl:
+                        continue  # Не двигаем SL назад
+                    
+                    # Проверяем что цена ушла на достаточное расстояние (step_pips)
+                    sl_movement_pips = (current_sl - new_sl) / pip_size
+                    if sl_movement_pips < step_pips:
+                        continue  # Слишком маленький шаг, не обновляем
+                    
+                    # Обновляем SL в MT5
+                    if self._modify_position_sl(ticket, new_sl, symbol):
+                        pos_info['current_sl'] = new_sl
+                        logger.info(f"[TrailingSL] ✅ #{ticket} {symbol} SELL: SL moved {current_sl:.5f} → {new_sl:.5f} (+{sl_movement_pips:.1f} pips)")
+                        logger.info(f"[TrailingSL]    Current profit: +{profit_pips:.1f} pips, Distance from price: {distance_pips} pips")
         
         except Exception as e:
             logger.error(f"[TrailingSL] Failed to check trailing stop: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
-    def _modify_position_sl(self, ticket: int, new_sl: float) -> bool:
+    def _modify_position_sl(self, ticket: int, new_sl: float, symbol: str = None) -> bool:
         """Изменяет Stop Loss открытой позиции."""
         try:
             # Получаем текущую позицию
             positions = self.mt5_connector.positions_get(ticket=ticket)
             if not positions or len(positions) == 0:
+                logger.warning(f"[TrailingSL] Position #{ticket} not found")
                 return False
             
             position = positions[0]
+            symbol = symbol or position.symbol
+            
+            # Нормализуем SL по digit symbol
+            symbol_info = self.mt5_connector.symbol_info(symbol)
+            if symbol_info:
+                new_sl = round(new_sl, symbol_info.digits)
             
             # Формируем запрос на модификацию
             request = {
                 "action": self.mt5_connector.TRADE_ACTION_SLTP,
                 "position": ticket,
-                "symbol": position.symbol,
+                "symbol": symbol,
                 "sl": new_sl,
                 "tp": position.tp,
                 "magic": 123456,
-                "comment": "Trailing SL (60%->50%)",
+                "comment": "Trailing SL",
             }
             
             # Отправляем запрос
             result = self.mt5_connector.order_send(request)
             
             if result and result.retcode == self.mt5_connector.TRADE_RETCODE_DONE:
-                logger.info(f"[TrailingSL] SL modified for #{ticket}: {new_sl:.5f}")
+                logger.info(f"[TrailingSL] ✅ MT5 confirmed SL modification for #{ticket}")
                 return True
             else:
-                error_msg = result.comment if result else "No result"
-                logger.error(f"[TrailingSL] Failed to modify SL for #{ticket}: {error_msg}")
+                error_code = result.retcode if result else "No result"
+                error_msg = result.comment if result else "No response from MT5"
+                logger.error(f"[TrailingSL] ❌ Failed to modify SL for #{ticket}: [{error_code}] {error_msg}")
                 return False
         
         except Exception as e:
             logger.error(f"[TrailingSL] Error modifying SL: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
     
     def check_closed_positions(self):

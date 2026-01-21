@@ -62,7 +62,7 @@ market_analyst:
     validity_minutes: 60
 news_filter:
   cache_duration: 3600
-  enabled: true
+  enabled: false
   instruments:
   - XAUUSD
   openai:

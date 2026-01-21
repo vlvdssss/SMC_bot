@@ -272,9 +272,18 @@ class AnalystScheduler:
             # Step 1: Run analysis with fallback on error
             try:
                 analysis = self.analyst.analyze_market(symbol)
+            except ValueError as e:
+                # Configuration errors (invalid API key, missing config)
+                logger.error(f"[AI-Scheduler] ❌ CONFIGURATION ERROR: {e}")
+                logger.error("[AI-Scheduler] 💡 Исправь конфигурацию и перезапусти бота")
+                analysis = self._get_fallback_analysis(symbol, error=f"Config error: {e}")
             except Exception as e:
-                logger.error(f"[AI-Scheduler] Analysis failed: {e}, using fallback")
-                analysis = self._get_fallback_analysis(symbol)
+                # All other errors (API errors, network, etc.)
+                error_type = type(e).__name__
+                logger.error(f"[AI-Scheduler] ❌ ANALYSIS FAILED: {error_type}")
+                logger.error(f"[AI-Scheduler] Детали: {e}")
+                logger.error("[AI-Scheduler] 💡 Используется fallback анализ (безопасный режим)")
+                analysis = self._get_fallback_analysis(symbol, error=f"{error_type}: {e}")
             
             # Step 2: Process signals
             if "error" not in analysis:
@@ -339,7 +348,7 @@ class AnalystScheduler:
         except Exception as e:
             logger.error(f"[AI-Scheduler] Failed to save history: {e}")
     
-    def _get_fallback_analysis(self, symbol: str) -> dict:
+    def _get_fallback_analysis(self, symbol: str, error: str = None) -> dict:
         """Get fallback analysis (from last good analysis or safe default)."""
         try:
             # Try to use last cached analysis
@@ -355,6 +364,8 @@ class AnalystScheduler:
                     fallback = self.last_analysis.copy()
                     fallback["is_fallback"] = True
                     fallback["fallback_reason"] = f"Using cached analysis (age: {age_minutes:.0f}min)"
+                    if error:
+                        fallback["original_error"] = error
                     return fallback
             
             # Safe default: no signals, warning block
@@ -364,6 +375,7 @@ class AnalystScheduler:
                 "timestamp": datetime.now().isoformat(),
                 "is_fallback": True,
                 "fallback_reason": "No recent analysis available",
+                "original_error": error or "Unknown error",
                 "summary": {
                     "sentiment": "neutral",
                     "confidence": 0,

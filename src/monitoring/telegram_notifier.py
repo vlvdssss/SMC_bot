@@ -43,7 +43,7 @@ class TelegramNotifier:
             True если успешно отправлено
         """
         if not self.enabled:
-            logger.warning(f"[Telegram] Disabled - cannot send message")
+            logger.warning(f"[Telegram] ❌ Disabled - cannot send message (token or chat_id missing)")
             return False
         
         try:
@@ -54,14 +54,45 @@ class TelegramNotifier:
                 "parse_mode": parse_mode
             }
             
-            response = requests.post(url, json=data, timeout=10)
-            response.raise_for_status()
+            logger.info(f"[Telegram] 📤 Sending to chat_id={self.chat_id}, text_len={len(text)}")
             
-            logger.info(f"[Telegram] ✅ Message sent: {text[:50]}...")
-            return True
+            response = requests.post(url, json=data, timeout=10)
+            
+            # Check response
+            if response.status_code == 200:
+                logger.info(f"[Telegram] ✅ Message sent successfully: {text[:50]}...")
+                return True
+            else:
+                # Parse error from Telegram API
+                error_data = response.json() if response.text else {}
+                error_desc = error_data.get('description', 'Unknown error')
+                
+                logger.error(f"[Telegram] ❌ Send failed: HTTP {response.status_code} - {error_desc}")
+                logger.error(f"[Telegram] Response: {response.text[:200]}")
+                
+                # Log common errors
+                if "chat not found" in error_desc.lower():
+                    logger.error("[Telegram] 🔴 REASON: Invalid chat_id or bot not added to chat")
+                elif "unauthorized" in error_desc.lower():
+                    logger.error("[Telegram] 🔴 REASON: Invalid bot token")
+                elif "forbidden" in error_desc.lower():
+                    logger.error("[Telegram] 🔴 REASON: Bot blocked by user or insufficient permissions")
+                
+                return False
+            
+        except requests.exceptions.Timeout:
+            logger.error(f"[Telegram] ❌ Send failed: Timeout (>10s)")
+            logger.error(f"[Telegram] 🔴 REASON: Network connection too slow or Telegram API unreachable")
+            return False
+            
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"[Telegram] ❌ Send failed: Connection error - {e}")
+            logger.error(f"[Telegram] 🔴 REASON: No internet connection or Telegram API blocked")
+            return False
             
         except Exception as e:
-            logger.error(f"[Telegram] ❌ Send failed: {e}")
+            logger.error(f"[Telegram] ❌ Send failed: {type(e).__name__} - {e}")
+            logger.error(f"[Telegram] 🔴 REASON: Unexpected error, check token/chat_id format")
             return False
     
     def send_trade_opened(self, symbol: str, direction: str, lot: float, 
