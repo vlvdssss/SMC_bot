@@ -639,15 +639,33 @@ class SettingsDialog:
         self.min_rr.pack(side='right')
         self._bind_paste(self.min_rr)
         
-        validity_frame = self._create_setting_row(content, "⏱ AI Signal TTL (мин): 15/30/60")
+        # TTL настройка (из trading.yaml)
+        trading_config = self.configs.get('trading.yaml', {})
+        ttl_config = trading_config.get('trading', {}).get('signal_ttl', {})
+        
+        validity_frame = self._create_setting_row(content, "⏱ Signal TTL (minutes)")
         self.signal_validity = tk.Entry(validity_frame, font=('Arial', 10), width=10)
-        self.signal_validity.insert(0, str(signals_config.get('validity_minutes', 60)))
+        self.signal_validity.insert(0, str(ttl_config.get('ttl_minutes', 60)))
         self.signal_validity.pack(side='right')
         self._bind_paste(self.signal_validity)
         
-        # Подсказка о TTL сигнала
+        # Auto-requery on expire
+        auto_requery_expire_frame = self._create_setting_row(content, "Auto-requery on TTL expire")
+        self.auto_requery_expire = tk.BooleanVar(value=ttl_config.get('auto_requery_on_expire', True))
+        tk.Checkbutton(auto_requery_expire_frame, variable=self.auto_requery_expire,
+                      bg=Colors.BG_DARK, fg=Colors.TEXT_PRIMARY,
+                      selectcolor=Colors.BG_CARD).pack(side='right')
+        
+        # Auto-requery on close
+        auto_requery_close_frame = self._create_setting_row(content, "Auto-requery on position close")
+        self.auto_requery_close = tk.BooleanVar(value=ttl_config.get('auto_requery_on_close', True))
+        tk.Checkbutton(auto_requery_close_frame, variable=self.auto_requery_close,
+                      bg=Colors.BG_DARK, fg=Colors.TEXT_PRIMARY,
+                      selectcolor=Colors.BG_CARD).pack(side='right')
+        
+        # Подсказка о TTL
         ttl_hint = tk.Label(content, 
-                           text="💡 Время жизни AI сигнала. По истечению TTL сигнал либо отыгрывает, либо аннулируется.",
+                           text="💡 TTL: Время жизни сигнала. После истечения → auto-requery (если enabled). После закрытия позиции → auto-requery.",
                            font=('Arial', 8, 'italic'),
                            bg=Colors.BG_DARK,
                            fg=Colors.TEXT_MUTED,
@@ -674,281 +692,6 @@ class SettingsDialog:
         canvas.config(scrollregion=canvas.bbox('all'))
         
         return frame
-    
-    def _create_schedule_tab(self):
-        """Create AI Schedule configuration tab with Time Picker + List"""
-        from datetime import datetime, timedelta
-        
-        frame = tk.Frame(self.notebook, bg=Colors.BG_DARK)
-        
-        # Scrollable content
-        canvas = tk.Canvas(frame, bg=Colors.BG_DARK, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(frame, orient='vertical', command=canvas.yview)
-        content = tk.Frame(canvas, bg=Colors.BG_DARK)
-        
-        content.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
-        canvas.create_window((0, 0), window=content, anchor='nw')
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        canvas.pack(side='left', fill='both', expand=True)
-        scrollbar.pack(side='right', fill='y')
-        
-        # Load current config
-        ai_config = self.configs.get('ai.yaml', {})
-        schedule_config = ai_config.get('market_analyst', {}).get('schedule', {})
-        
-        # === HEADER ===
-        header_frame = tk.Frame(content, bg=Colors.BG_DARK)
-        header_frame.pack(fill='x', padx=20, pady=(20, 10))
-        
-        tk.Label(header_frame, text="🕐 AI Analysis Schedule",
-                font=('Arial', 16, 'bold'),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_PRIMARY).pack(anchor='w')
-        
-        tk.Label(header_frame, text="Configure when AI should analyze market conditions",
-                font=('Arial', 10),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_SECONDARY).pack(anchor='w', pady=(5, 0))
-        
-        # === ENABLE SCHEDULE ===
-        self._create_section(content, "Enable Schedule")
-        
-        enable_frame = self._create_setting_row(content, "Enable scheduled analysis")
-        self.schedule_enabled = tk.BooleanVar(value=schedule_config.get('enabled', True))
-        tk.Checkbutton(enable_frame, variable=self.schedule_enabled,
-                      bg=Colors.BG_DARK, fg=Colors.TEXT_PRIMARY,
-                      selectcolor=Colors.BG_CARD).pack(side='right')
-        
-        # === TIME PICKER ===
-        self._create_section(content, "Add Analysis Time")
-        
-        picker_frame = tk.Frame(content, bg=Colors.BG_CARD, padx=15, pady=15)
-        picker_frame.pack(fill='x', padx=20, pady=(0, 10))
-        
-        tk.Label(picker_frame, text="Add time:",
-                font=('Arial', 10),
-                bg=Colors.BG_CARD,
-                fg=Colors.TEXT_PRIMARY).pack(side='left', padx=(0, 10))
-        
-        # Time picker (HH:MM)
-        time_picker_frame = tk.Frame(picker_frame, bg=Colors.BG_CARD)
-        time_picker_frame.pack(side='left', padx=(0, 10))
-        
-        # Hour spinbox
-        self.hour_var = tk.StringVar(value="06")
-        hour_spin = tk.Spinbox(time_picker_frame, from_=0, to=23, 
-                              textvariable=self.hour_var,
-                              font=('Arial', 11),
-                              width=3,
-                              format="%02.0f",
-                              bg=Colors.BG_DARK,
-                              fg=Colors.TEXT_PRIMARY,
-                              buttonbackground=Colors.BG_PANEL,
-                              relief='flat')
-        hour_spin.pack(side='left', padx=(0, 5))
-        
-        tk.Label(time_picker_frame, text=":",
-                font=('Arial', 11, 'bold'),
-                bg=Colors.BG_CARD,
-                fg=Colors.TEXT_PRIMARY).pack(side='left')
-        
-        # Minute spinbox
-        self.minute_var = tk.StringVar(value="00")
-        minute_spin = tk.Spinbox(time_picker_frame, from_=0, to=59,
-                                textvariable=self.minute_var,
-                                font=('Arial', 11),
-                                width=3,
-                                format="%02.0f",
-                                bg=Colors.BG_DARK,
-                                fg=Colors.TEXT_PRIMARY,
-                                buttonbackground=Colors.BG_PANEL,
-                                relief='flat')
-        minute_spin.pack(side='left', padx=(5, 0))
-        
-        # Add button
-        tk.Button(picker_frame, text="+ Add",
-                 font=('Arial', 10, 'bold'),
-                 bg=Colors.PRIMARY,
-                 fg='white',
-                 relief='flat',
-                 padx=15, pady=5,
-                 command=self._add_time).pack(side='left', padx=(0, 10))
-        
-        # Quick add buttons
-        tk.Button(picker_frame, text="Every Hour",
-                 font=('Arial', 9),
-                 bg=Colors.BG_PANEL,
-                 fg=Colors.TEXT_PRIMARY,
-                 relief='flat',
-                 padx=10, pady=5,
-                 command=lambda: self._quick_add('hour')).pack(side='left', padx=2)
-        
-        tk.Button(picker_frame, text="Every 2h",
-                 font=('Arial', 9),
-                 bg=Colors.BG_PANEL,
-                 fg=Colors.TEXT_PRIMARY,
-                 relief='flat',
-                 padx=10, pady=5,
-                 command=lambda: self._quick_add('2hour')).pack(side='left', padx=2)
-        
-        tk.Button(picker_frame, text="Clear All",
-                 font=('Arial', 9),
-                 bg=Colors.ERROR,
-                 fg='white',
-                 relief='flat',
-                 padx=10, pady=5,
-                 command=self._clear_all_times).pack(side='left', padx=2)
-        
-        # === SCHEDULED TIMES LIST ===
-        self._create_section(content, "Scheduled Times")
-        
-        list_frame = tk.Frame(content, bg=Colors.BG_CARD, padx=15, pady=15)
-        list_frame.pack(fill='both', expand=True, padx=20, pady=(0, 10))
-        
-        # Scrollable list
-        list_canvas = tk.Canvas(list_frame, bg=Colors.BG_CARD, 
-                               highlightthickness=0, height=200)
-        list_scrollbar = ttk.Scrollbar(list_frame, orient='vertical', 
-                                      command=list_canvas.yview)
-        self.times_list_content = tk.Frame(list_canvas, bg=Colors.BG_CARD)
-        
-        self.times_list_content.bind('<Configure>', 
-                                    lambda e: list_canvas.configure(scrollregion=list_canvas.bbox('all')))
-        list_canvas.create_window((0, 0), window=self.times_list_content, anchor='nw')
-        list_canvas.configure(yscrollcommand=list_scrollbar.set)
-        
-        list_canvas.pack(side='left', fill='both', expand=True)
-        list_scrollbar.pack(side='right', fill='y')
-        
-        # Load existing times
-        self.scheduled_times = schedule_config.get('times', [])
-        self._refresh_times_list()
-        
-        # === STATISTICS ===
-        stats_frame = tk.Frame(content, bg=Colors.BG_PANEL, padx=15, pady=15)
-        stats_frame.pack(fill='x', padx=20, pady=(0, 20))
-        
-        self.stats_label = tk.Label(stats_frame, text="",
-                                    font=('Arial', 10),
-                                    bg=Colors.BG_PANEL,
-                                    fg=Colors.TEXT_PRIMARY,
-                                    justify='left')
-        self.stats_label.pack(anchor='w')
-        
-        self._update_stats()
-        
-        content.update_idletasks()
-        canvas.config(scrollregion=canvas.bbox('all'))
-        
-        return frame
-    
-    def _add_time(self):
-        """Add time to scheduled list"""
-        hour = self.hour_var.get().zfill(2)
-        minute = self.minute_var.get().zfill(2)
-        time_str = f"{hour}:{minute}"
-        
-        if time_str not in self.scheduled_times:
-            self.scheduled_times.append(time_str)
-            self.scheduled_times.sort()
-            self._refresh_times_list()
-            self._update_stats()
-    
-    def _remove_time(self, time_str):
-        """Remove time from scheduled list"""
-        if time_str in self.scheduled_times:
-            self.scheduled_times.remove(time_str)
-            self._refresh_times_list()
-            self._update_stats()
-    
-    def _quick_add(self, mode):
-        """Quick add preset times"""
-        self.scheduled_times.clear()
-        
-        if mode == 'hour':
-            # Every hour (00:00, 01:00, 02:00, ...)
-            for h in range(24):
-                self.scheduled_times.append(f"{h:02d}:00")
-        elif mode == '2hour':
-            # Every 2 hours (00:00, 02:00, 04:00, ...)
-            for h in range(0, 24, 2):
-                self.scheduled_times.append(f"{h:02d}:00")
-        
-        self.scheduled_times.sort()
-        self._refresh_times_list()
-        self._update_stats()
-    
-    def _clear_all_times(self):
-        """Clear all scheduled times"""
-        self.scheduled_times.clear()
-        self._refresh_times_list()
-        self._update_stats()
-    
-    def _refresh_times_list(self):
-        """Refresh the times list display"""
-        # Clear existing items
-        for widget in self.times_list_content.winfo_children():
-            widget.destroy()
-        
-        if not self.scheduled_times:
-            tk.Label(self.times_list_content, 
-                    text="No scheduled times. Add times using the picker above.",
-                    font=('Arial', 10, 'italic'),
-                    bg=Colors.BG_CARD,
-                    fg=Colors.TEXT_SECONDARY).pack(pady=20)
-            return
-        
-        # Add each time as a row
-        for time_str in self.scheduled_times:
-            row = tk.Frame(self.times_list_content, bg=Colors.BG_DARK, padx=10, pady=5)
-            row.pack(fill='x', pady=2)
-            
-            # Time label
-            tk.Label(row, text=f"• {time_str}",
-                    font=('Arial', 11),
-                    bg=Colors.BG_DARK,
-                    fg=Colors.TEXT_PRIMARY).pack(side='left')
-            
-            # Remove button
-            tk.Button(row, text="Remove",
-                     font=('Arial', 9),
-                     bg=Colors.ERROR,
-                     fg='white',
-                     relief='flat',
-                     padx=10, pady=2,
-                     command=lambda t=time_str: self._remove_time(t)).pack(side='right')
-    
-    def _update_stats(self):
-        """Update statistics display"""
-        from datetime import datetime, timedelta
-        
-        count = len(self.scheduled_times)
-        
-        # Calculate next analysis time
-        now = datetime.now()
-        current_time = now.strftime("%H:%M")
-        
-        next_time = None
-        for time_str in self.scheduled_times:
-            if time_str > current_time:
-                next_time = time_str
-                break
-        
-        if not next_time and self.scheduled_times:
-            next_time = self.scheduled_times[0]  # Tomorrow
-        
-        # Estimate cost (~$0.30 per analysis)
-        estimated_cost = count * 0.30
-        
-        stats_text = f"📊 Times per day: {count}\n"
-        
-        if next_time:
-            stats_text += f"⏰ Next analysis: {next_time}\n"
-        
-        stats_text += f"💰 Est. cost: ~${estimated_cost:.2f}/day (~${estimated_cost * 30:.2f}/month)"
-        
-        self.stats_label.config(text=stats_text)
     
     def _create_strategy_tab(self):
         """Strategy настройки"""
@@ -1441,10 +1184,9 @@ If you received this message, Telegram notifications are configured correctly! �
             if 'schedule' not in ai_config['market_analyst']:
                 ai_config['market_analyst']['schedule'] = {}
             
-            ai_config['market_analyst']['schedule']['enabled'] = self.schedule_enabled.get()
-            
-            # Analysis times from new Schedule tab (Time Picker + List)
-            ai_config['market_analyst']['schedule']['times'] = self.scheduled_times
+            # Schedule disabled (event-driven logic)
+            ai_config['market_analyst']['schedule']['enabled'] = False
+            ai_config['market_analyst']['schedule']['times'] = []
             
             # Time restrictions
             if 'restrictions' not in ai_config['market_analyst']['schedule']:
@@ -1466,7 +1208,18 @@ If you received this message, Telegram notifications are configured correctly! �
             
             ai_config['market_analyst']['signals']['min_confidence'] = int(self.min_confidence.get())
             ai_config['market_analyst']['signals']['min_rr'] = float(self.min_rr.get())
-            ai_config['market_analyst']['signals']['validity_minutes'] = int(self.signal_validity.get())
+            
+            # TTL настройки (сохраняем в trading.yaml)
+            trading_config = self.configs.get('trading.yaml', {})
+            if 'trading' not in trading_config:
+                trading_config['trading'] = {}
+            if 'signal_ttl' not in trading_config['trading']:
+                trading_config['trading']['signal_ttl'] = {}
+            
+            trading_config['trading']['signal_ttl']['ttl_minutes'] = int(self.signal_validity.get())
+            trading_config['trading']['signal_ttl']['auto_requery_on_expire'] = self.auto_requery_expire.get()
+            trading_config['trading']['signal_ttl']['auto_requery_on_close'] = self.auto_requery_close.get()
+            trading_config['trading']['signal_ttl']['enabled'] = True
             
             # Обновить Portfolio config
             portfolio_config = self.configs.get('portfolio.yaml', {})

@@ -8,9 +8,9 @@ from datetime import datetime, timedelta
 import time
 import yaml
 
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent))
 
-from ai.signal_manager import AISignalManager, AISignal
+from src.ai.signal_manager import AISignalManager, AISignal
 
 def load_config(filename):
     """Загрузить конфиг файл"""

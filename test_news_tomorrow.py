@@ -5,9 +5,9 @@ import sys
 from pathlib import Path
 from datetime import datetime, timedelta
 
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent))
 
-from ai.news_fetcher import RealTimeNewsFetcher, NewsEvent
+from src.ai.news_fetcher import RealTimeNewsFetcher, NewsEvent
 import requests
 
 def test_tomorrow():
