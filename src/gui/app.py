@@ -975,55 +975,82 @@ class AnalystPanel(tk.Frame):
                     bg=Colors.BG_CARD,
                     fg=Colors.TEXT_SECONDARY).pack(anchor='w')
         
-        # ===== MARKET BIAS PANEL =====
-        bias_panel = tk.Frame(self.summary_right_scrollable, bg=Colors.BG_CARD,
+        # ===== TODAY'S HIGH-IMPACT NEWS PANEL =====
+        news_panel = tk.Frame(self.summary_right_scrollable, bg=Colors.BG_CARD,
                              highlightbackground=Colors.BORDER, highlightthickness=1)
-        bias_panel.pack(fill='x', pady=(0, 15))
+        news_panel.pack(fill='x', pady=(0, 15))
         
-        tk.Label(bias_panel,
-                text="MARKET BIAS",
+        tk.Label(news_panel,
+                text="📰 TODAY'S HIGH-IMPACT NEWS",
                 font=('Arial', 11, 'bold'),
                 bg=Colors.BG_CARD,
                 fg=Colors.ACCENT,
                 anchor='w').pack(fill='x', padx=12, pady=(12, 8))
         
-        tk.Frame(bias_panel, bg=Colors.BORDER, height=1).pack(fill='x', padx=12)
+        tk.Frame(news_panel, bg=Colors.BORDER, height=1).pack(fill='x', padx=12)
         
-        # Показать активные сигналы по типу
-        active_signals = [s for s in signal_manager.active_signals if s.status == "pending"]
-        buy_count = len([s for s in active_signals if s.type.upper() == "BUY"])
-        sell_count = len([s for s in active_signals if s.type.upper() == "SELL"])
+        # Get today's HIGH-IMPACT news
+        news_content = tk.Frame(news_panel, bg=Colors.BG_CARD)
+        news_content.pack(fill='x', padx=12, pady=12)
         
-        bias_content = tk.Frame(bias_panel, bg=Colors.BG_CARD)
-        bias_content.pack(fill='x', padx=12, pady=12)
-        
-        if buy_count > sell_count:
-            bias_text = "Bullish"
-            bias_color = Colors.BUY
-        elif sell_count > buy_count:
-            bias_text = "Bearish"
-            bias_color = Colors.SELL
-        else:
-            bias_text = "Neutral"
-            bias_color = Colors.TEXT_SECONDARY
-        
-        tk.Label(bias_content,
-                text=f"Current: {bias_text}",
-                font=('Arial', 10, 'bold'),
-                bg=Colors.BG_CARD,
-                fg=bias_color).pack(anchor='w', pady=(0, 8))
-        
-        tk.Label(bias_content,
-                text=f"Buy Signals: {buy_count}",
-                font=('Arial', 9),
-                bg=Colors.BG_CARD,
-                fg=Colors.BUY).pack(anchor='w')
-        
-        tk.Label(bias_content,
-                text=f"Sell Signals: {sell_count}",
-                font=('Arial', 9),
-                bg=Colors.BG_CARD,
-                fg=Colors.SELL).pack(anchor='w', pady=(2, 0))
+        try:
+            from src.ai.news_fetcher import get_news_fetcher
+            news_fetcher = get_news_fetcher()
+            high_impact_events = news_fetcher.get_high_impact_events(hours_ahead=24)
+            
+            if high_impact_events:
+                # Show up to 5 events
+                for i, event in enumerate(high_impact_events[:5]):
+                    event_frame = tk.Frame(news_content, bg=Colors.BG_CARD)
+                    event_frame.pack(fill='x', pady=(0 if i == 0 else 4, 0))
+                    
+                    # Time and currency
+                    time_label = tk.Label(event_frame,
+                                         text=f"{event.time} {event.currency}",
+                                         font=('Arial', 8, 'bold'),
+                                         bg=Colors.BG_CARD,
+                                         fg=Colors.ACCENT)
+                    time_label.pack(side='left')
+                    
+                    # Impact badge
+                    impact_color = '#FF4444' if event.impact == 'EXTREME' else '#FFA500'
+                    impact_label = tk.Label(event_frame,
+                                           text=event.impact,
+                                           font=('Arial', 7, 'bold'),
+                                           bg=impact_color,
+                                           fg='white',
+                                           padx=4,
+                                           pady=1)
+                    impact_label.pack(side='left', padx=(6, 0))
+                    
+                    # Event title
+                    title_label = tk.Label(news_content,
+                                          text=event.title[:50] + '...' if len(event.title) > 50 else event.title,
+                                          font=('Arial', 9),
+                                          bg=Colors.BG_CARD,
+                                          fg=Colors.TEXT_PRIMARY,
+                                          wraplength=250,
+                                          justify='left')
+                    title_label.pack(anchor='w', pady=(2, 0))
+                
+                # Total count
+                tk.Label(news_content,
+                        text=f"\nTotal HIGH events today: {len(high_impact_events)}",
+                        font=('Arial', 8, 'italic'),
+                        bg=Colors.BG_CARD,
+                        fg=Colors.TEXT_SECONDARY).pack(anchor='w', pady=(8, 0))
+            else:
+                tk.Label(news_content,
+                        text="No HIGH-IMPACT news today",
+                        font=('Arial', 9),
+                        bg=Colors.BG_CARD,
+                        fg=Colors.TEXT_SECONDARY).pack(anchor='w')
+        except Exception as e:
+            tk.Label(news_content,
+                    text=f"News unavailable: {str(e)[:30]}...",
+                    font=('Arial', 9),
+                    bg=Colors.BG_CARD,
+                    fg=Colors.TEXT_SECONDARY).pack(anchor='w')
         
         # ===== SIGNAL LIFECYCLE PANEL =====
         lifecycle_panel = tk.Frame(self.summary_right_scrollable, bg=Colors.BG_CARD,

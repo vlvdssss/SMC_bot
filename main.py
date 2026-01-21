@@ -41,8 +41,15 @@ if getattr(sys, 'frozen', False):
     from src.core.startup import init_exe_environment
     init_exe_environment()
 
-# Загружаем переменные окружения
-load_dotenv()
+# Загружаем переменные окружения из .env файла
+# ВАЖНО: override=True чтобы .env имел приоритет над системными переменными
+env_path = BASE_DIR / '.env'
+if env_path.exists():
+    load_dotenv(env_path, override=True)
+    print(f"[ENV] Loaded from: {env_path}")
+else:
+    load_dotenv(override=True)  # Fallback to default
+    print("[ENV] Loaded from default location")
 
 def main():
     parser = argparse.ArgumentParser(description='BAZA Trading Bot')
