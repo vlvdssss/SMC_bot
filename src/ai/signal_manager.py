@@ -211,10 +211,10 @@ class AISignalManager:
     
     def process_analysis(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Process AI analysis and create signals.
+        Process AI analysis with new Decision Engine format (v2.0).
         
         Args:
-            analysis: Analysis dict from MarketAnalystService
+            analysis: Analysis dict from MarketAnalystService (decision format)
         
         Returns:
             Summary dict
@@ -223,27 +223,50 @@ class AISignalManager:
             with self._lock:
                 # Update metadata
                 self.latest_analysis_time = datetime.now().isoformat()
-                self.latest_analysis_version = analysis.get("analysis_version", "1.0")
+                self.latest_analysis_version = analysis.get("analysis_version", "2.0")
                 
                 summary = {
                     "signals_created": 0,
-                    "signals_updated": 0,
+                    "decision_action": "NONE",
                     "block_type": "none",
                     "risk_multiplier": 1.0
                 }
                 
-                # Process trading blocks with new types
-                blocks = analysis.get("trading_blocks", {})
-                self._process_blocks(blocks, summary)
+                # Get decision (new format)
+                decision = analysis.get("decision", {})
+                action = decision.get("action", "NONE")
+                confidence = decision.get("confidence", 0)
+                block_level = decision.get("block", "NONE")
                 
-                # Process signals
-                signals = analysis.get("signals", [])
-                for signal_data in signals:
+                summary["decision_action"] = action
+                summary["block_type"] = block_level.lower()
+                
+                logger.info(f"[AI-Signal] Decision: {action} (confidence: {confidence}%, block: {block_level})")
+                
+                # Process block level
+                self._process_block_level(block_level, summary)
+                
+                # If action is BUY or SELL → create signal
+                if action in ["BUY", "SELL"] and "trade" in analysis:
+                    trade_data = analysis["trade"]
+                    
+                    # Convert decision format to signal format
+                    signal_data = {
+                        "type": action,
+                        "entry_price": trade_data.get("entry"),
+                        "stop_loss": trade_data.get("stop_loss"),
+                        "take_profit": trade_data.get("take_profit"),
+                        "confidence": confidence,
+                        "risk_reward": trade_data.get("risk_reward", 1.5),
+                        "reasoning": f"Decision Engine: {action} with {confidence}% confidence",
+                        "trigger_time": "immediate"  # Always immediate in v2.0
+                    }
+                    
                     if self._validate_signal(signal_data):
                         signal = self._create_signal(
-                            analysis["symbol"], 
+                            analysis.get("symbol", "XAUUSD"),
                             signal_data,
-                            analysis.get("analysis_version", "1.0")
+                            analysis.get("analysis_version", "2.0")
                         )
                         self.active_signals.append(signal)
                         summary["signals_created"] += 1
@@ -256,25 +279,54 @@ class AISignalManager:
                         })
                         
                         logger.info(
-                            f"[AI-Signal] Created: {signal.type} @ {signal.entry_price} "
-                            f"(conf: {signal.confidence}%, expires: {signal.expires_at[11:16]})"
+                            f"[AI-Signal] ✅ Created signal: {signal.type} @ {signal.entry_price} "
+                            f"(conf: {signal.confidence}%, TTL expires: {signal.expires_at[11:16]})"
                         )
+                    else:
+                        logger.warning(f"[AI-Signal] Signal validation failed for {action} decision")
                 
-                # Cleanup expired
+                elif action == "NONE":
+                    logger.info("[AI-Signal] Decision is NONE - no signal created")
+                
+                # Cleanup expired signals
                 self._cleanup_expired_signals()
                 
-                # Save and reload state to show updated signals
+                # Save and reload state
                 self._save_state()
-                self._load_state(verbose=True)  # Log when new signals added
+                self._load_state(verbose=True)
                 
                 return summary
                 
         except Exception as e:
-            logger.error(f"[AI-Signal] Failed to process analysis: {e}")
+            logger.error(f"[AI-Signal] Failed to process analysis: {e}", exc_info=True)
             return {"error": str(e)}
     
+    def _process_block_level(self, block_level: str, summary: Dict):
+        """Process block level from decision (v2.0)."""
+        block_level = block_level.upper()
+        
+        if block_level == "NONE":
+            summary["risk_multiplier"] = 1.0
+            self.current_block = BlockType.NONE
+            logger.info("[AI-Signal] Block: NONE - Full trading allowed")
+            
+        elif block_level == "SOFT":
+            summary["risk_multiplier"] = 0.5
+            self.current_block = BlockType.WARNING
+            logger.warning("[AI-Signal] Block: SOFT - Reduce risk to 50%")
+            
+        elif block_level == "HARD":
+            summary["risk_multiplier"] = 0.0
+            self.current_block = BlockType.HARD_BLOCK
+            logger.error("[AI-Signal] Block: HARD - Trading blocked completely")
+            
+        else:
+            summary["risk_multiplier"] = 1.0
+            self.current_block = BlockType.NONE
+            logger.warning(f"[AI-Signal] Unknown block level: {block_level}, defaulting to NONE")
+    
     def _process_blocks(self, blocks: Dict, summary: Dict):
-        """Process block information with new block types."""
+        """DEPRECATED: Old block processing (keep for compatibility)."""
         block_type_str = blocks.get("block_type", "none").lower()
         block_reason = blocks.get("reason", "No reason provided")
         
@@ -643,16 +695,26 @@ class AISignalManager:
         return False
     
     def _cleanup_expired_signals(self):
-        """Remove expired, time_expired, price_invalidated, and triggered signals."""
+        """Remove expired signals and trigger auto-requery if configured."""
         original_count = len(self.active_signals)
         
-        # Удаляем истекшие сигналы (проверяем дату + статус)
-        now = datetime.now()
+        # Check for TTL expired signals before cleanup
+        ttl_expired = False
+        for signal in self.active_signals:
+            if signal.status == "pending":
+                validity_minutes = self.config.get('market_analyst', {}).get('signals', {}).get('validity_minutes', 60)
+                created_time = datetime.fromisoformat(signal.created_at)
+                age_minutes = (datetime.now() - created_time).total_seconds() / 60
+                
+                if age_minutes > validity_minutes:
+                    ttl_expired = True
+                    logger.warning(f"[AI-Signal] ⏱️ Signal {signal.id} TTL expired ({age_minutes:.1f}/{validity_minutes} min)")
+                    break
         
-        # Список статусов, которые нужно удалить
+        # Cleanup expired signals
+        now = datetime.now()
         expired_statuses = {"expired", "time_expired", "price_invalidated", "triggered"}
         
-        # Оставляем только pending сигналы, которые не истекли
         self.active_signals = [
             s for s in self.active_signals
             if s.status == "pending" and not s.is_expired()
@@ -662,6 +724,18 @@ class AISignalManager:
         if removed > 0:
             logger.info(f"[AI-Signal] Cleaned up {removed} expired/invalidated/triggered signals")
             self._save_state()
+        
+        # Trigger auto-requery if TTL expired and enabled
+        if ttl_expired:
+            auto_requery = self.config.get('trading', {}).get('signal_ttl', {}).get('auto_requery_on_expire', True)
+            if auto_requery and hasattr(self, 'scheduler') and self.scheduler:
+                logger.info("[AI-Signal] 🔄 Triggering auto-requery (TTL expired)")
+                self.scheduler.trigger_immediate_analysis(reason="ttl_expired")
+    
+    def set_scheduler(self, scheduler):
+        """Set reference to analyst_scheduler for auto-requery."""
+        self.scheduler = scheduler
+        logger.info("[AI-Signal] Scheduler reference set for auto-requery")
     
     def get_trading_permission(
         self, 

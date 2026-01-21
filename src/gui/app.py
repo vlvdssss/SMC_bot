@@ -1356,6 +1356,13 @@ class BazaApp:
                     scheduler = init_scheduler(executor=trader.executor)
                     scheduler.start()
                     app_logger.info("[LOOP] AI Scheduler started for pure_ai mode")
+                    
+                    # Set references for auto-requery
+                    trader.analyst_scheduler = scheduler
+                    if trader.ai_signal_manager:
+                        trader.ai_signal_manager.set_scheduler(scheduler)
+                    app_logger.info("[LOOP] Auto-requery configured (TTL + position close)")
+                    
                 except Exception as e:
                     app_logger.error(f"[LOOP] Failed to start AI Scheduler: {e}")
             

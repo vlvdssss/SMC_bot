@@ -870,6 +870,14 @@ class LiveTrader:
                                 
                                 logger.info(f"[Telegram] Trade closed notification sent for #{ticket}")
                                 
+                                # AUTO-REQUERY: Trigger immediate GPT analysis after position close
+                                if hasattr(self, 'analyst_scheduler') and self.analyst_scheduler:
+                                    logger.info("[LiveTrader] 🔄 Position closed - triggering immediate GPT analysis")
+                                    self.analyst_scheduler.trigger_immediate_analysis(
+                                        symbol=pos_info['symbol'],
+                                        reason="position_closed"
+                                    )
+                                
                                 # Удаляем из отслеживаемых
                                 del self.tracked_positions[ticket]
                                 break

@@ -50,7 +50,9 @@ market_analyst:
     dpi: 150
     enabled: true
     timeframes:
+    - M5
     - M15
+    - M30
     - H1
   signal_validity_minutes: 60
   signals:

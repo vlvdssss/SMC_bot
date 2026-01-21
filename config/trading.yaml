@@ -27,5 +27,10 @@ trading:
     distance_pips: 20
     enabled: true
     step_pips: 5
+  signal_ttl:
+    enabled: true
+    ttl_minutes: 60
+    auto_requery_on_expire: true
+    auto_requery_on_close: true
   trend_filter:
     enabled: true

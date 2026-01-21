@@ -133,9 +133,19 @@ class MarketAnalystService:
             return self._get_fallback_response(str(e))
     
     def _capture_charts(self, symbol: str) -> Dict[str, str]:
-        """Capture M15 and H1 chart screenshots."""
+        """Capture M5, M15, M30, and H1 chart screenshots (4 timeframes)."""
         try:
             screenshots = {}
+            
+            # M5 chart
+            m5_path = self.screenshot_service.capture_chart(
+                symbol=symbol, 
+                timeframe=mt5.TIMEFRAME_M5,
+                bars=100
+            )
+            if m5_path:
+                with open(m5_path, 'rb') as f:
+                    screenshots['M5'] = base64.b64encode(f.read()).decode('utf-8')
             
             # M15 chart
             m15_path = self.screenshot_service.capture_chart(
@@ -147,6 +157,16 @@ class MarketAnalystService:
                 with open(m15_path, 'rb') as f:
                     screenshots['M15'] = base64.b64encode(f.read()).decode('utf-8')
             
+            # M30 chart
+            m30_path = self.screenshot_service.capture_chart(
+                symbol=symbol, 
+                timeframe=mt5.TIMEFRAME_M30,
+                bars=100
+            )
+            if m30_path:
+                with open(m30_path, 'rb') as f:
+                    screenshots['M30'] = base64.b64encode(f.read()).decode('utf-8')
+            
             # H1 chart
             h1_path = self.screenshot_service.capture_chart(
                 symbol=symbol,
@@ -157,6 +177,7 @@ class MarketAnalystService:
                 with open(h1_path, 'rb') as f:
                     screenshots['H1'] = base64.b64encode(f.read()).decode('utf-8')
             
+            logger.info(f"[AI] ✅ Captured {len(screenshots)}/4 timeframe screenshots")
             return screenshots
             
         except Exception as e:
@@ -217,21 +238,22 @@ class MarketAnalystService:
             return {}
     
     def _fetch_news(self, symbol: str) -> List[Dict[str, Any]]:
-        """Fetch relevant economic news."""
+        """Fetch HIGH-IMPACT economic news only (v2.0)."""
         try:
-            # Use existing news fetcher
-            news_items = self.news_fetcher.get_relevant_news(symbol, hours=24)
+            # Use high-impact events only (HIGH, EXTREME)
+            high_impact_events = self.news_fetcher.get_high_impact_events(hours_ahead=12)
             
-            # Format for GPT
+            # Format for GPT (simplified)
             formatted = []
-            for item in news_items[:5]:  # Top 5 news
+            for event in high_impact_events[:5]:  # Top 5 high-impact only
                 formatted.append({
-                    "title": item.get('title', ''),
-                    "impact": item.get('impact', 'medium'),
-                    "time": item.get('time', ''),
-                    "summary": item.get('summary', '')
+                    "title": event.title,
+                    "impact": event.impact,
+                    "time": event.time,
+                    "currency": event.currency
                 })
             
+            logger.info(f"[AI] Found {len(formatted)} high-impact news events")
             return formatted
             
         except Exception as e:
@@ -239,122 +261,65 @@ class MarketAnalystService:
             return []
     
     def _build_analysis_prompt(self, symbol: str, metrics: Dict, news: List[Dict]) -> str:
-        """Build comprehensive prompt for GPT analysis."""
+        """Build Decision Engine prompt for GPT (v2.0 - simplified format)."""
         
-        prompt = f"""You are an expert forex/gold trader and market analyst. Analyze the market and provide actionable trading signals with detailed structured reasoning.
+        prompt = f"""You are a Trading Decision Engine. Your ONLY task is to make an immediate trading decision.
 
-**IMPORTANT ANALYSIS RULES:**
-1. Analyze the FULL CONTEXT of last 50-100 candles visible on screenshots (not just the last 10-20)
-2. Entry price MUST be close to current price (within 10-30 pips maximum)
-3. If price already moved >50% toward your predicted target - DO NOT give signal (missed opportunity)
-4. Consider market structure, premium/discount zones, and recent price action
-5. Only give signals when you see a clear HIGH-PROBABILITY setup
+DO NOT write explanations or analysis. ONLY return structured machine-readable data.
 
-**SYMBOL:** {symbol}
-**TIMESTAMP:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+**CRITICAL DECISION RULES:**
+1. Entry price MUST be within 10-30 pips of current price
+2. If price moved >50% toward target → action = NONE (missed opportunity)
+3. If confidence <70% → action = NONE (wait for better setup)
+4. Decision is ONLY for RIGHT NOW (not future times)
+5. Return ONLY ONE decision (no arrays, no multiple signals)
 
-**TECHNICAL METRICS:**
-- Current Price: ${metrics.get('current_price', 'N/A')}
-- ATR: ${metrics.get('atr', 'N/A')} ({metrics.get('atr_pct', 'N/A')}%)
-- Trend: {metrics.get('trend', 'N/A')}
-- 24H Range: ${metrics.get('low_24h', 'N/A')} - ${metrics.get('high_24h', 'N/A')}
-- Premium/Discount: {metrics.get('premium_discount', 'N/A')} (0=discount, 1=premium)
-- Volatility: {metrics.get('volatility_pct', 'N/A')}%
-- EMA Fast: ${metrics.get('ema_fast', 'N/A')}
-- EMA Slow: ${metrics.get('ema_slow', 'N/A')}
+**MARKET DATA:**
+Symbol: {symbol}
+Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Current Price: ${metrics.get('current_price', 'N/A')}
+ATR: ${metrics.get('atr', 'N/A')} ({metrics.get('atr_pct', 'N/A')}%)
+Trend: {metrics.get('trend', 'N/A')}
+24H Range: ${metrics.get('low_24h', 'N/A')} - ${metrics.get('high_24h', 'N/A')}
+Premium/Discount: {metrics.get('premium_discount', 'N/A')}
+Volatility: {metrics.get('volatility_pct', 'N/A')}%
 
-**RECENT NEWS:**
+**HIGH-IMPACT NEWS:**
 """
         
         if news:
             for item in news:
                 prompt += f"\n- [{item['impact'].upper()}] {item['title']} at {item['time']}"
         else:
-            prompt += "\nNo significant news in past 24 hours"
+            prompt += "\nNo high-impact news"
         
         prompt += """
 
-**TASK:**
-Analyze the provided M15 and H1 chart screenshots along with the metrics above. Provide detailed structured reasoning in your analysis field.
-
-**YOUR RESPONSE MUST BE IN STRICT JSON FORMAT WITH DETAILED REASONING:**
+**RESPONSE FORMAT (STRICT):**
 
 {
-  "timestamp": "2026-01-07T06:00:00",
+  "timestamp": "2026-01-21T12:00:00",
   "symbol": "XAUUSD",
-  "summary": {
-    "market_structure": "bullish|bearish|neutral|ranging",
-    "trend_strength": 0-100,
-    "sentiment": "strong_bullish|bullish|neutral|bearish|strong_bearish",
-    "confidence": 0-100
+  "decision": {
+    "action": "BUY|SELL|NONE",
+    "confidence": 85,
+    "block": "NONE|SOFT|HARD"
   },
-  "key_levels": {
-    "support": [2650.0, 2640.0],
-    "resistance": [2680.0, 2690.0],
-    "current_value_area": "premium|fair|discount"
-  },
-  "signals": [
-    {
-      "type": "BUY|SELL",
-      "entry_price": 2665.0,
-      "stop_loss": 2660.0,
-      "take_profit": 2675.0,
-      "trigger_time": "12:00|15:00|immediate|none",
-      "reasoning": "Strong bullish structure, price in discount zone",
-      "confidence": 75,
-      "risk_reward": 2.0
-    }
-  ],
-  "trading_blocks": {
-    "block_type": "none|bias|warning|soft_block|hard_block",
-    "block_until": null,
-    "reason": null
-  },
-  "risk_factors": [
-    "High impact news at 14:00",
-    "Price near resistance"
-  ],
-  "analysis": {
-    "trend": "### Тренд:\\nОпишите текущий тренд: восходящий/нисходящий/флэт, сила тренда, ключевые уровни поддержки и сопротивления, которые подтверждают направление.",
-    "support_resistance": "### Уровни поддержки и сопротивления:\\n- **Уровень сопротивления:** 2474 (предыдущий локальный максимум)\\n- **Уровень поддержки:** 2442 (предыдущий локальный минимум)\\nОпишите ключевые уровни, которые наблюдаете на графике.",
-    "patterns": "### Паттерны:\\nОпишите любые паттерны (V-образная разворотная формация, двойное дно, голова и плечи и т.д.) или их отсутствие.",
-    "entry_exit": "### Точки входа и выхода:\\n- **Точка входа на покупку:** При пробое уровня 2474 и закреплении выше\\n- **Точка выхода для продаж:** Возврат к уровню 2442 может привлечь продавцов\\nУкажите конкретные ценовые уровни для входа и выхода.",
-    "risk_assessment": "### Оценка риска:\\nВвиду отсутствия значительных экономических событий и стабильного восстановления после падения, риск умеренный. Однако следует проявить осторожность, так как развороты возможны у важных уровней.",
-    "news_impact": "### Учет новостей:\\nПоскольку нет запланированных экономических событий на сегодня, можно ожидать меньшую волатильность, но следует быть готовым к внезапным изменениям рынка.\\n\\nОпишите влияние новостей на рынок.",
-    "recommendation": "Рекомендуется следить за динамикой объема, которая может указать на сильное движение."
+  "trade": {
+    "entry": 2665.0,
+    "stop_loss": 2660.0,
+    "take_profit": 2675.0,
+    "risk_reward": 2.0
   }
 }
 
-**INSTRUCTIONS FOR "analysis" FIELD:**
-Structure your analysis with clear sections (use Russian language for better readability):
-
-1. **trend**: Describe current trend (восходящий/нисходящий/флэт), strength, confirm with EMA/structure
-2. **support_resistance**: List key support/resistance levels with specific prices
-3. **patterns**: Identify chart patterns (V-shape, double top/bottom, head & shoulders, etc.) or note absence
-4. **entry_exit**: Specify exact entry points for BUY/SELL with price levels
-5. **risk_assessment**: Evaluate risk level considering volatility, news, market conditions
-6. **news_impact**: Explain how current/upcoming news affects market
-7. **recommendation**: Final actionable recommendation with volume/momentum notes
-
-**BLOCK TYPES:**
-- "none": No restrictions (normal trading)
-- "bias": Soft suggestion against trading (reduce position size slightly)
-- "warning": Reduce risk significantly (50% normal risk)
-- "soft_block": Only high confidence trades allowed (>70% confidence)
-- "hard_block": Complete trading block (dangerous conditions)
-
 **RULES:**
-1. Be specific with entry/SL/TP levels (real prices, not ranges)
-2. If you see no clear setup, return empty "signals" array
-3. Use "bias" or "warning" instead of hard_block when uncertain
-4. Reserve "hard_block" only for extreme danger (major news, no structure)
-3. Set "block_trading": true if news or conditions are dangerous
-4. "trigger_time" can be specific hour (e.g., "12:00") or "immediate"
-5. Confidence should reflect your certainty (>70% = high confidence)
-6. Use premium/discount zones and market structure in your analysis
-7. Risk_reward should be realistic (minimum 1.5:1)
-
-Provide ONLY the JSON response, no additional text."""
+- If action = NONE → omit "trade" object completely
+- block levels: NONE (safe to trade), SOFT (reduce risk), HARD (do not trade)
+- confidence must be 0-100
+- NO explanations, NO analysis text, NO reasoning field
+- ONLY machine data
+"""
 
         return prompt
     
@@ -503,27 +468,64 @@ Provide ONLY the JSON response, no additional text."""
             raise
     
     def _validate_analysis(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate and sanitize GPT response."""
+        """Validate and sanitize GPT Decision Engine response (v2.0)."""
         try:
-            # Ensure required fields exist
-            required_fields = ["timestamp", "symbol", "summary", "key_levels", "signals"]
+            # New format: decision instead of signals[]
+            required_fields = ["timestamp", "symbol", "decision"]
             for field in required_fields:
                 if field not in analysis:
+                    logger.error(f"[AI] Missing required field: {field}")
                     analysis[field] = {}
             
-            # Validate signals structure
-            if "signals" in analysis and analysis["signals"]:
-                for signal in analysis["signals"]:
-                    required_signal_fields = ["type", "entry_price", "stop_loss", "take_profit", "confidence"]
-                    for field in required_signal_fields:
-                        if field not in signal:
-                            logger.warning(f"[AI] Signal missing field: {field}")
-                            signal[field] = None
+            # Validate decision structure
+            if "decision" in analysis:
+                decision = analysis["decision"]
+                required_decision_fields = ["action", "confidence", "block"]
+                for field in required_decision_fields:
+                    if field not in decision:
+                        logger.warning(f"[AI] Decision missing field: {field}")
+                        decision[field] = "NONE" if field in ["action", "block"] else 0
+                
+                # Validate action
+                if decision.get("action") not in ["BUY", "SELL", "NONE"]:
+                    logger.warning(f"[AI] Invalid action: {decision.get('action')}, defaulting to NONE")
+                    decision["action"] = "NONE"
+                
+                # Validate block
+                if decision.get("block") not in ["NONE", "SOFT", "HARD"]:
+                    logger.warning(f"[AI] Invalid block: {decision.get('block')}, defaulting to NONE")
+                    decision["block"] = "NONE"
+                
+                # Validate confidence
+                try:
+                    conf = float(decision.get("confidence", 0))
+                    decision["confidence"] = max(0, min(100, conf))
+                except:
+                    decision["confidence"] = 0
+                    logger.warning("[AI] Invalid confidence value, set to 0")
+            
+            # Validate trade data if action is not NONE
+            if analysis.get("decision", {}).get("action") in ["BUY", "SELL"]:
+                if "trade" not in analysis:
+                    logger.error("[AI] Missing trade data for BUY/SELL action")
+                    analysis["decision"]["action"] = "NONE"
+                else:
+                    trade = analysis["trade"]
+                    required_trade_fields = ["entry", "stop_loss", "take_profit", "risk_reward"]
+                    for field in required_trade_fields:
+                        if field not in trade:
+                            logger.error(f"[AI] Trade missing field: {field}")
+                            analysis["decision"]["action"] = "NONE"
+                            break
             
             # Add metadata
             analysis["analyzed_at"] = datetime.now().isoformat()
-            analysis["analysis_version"] = self.ANALYSIS_VERSION
+            analysis["analysis_version"] = "2.0"  # Updated version
             analysis["prompt_version"] = self.PROMPT_VERSION
+            
+            logger.info(f"[AI] ✅ Validated decision: {analysis.get('decision', {}).get('action')} "
+                       f"(confidence: {analysis.get('decision', {}).get('confidence')}%, "
+                       f"block: {analysis.get('decision', {}).get('block')})")
             
             return analysis
             
@@ -534,21 +536,18 @@ Provide ONLY the JSON response, no additional text."""
     # Saving removed - SignalManager handles persistence
     
     def _get_fallback_response(self, error: str) -> Dict[str, Any]:
-        """Return fallback response on error."""
+        """Return fallback response on error (v2.0 format)."""
         return {
             "timestamp": datetime.now().isoformat(),
             "symbol": "XAUUSD",
             "error": error,
-            "summary": {
-                "market_structure": "unknown",
-                "sentiment": "neutral",
-                "confidence": 0
+            "decision": {
+                "action": "NONE",
+                "confidence": 0,
+                "block": "HARD"
             },
-            "signals": [],
-            "trading_blocks": {
-                "block_type": "warning",
-                "reason": "Analysis failed - reducing risk for safety"
-            }
+            "analyzed_at": datetime.now().isoformat(),
+            "analysis_version": "2.0"
         }
     
     def get_latest_analysis(self) -> Optional[Dict[str, Any]]:

@@ -221,7 +221,7 @@ class AnalystScheduler:
         
         Steps:
         1. Check kill-switch
-        2. Check open position (NEW)
+        2. Check open position (БЛОКИРОВКА - v2.0)
         3. Check time restrictions
         4. Run market analysis (GPT + charts) with fallback
         5. Process signals through SignalManager
@@ -235,15 +235,16 @@ class AnalystScheduler:
                 logger.warning("[AI-Scheduler] AI disabled, using fallback")
                 return self._get_fallback_analysis(symbol)
             
-            # Check if position already open - skip AI analysis to save API calls
-            if hasattr(self, 'executor') and self.executor and self.executor.has_position():
-                logger.info("[AI-Scheduler] Position open - skipping AI analysis (save API cost)")
-                return {
-                    "error": "position_open",
-                    "reason": "Position already open, AI analysis skipped",
-                    "symbol": symbol,
-                    "timestamp": datetime.now().isoformat()
-                }
+            # Check if position already open - BLOCK AI analysis (v2.0 logic)
+            if self.executor and hasattr(self.executor, 'has_position'):
+                if self.executor.has_position():
+                    logger.info("[AI-Scheduler] 🚫 Position open - BLOCKING AI analysis (v2.0 rule)")
+                    return {
+                        "error": "position_open",
+                        "reason": "Position open - AI analysis blocked until close",
+                        "symbol": symbol,
+                        "timestamp": datetime.now().isoformat()
+                    }
             
             # Check time restrictions
             time_allowed, time_reason = self.signal_manager._is_trading_time_allowed()
@@ -447,6 +448,24 @@ def init_scheduler(callback: Optional[Callable] = None, executor: Optional[objec
     """Initialize and start global scheduler."""
     global _scheduler_instance
     _scheduler_instance = AnalystScheduler(callback=callback, executor=executor)
+    def trigger_immediate_analysis(self, symbol: str = "XAUUSD", reason: str = "manual"):
+        """
+        Trigger immediate analysis (for position close or TTL expiration).
+        
+        Args:
+            symbol: Trading symbol
+            reason: Reason for trigger (position_closed, ttl_expired, manual)
+        """
+        logger.info(f"[AI-Scheduler] 🔄 Immediate analysis triggered: {reason}")
+        
+        # Run async to not block
+        def _async_run():
+            time.sleep(1)  # Small cooldown
+            self._run_analysis(symbol)
+        
+        thread = threading.Thread(target=_async_run, daemon=True)
+        thread.start()
+    
     _scheduler_instance.start()
     return _scheduler_instance
 
