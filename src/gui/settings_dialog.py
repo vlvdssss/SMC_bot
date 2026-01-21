@@ -108,7 +108,6 @@ class SettingsDialog:
         self.instruments_tab = self._create_instruments_tab()
         self.trading_tab = self._create_trading_tab()
         self.ai_tab = self._create_ai_tab()
-        self.schedule_tab = self._create_schedule_tab()  # NEW: AI Schedule tab
         self.strategy_tab = self._create_strategy_tab()
         self.gpt_api_tab = self._create_gpt_api_tab()
         self.telegram_tab = self._create_telegram_tab()
@@ -116,7 +115,6 @@ class SettingsDialog:
         self.notebook.add(self.instruments_tab, text='📈 Instruments')
         self.notebook.add(self.trading_tab, text='💰 Trading')
         self.notebook.add(self.ai_tab, text='🤖 AI')
-        self.notebook.add(self.schedule_tab, text='⏰ Schedule')  # NEW
         self.notebook.add(self.strategy_tab, text='📊 Strategy')
         self.notebook.add(self.gpt_api_tab, text='🔑 GPT API')
         self.notebook.add(self.telegram_tab, text='📱 Telegram')
