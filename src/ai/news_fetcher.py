@@ -9,6 +9,8 @@ import requests
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
 import logging
+from bs4 import BeautifulSoup
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -82,90 +84,347 @@ class RealTimeNewsFetcher:
         return events
     
     def _fetch_from_trading_economics(self) -> List[NewsEvent]:
-        """Получение с Trading Economics (требует API ключ, но есть бесплатный тир)."""
+        """Получение с Trading Economics (бесплатный календарь)."""
         events = []
         
-        # Здесь можно добавить реальный API если есть ключ
-        # Пока используем mock данные на основе текущего времени
+        try:
+            # Trading Economics имеет публичный endpoint для календаря
+            # Не требует API ключ для базового календаря
+            today = datetime.now()
+            date_str = today.strftime("%Y-%m-%d")
+            
+            # Публичный endpoint календаря
+            url = f"https://api.tradingeconomics.com/calendar?c=guest:guest&d1={date_str}&d2={date_str}"
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                'Accept': 'application/json',
+            }
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code != 200:
+                logger.warning(f"Trading Economics returned status {response.status_code}")
+                return events
+            
+            data = response.json()
+            
+            if not isinstance(data, list):
+                return events
+            
+            for item in data:
+                try:
+                    title = item.get('Event', '')
+                    
+                    # Парсим дату и время
+                    date_str_full = item.get('Date', '')
+                    if date_str_full:
+                        try:
+                            dt = datetime.fromisoformat(date_str_full.replace('Z', '+00:00'))
+                            time_str = dt.strftime("%H:%M UTC")
+                        except:
+                            time_str = date_str_full[:5]  # Берем первые 5 символов (HH:MM)
+                    else:
+                        time_str = ""
+                    
+                    # Страна -> Валюта
+                    country = item.get('Country', '')
+                    currency_map = {
+                        'United States': 'USD',
+                        'Euro Area': 'EUR',
+                        'United Kingdom': 'GBP',
+                        'Japan': 'JPY',
+                        'Canada': 'CAD',
+                        'Australia': 'AUD',
+                        'New Zealand': 'NZD',
+                        'Switzerland': 'CHF',
+                        'China': 'CNY'
+                    }
+                    currency = currency_map.get(country, country[:3].upper() if country else "")
+                    
+                    # Importance: 1=Low, 2=Medium, 3=High
+                    importance = item.get('Importance', 1)
+                    if importance >= 3:
+                        impact = "HIGH"
+                    elif importance == 2:
+                        impact = "MEDIUM"
+                    else:
+                        impact = "LOW"
+                    
+                    # Ключевые события -> EXTREME
+                    extreme_keywords = [
+                        'NFP', 'NONFARM', 'FOMC', 'GDP', 'CPI', 'INFLATION', 
+                        'INTEREST RATE', 'FED FUNDS', 'ECB DECISION', 'BOE DECISION',
+                        'EMPLOYMENT', 'PAYROLLS', 'RATE DECISION', 'MONETARY POLICY'
+                    ]
+                    if any(kw in title.upper() for kw in extreme_keywords):
+                        if impact == "HIGH":
+                            impact = "EXTREME"
+                    
+                    actual = str(item.get('Actual', '')) if item.get('Actual') is not None else ""
+                    forecast = str(item.get('Forecast', '')) if item.get('Forecast') is not None else ""
+                    previous = str(item.get('Previous', '')) if item.get('Previous') is not None else ""
+                    
+                    if title and time_str:
+                        event = NewsEvent(
+                            title=title,
+                            time=time_str,
+                            impact=impact,
+                            currency=currency,
+                            actual=actual,
+                            forecast=forecast,
+                            previous=previous
+                        )
+                        events.append(event)
+                        
+                except Exception as e:
+                    continue
+            
+            logger.info(f"Parsed {len(events)} events from Trading Economics")
+            
+        except Exception as e:
+            logger.error(f"Trading Economics fetch error: {e}")
         
         return events
     
     def _fetch_from_investing(self) -> List[NewsEvent]:
-        """Парсинг календаря Investing.com (без API)."""
+        """Получение календаря из альтернативных источников."""
         events = []
         
         try:
-            # Упрощенная версия - можно улучшить с BeautifulSoup
-            # Пока возвращаем пустой список
-            pass
+            # Пробуем несколько источников
+            # 1. Календарь с Myfxbook (открытый API)
+            events = self._fetch_from_myfxbook()
+            if events:
+                return events
+            
+            # 2. FXStreet calendar widget
+            events = self._fetch_from_fxstreet()
+            if events:
+                return events
+            
         except Exception as e:
-            logger.error(f"Investing.com parsing error: {e}")
+            logger.error(f"News API fetch error: {e}")
+        
+        return events
+    
+    def _fetch_from_myfxbook(self) -> List[NewsEvent]:
+        """Получение с Myfxbook Economic Calendar."""
+        events = []
+        
+        try:
+            # Myfxbook предоставляет открытый endpoint
+            today = datetime.now()
+            date_str = today.strftime("%Y-%m-%d")
+            
+            url = f"https://www.myfxbook.com/api/get-economic-calendar.json?date={date_str}"
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            }
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code != 200:
+                logger.warning(f"Myfxbook returned status {response.status_code}")
+                return events
+            
+            data = response.json()
+            
+            if not data or 'calendar' not in data:
+                return events
+            
+            for item in data['calendar']:
+                try:
+                    # Парсим данные
+                    title = item.get('title', '')
+                    time_str = item.get('time', '')
+                    currency = item.get('country', '')
+                    
+                    # Impact: 1=low, 2=medium, 3=high
+                    impact_level = item.get('impact', 1)
+                    if impact_level == 3:
+                        impact = "HIGH"
+                    elif impact_level == 2:
+                        impact = "MEDIUM"
+                    else:
+                        impact = "LOW"
+                    
+                    # Особо важные -> EXTREME
+                    if any(kw in title.upper() for kw in ['NFP', 'FOMC', 'GDP', 'CPI', 'RATE DECISION']):
+                        if impact == "HIGH":
+                            impact = "EXTREME"
+                    
+                    actual = item.get('actual', '')
+                    forecast = item.get('forecast', '')
+                    previous = item.get('previous', '')
+                    
+                    if title and time_str:
+                        event = NewsEvent(
+                            title=title,
+                            time=time_str,
+                            impact=impact,
+                            currency=currency,
+                            actual=str(actual) if actual else "",
+                            forecast=str(forecast) if forecast else "",
+                            previous=str(previous) if previous else ""
+                        )
+                        events.append(event)
+                        
+                except Exception as e:
+                    continue
+            
+            logger.info(f"Parsed {len(events)} events from Myfxbook")
+            
+        except Exception as e:
+            logger.error(f"Myfxbook fetch error: {e}")
+        
+        return events
+    
+    def _fetch_from_fxstreet(self) -> List[NewsEvent]:
+        """Получение с FXStreet Calendar API."""
+        events = []
+        
+        try:
+            # FXStreet предоставляет JSON endpoint
+            today = datetime.now()
+            
+            # Формат даты для FXStreet
+            date_str = today.strftime("%Y/%m/%d")
+            
+            url = f"https://calendar-api.fxstreet.com/en/api/v1/eventDates/{date_str}/{date_str}?timezone=UTC&volatilities=3,4&countries=US,EU,GB,JP,CA,AU,NZ,CH"
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                'Accept': 'application/json',
+            }
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code != 200:
+                logger.warning(f"FXStreet returned status {response.status_code}")
+                return events
+            
+            data = response.json()
+            
+            if not data:
+                return events
+            
+            # FXStreet возвращает массив дат
+            for date_entry in data:
+                if 'events' not in date_entry:
+                    continue
+                
+                for item in date_entry['events']:
+                    try:
+                        title = item.get('name', '')
+                        
+                        # Парсим время
+                        date_utc = item.get('dateUtc', '')
+                        if date_utc:
+                            dt = datetime.fromisoformat(date_utc.replace('Z', '+00:00'))
+                            time_str = dt.strftime("%H:%M UTC")
+                        else:
+                            time_str = ""
+                        
+                        # Страна -> валюта
+                        country_code = item.get('countryCode', '')
+                        currency_map = {
+                            'US': 'USD', 'EU': 'EUR', 'GB': 'GBP',
+                            'JP': 'JPY', 'CA': 'CAD', 'AU': 'AUD',
+                            'NZ': 'NZD', 'CH': 'CHF'
+                        }
+                        currency = currency_map.get(country_code, country_code)
+                        
+                        # Volatility: 3=high, 4=extreme
+                        volatility = item.get('volatility', 1)
+                        if volatility >= 4:
+                            impact = "EXTREME"
+                        elif volatility == 3:
+                            impact = "HIGH"
+                        elif volatility == 2:
+                            impact = "MEDIUM"
+                        else:
+                            impact = "LOW"
+                        
+                        actual = item.get('actual', '')
+                        forecast = item.get('forecast', '')
+                        previous = item.get('previous', '')
+                        
+                        if title and time_str:
+                            event = NewsEvent(
+                                title=title,
+                                time=time_str,
+                                impact=impact,
+                                currency=currency,
+                                actual=str(actual) if actual else "",
+                                forecast=str(forecast) if forecast else "",
+                                previous=str(previous) if previous else ""
+                            )
+                            events.append(event)
+                            
+                    except Exception as e:
+                        continue
+            
+            logger.info(f"Parsed {len(events)} events from FXStreet")
+            
+        except Exception as e:
+            logger.error(f"FXStreet fetch error: {e}")
         
         return events
     
     def _get_typical_events(self) -> List[NewsEvent]:
         """
         Возвращает типичные события на основе дня недели и времени.
-        Используется как fallback.
+        Используется как fallback когда Trading Economics API недоступен.
         """
         now = datetime.now()
         day_of_week = now.weekday()  # 0 = Monday, 6 = Sunday
-        current_hour = now.hour
         
         events = []
         
-        # Понедельник
+        logger.info("Using fallback typical events (Trading Economics API unavailable)")
+        
+        # Понедельник - Manufacturing PMI
         if day_of_week == 0:
-            events.append(NewsEvent(
-                title="Retail Sales",
-                time="15:00 UTC",
-                impact="MEDIUM",
-                currency="USD"
-            ))
+            events.extend([
+                NewsEvent(title="Manufacturing PMI", time="14:45 UTC", impact="HIGH", currency="USD"),
+                NewsEvent(title="Retail Sales", time="15:00 UTC", impact="MEDIUM", currency="EUR"),
+            ])
         
-        # Вторник
+        # Вторник - CPI
         elif day_of_week == 1:
-            events.append(NewsEvent(
-                title="CPI (Consumer Price Index)",
-                time="13:30 UTC",
-                impact="HIGH",
-                currency="USD"
-            ))
+            events.extend([
+                NewsEvent(title="CPI (Consumer Price Index)", time="13:30 UTC", impact="EXTREME", currency="USD"),
+                NewsEvent(title="Core CPI", time="13:30 UTC", impact="HIGH", currency="USD"),
+            ])
         
-        # Среда - обычно FOMC
+        # Среда - FOMC / Retail Sales
         elif day_of_week == 2:
             if now.day > 15 and now.day < 20:  # Середина месяца
-                events.append(NewsEvent(
-                    title="FOMC Meeting Decision",
-                    time="18:00 UTC",
-                    impact="EXTREME",
-                    currency="USD"
-                ))
+                events.append(NewsEvent(title="FOMC Meeting Decision", time="18:00 UTC", impact="EXTREME", currency="USD"))
+                events.append(NewsEvent(title="FOMC Press Conference", time="18:30 UTC", impact="EXTREME", currency="USD"))
+            else:
+                events.append(NewsEvent(title="Retail Sales", time="12:30 UTC", impact="HIGH", currency="USD"))
         
-        # Четверг
+        # Четверг - Unemployment / ECB
         elif day_of_week == 3:
-            events.append(NewsEvent(
-                title="Unemployment Claims",
-                time="12:30 UTC",
-                impact="MEDIUM",
-                currency="USD"
-            ))
-            events.append(NewsEvent(
-                title="ECB Rate Decision",
-                time="12:15 UTC",
-                impact="HIGH",
-                currency="EUR"
-            ))
+            events.extend([
+                NewsEvent(title="Initial Jobless Claims", time="12:30 UTC", impact="MEDIUM", currency="USD"),
+                NewsEvent(title="ECB Interest Rate Decision", time="12:15 UTC", impact="HIGH", currency="EUR"),
+                NewsEvent(title="ECB Press Conference", time="12:45 UTC", impact="HIGH", currency="EUR"),
+            ])
         
-        # Пятница - обычно NFP
+        # Пятница - NFP (первая пятница)
         elif day_of_week == 4:
-            if now.day <= 7:  # Первая пятница месяца
-                events.append(NewsEvent(
-                    title="Non-Farm Payrolls (NFP)",
-                    time="12:30 UTC",
-                    impact="EXTREME",
-                    currency="USD"
-                ))
+            if now.day <= 7:  # Первая пятница месяца = NFP
+                events.extend([
+                    NewsEvent(title="Non-Farm Payrolls (NFP)", time="12:30 UTC", impact="EXTREME", currency="USD"),
+                    NewsEvent(title="Unemployment Rate", time="12:30 UTC", impact="HIGH", currency="USD"),
+                    NewsEvent(title="Average Hourly Earnings", time="12:30 UTC", impact="HIGH", currency="USD"),
+                ])
+            else:
+                events.append(NewsEvent(title="Services PMI", time="14:45 UTC", impact="MEDIUM", currency="USD"))
         
         return events
     
