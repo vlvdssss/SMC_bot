@@ -1424,13 +1424,42 @@ If you received this message, Telegram notifications are configured correctly! �
             if 'schedule' not in ai_config['market_analyst']:
                 ai_config['market_analyst']['schedule'] = {}
             
-            ai_config['market_analyst']['schedule']['enabled'] = self.schedule_enabled.get()
+            # Schedule disabled (event-driven logic)
+            ai_config['market_analyst']['schedule']['enabled'] = False
+            ai_config['market_analyst']['schedule']['times'] = []
             
-            # Analysis times from Schedule tab
-            ai_config['market_analyst']['schedule']['times'] = self.scheduled_times
+            # Time restrictions
+            if 'restrictions' not in ai_config['market_analyst']['schedule']:
+                ai_config['market_analyst']['schedule']['restrictions'] = {}
             
-            # AI signal validity
-            ai_config['market_analyst']['signal_validity_minutes'] = int(self.signal_validity.get())
+            if 'night_block' not in ai_config['market_analyst']['schedule']['restrictions']:
+                ai_config['market_analyst']['schedule']['restrictions']['night_block'] = {}
+            
+            ai_config['market_analyst']['schedule']['restrictions']['night_block']['enabled'] = self.night_block.get()
+            
+            if 'weekend_block' not in ai_config['market_analyst']['schedule']['restrictions']:
+                ai_config['market_analyst']['schedule']['restrictions']['weekend_block'] = {}
+            
+            ai_config['market_analyst']['schedule']['restrictions']['weekend_block']['enabled'] = self.weekend_block.get()
+            
+            # Signal filters
+            if 'signals' not in ai_config['market_analyst']:
+                ai_config['market_analyst']['signals'] = {}
+            
+            ai_config['market_analyst']['signals']['min_confidence'] = int(self.min_confidence.get())
+            ai_config['market_analyst']['signals']['min_rr'] = float(self.min_rr.get())
+            
+            # TTL настройки (сохраняем в trading.yaml)
+            trading_config = self.configs.get('trading.yaml', {})
+            if 'trading' not in trading_config:
+                trading_config['trading'] = {}
+            if 'signal_ttl' not in trading_config['trading']:
+                trading_config['trading']['signal_ttl'] = {}
+            
+            trading_config['trading']['signal_ttl']['ttl_minutes'] = int(self.signal_validity.get())
+            trading_config['trading']['signal_ttl']['auto_requery_on_expire'] = self.auto_requery_expire.get()
+            trading_config['trading']['signal_ttl']['auto_requery_on_close'] = self.auto_requery_close.get()
+            trading_config['trading']['signal_ttl']['enabled'] = True
             
             # Обновить Portfolio config
             portfolio_config = self.configs.get('portfolio.yaml', {})
@@ -1442,10 +1471,7 @@ If you received this message, Telegram notifications are configured correctly! �
                 portfolio_config['portfolio']['risk_model'] = {}
             portfolio_config['portfolio']['risk_model']['max_total_exposure'] = float(self.risk_per_trade.get())
             
-            # Обновить Trading config
-            trading_config = self.configs.get('trading.yaml', {})
-            if 'trading' not in trading_config:
-                trading_config['trading'] = {}
+            # Trading config (уже загружен выше для TTL)
             
             # Risk settings
             if 'risk' not in trading_config['trading']:
