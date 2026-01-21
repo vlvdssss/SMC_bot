@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-BAZA Trading Bot v3.0
+BAZA Trading Bot v2.0.0
 
 Запуск GUI: python main.py
 Запуск бэктеста: python main.py --backtest --year 2024
