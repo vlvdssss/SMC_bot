@@ -94,7 +94,9 @@ class LiveTrader:
             try:
                 logger.info("[LiveTrader] Initializing AI Signal Manager...")
                 self.ai_signal_manager = AISignalManager()
-                logger.info("[LiveTrader] AI Signal Manager initialized")
+                # Set executor reference for position checks
+                self.ai_signal_manager.set_executor(self.executor)
+                logger.info("[LiveTrader] AI Signal Manager initialized with executor reference")
             except Exception as e:
                 logger.error(f"[LiveTrader] Failed to init AI Signal Manager: {e}")
         else:

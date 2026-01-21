@@ -211,13 +211,34 @@ class AISignalManager:
     
     def process_analysis(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Process AI analysis with new Decision Engine format (v2.0).
+        Process AI analysis with GPT Decision Engine format (v2.0).
+        
+        Expected format:
+        {
+            "decision": {
+                "action": "BUY|SELL|NONE",
+                "confidence": 0-100,
+                "block": "NONE|SOFT|HARD"
+            },
+            "trade": {  # Only present if action = BUY/SELL
+                "entry": float,
+                "stop_loss": float,
+                "take_profit": float,
+                "risk_reward": float
+            }
+        }
+        
+        Logic:
+        - BUY/SELL: Create signal if no position exists, max 1 pending per symbol
+        - NONE: Schedule retry in 15 minutes
+        - TTL: Signals expire after configured time (default 60 min)
+        - Block levels: NONE (1.0x), SOFT (0.5x), HARD (0.0x blocked)
         
         Args:
-            analysis: Analysis dict from MarketAnalystService (decision format)
+            analysis: Analysis dict from MarketAnalystService
         
         Returns:
-            Summary dict
+            Summary dict with signals_created, action, block info
         """
         try:
             with self._lock:
@@ -225,32 +246,71 @@ class AISignalManager:
                 self.latest_analysis_time = datetime.now().isoformat()
                 self.latest_analysis_version = analysis.get("analysis_version", "2.0")
                 
+                # Get symbol from analysis
+                symbol = analysis.get("symbol", "XAUUSD")
+                
+                # Initialize summary
                 summary = {
                     "signals_created": 0,
                     "decision_action": "NONE",
                     "block_type": "none",
-                    "risk_multiplier": 1.0
+                    "risk_multiplier": 1.0,
+                    "symbol": symbol
                 }
                 
-                # Get decision (new format)
+                # Extract decision data
                 decision = analysis.get("decision", {})
-                action = decision.get("action", "NONE")
+                action = decision.get("action", "NONE").upper()
                 confidence = decision.get("confidence", 0)
-                block_level = decision.get("block", "NONE")
+                block_level = decision.get("block", "NONE").upper()
                 
                 summary["decision_action"] = action
                 summary["block_type"] = block_level.lower()
                 
-                logger.info(f"[AI-Signal] Decision: {action} (confidence: {confidence}%, block: {block_level})")
+                logger.info(
+                    f"[AI-Signal] 📊 Decision received: {action} "
+                    f"(confidence: {confidence}%, block: {block_level}, symbol: {symbol})"
+                )
                 
-                # Process block level
+                # 1. Process block level first (affects risk multiplier)
                 self._process_block_level(block_level, summary)
                 
-                # If action is BUY or SELL → create signal
-                if action in ["BUY", "SELL"] and "trade" in analysis:
+                # 2. Handle BUY/SELL actions
+                if action in ["BUY", "SELL"]:
+                    # Check if trade data exists
+                    if "trade" not in analysis:
+                        logger.error(f"[AI-Signal] ❌ {action} decision but no trade data provided")
+                        return summary
+                    
                     trade_data = analysis["trade"]
                     
-                    # Convert decision format to signal format
+                    # Check #1: Position already exists?
+                    if hasattr(self, 'executor') and self.executor:
+                        if self.executor.has_position(symbol):
+                            logger.warning(
+                                f"[AI-Signal] ⛔ Position already open for {symbol} - "
+                                f"skipping {action} signal creation"
+                            )
+                            summary["block_reason"] = "position_already_open"
+                            return summary
+                    else:
+                        logger.debug("[AI-Signal] No executor reference - skipping position check")
+                    
+                    # Check #2: Already has pending signal for this symbol?
+                    pending_count = sum(
+                        1 for s in self.active_signals 
+                        if s.symbol == symbol and s.status == "pending"
+                    )
+                    
+                    if pending_count >= 1:
+                        logger.warning(
+                            f"[AI-Signal] ⛔ Already {pending_count} pending signal(s) for {symbol} - "
+                            f"max 1 allowed, skipping new signal"
+                        )
+                        summary["block_reason"] = "max_pending_signals_reached"
+                        return summary
+                    
+                    # Build signal data from decision + trade
                     signal_data = {
                         "type": action,
                         "entry_price": trade_data.get("entry"),
@@ -258,48 +318,72 @@ class AISignalManager:
                         "take_profit": trade_data.get("take_profit"),
                         "confidence": confidence,
                         "risk_reward": trade_data.get("risk_reward", 1.5),
-                        "reasoning": f"Decision Engine: {action} with {confidence}% confidence",
-                        "trigger_time": "immediate"  # Always immediate in v2.0
+                        "reasoning": f"GPT Decision Engine: {action} @ {confidence}% confidence",
+                        "trigger_time": "immediate"  # v2.0 always immediate
                     }
                     
-                    if self._validate_signal(signal_data):
-                        signal = self._create_signal(
-                            analysis.get("symbol", "XAUUSD"),
-                            signal_data,
-                            analysis.get("analysis_version", "2.0")
-                        )
-                        self.active_signals.append(signal)
-                        summary["signals_created"] += 1
-                        
-                        # Log to history
-                        self.signal_history.append({
-                            "action": "created",
-                            "signal_id": signal.id,
-                            "timestamp": datetime.now().isoformat()
-                        })
-                        
-                        logger.info(
-                            f"[AI-Signal] ✅ Created signal: {signal.type} @ {signal.entry_price} "
-                            f"(conf: {signal.confidence}%, TTL expires: {signal.expires_at[11:16]})"
-                        )
-                    else:
-                        logger.warning(f"[AI-Signal] Signal validation failed for {action} decision")
+                    # Validate signal structure and quality
+                    if not self._validate_signal(signal_data):
+                        logger.warning(f"[AI-Signal] ❌ Signal validation failed for {action} decision")
+                        summary["block_reason"] = "validation_failed"
+                        return summary
+                    
+                    # Create signal with TTL
+                    signal = self._create_signal(
+                        symbol=symbol,
+                        signal_data=signal_data,
+                        version=analysis.get("analysis_version", "2.0")
+                    )
+                    
+                    # Add to active signals
+                    self.active_signals.append(signal)
+                    summary["signals_created"] = 1
+                    
+                    # Log to history
+                    self.signal_history.append({
+                        "action": "created",
+                        "signal_id": signal.id,
+                        "timestamp": datetime.now().isoformat(),
+                        "confidence": confidence,
+                        "symbol": symbol
+                    })
+                    
+                    # Get TTL config
+                    ttl_config = self.config.get('trading', {}).get('signal_ttl', {})
+                    ttl_minutes = ttl_config.get('ttl_minutes', 60)
+                    
+                    logger.info(
+                        f"[AI-Signal] ✅ Signal created: {signal.type} {symbol} @ {signal.entry_price:.5f} "
+                        f"| SL: {signal.stop_loss:.5f} | TP: {signal.take_profit:.5f} "
+                        f"| Confidence: {signal.confidence}% | TTL: {ttl_minutes}min "
+                        f"| Expires: {signal.expires_at[11:16]}"
+                    )
                 
+                # 3. Handle NONE action
                 elif action == "NONE":
-                    logger.info("[AI-Signal] Decision is NONE - no signal created")
+                    logger.info(
+                        f"[AI-Signal] 🔵 NONE decision for {symbol} - "
+                        f"confidence: {confidence}% - scheduling retry in 15 min"
+                    )
+                    
+                    # Schedule retry after 15 minutes
+                    self._schedule_none_retry(symbol)
+                    summary["retry_scheduled"] = True
                 
-                # Cleanup expired signals
+                else:
+                    logger.warning(f"[AI-Signal] ⚠️ Unknown action: {action}")
+                
+                # 4. Cleanup expired signals (will trigger auto-requery if TTL expired)
                 self._cleanup_expired_signals()
                 
-                # Save and reload state
+                # 5. Save state
                 self._save_state()
-                self._load_state(verbose=True)
                 
                 return summary
                 
         except Exception as e:
-            logger.error(f"[AI-Signal] Failed to process analysis: {e}", exc_info=True)
-            return {"error": str(e)}
+            logger.error(f"[AI-Signal] ❌ Failed to process analysis: {e}", exc_info=True)
+            return {"error": str(e), "signals_created": 0}
     
     def _process_block_level(self, block_level: str, summary: Dict):
         """Process block level from decision (v2.0)."""
@@ -736,6 +820,56 @@ class AISignalManager:
         """Set reference to analyst_scheduler for auto-requery."""
         self.scheduler = scheduler
         logger.info("[AI-Signal] Scheduler reference set for auto-requery")
+    
+    def set_executor(self, executor):
+        """Set reference to live trader executor for position checks."""
+        self.executor = executor
+        logger.info("[AI-Signal] Executor reference set for position checks")
+    
+    def _schedule_none_retry(self, symbol: str):
+        """
+        Schedule automatic retry in 15 minutes after NONE decision.
+        
+        Before triggering, checks that no pending signal exists for the symbol
+        to avoid creating duplicates.
+        
+        Args:
+            symbol: Trading symbol for retry
+        """
+        try:
+            if not hasattr(self, 'scheduler') or not self.scheduler:
+                logger.warning("[AI-Signal] No scheduler reference - cannot schedule NONE retry")
+                return
+            
+            # Use threading.Timer for 15-minute delay
+            def retry_callback():
+                # Check if pending signal exists before retry
+                pending_count = sum(
+                    1 for s in self.active_signals 
+                    if s.symbol == symbol and s.status == "pending"
+                )
+                
+                if pending_count > 0:
+                    logger.info(
+                        f"[AI-Signal] 🔄 NONE retry cancelled: "
+                        f"{pending_count} pending signal(s) exist for {symbol}"
+                    )
+                    return
+                
+                # Trigger immediate analysis
+                logger.info(f"[AI-Signal] 🔄 Triggering retry after NONE decision for {symbol}")
+                self.scheduler.trigger_immediate_analysis(reason=f"none_retry_{symbol}")
+            
+            # Schedule for 15 minutes (900 seconds)
+            retry_timer = threading.Timer(900, retry_callback)
+            retry_timer.daemon = True
+            retry_timer.start()
+            
+            logger.info(f"[AI-Signal] ⏰ Scheduled NONE retry for {symbol} in 15 minutes")
+            
+        except Exception as e:
+            logger.error(f"[AI-Signal] Failed to schedule NONE retry: {e}")
+    
     
     def get_trading_permission(
         self, 

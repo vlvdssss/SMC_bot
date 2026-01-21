@@ -23,10 +23,10 @@ market_analyst:
     max_monthly_cost: 50.0
     min_minutes_between_calls: 15
   schedule:
-    enabled: true
+    enabled: false
     restrictions:
       night_block:
-        enabled: true
+        enabled: false
         end: 02:00
         start: '22:00'
       weekend_block:
