@@ -430,6 +430,24 @@ class AnalystScheduler:
         except Exception as e:
             logger.error(f"[AI-Scheduler] Failed to calc next run: {e}")
             return None
+    
+    def trigger_immediate_analysis(self, symbol: str = "XAUUSD", reason: str = "manual"):
+        """
+        Trigger immediate analysis (for position close or TTL expiration).
+        
+        Args:
+            symbol: Trading symbol
+            reason: Reason for trigger (position_closed, ttl_expired, manual)
+        """
+        logger.info(f"[AI-Scheduler] Immediate analysis triggered: {reason}")
+        
+        # Run async to not block
+        def _async_run():
+            time.sleep(1)  # Small cooldown
+            self._run_analysis(symbol)
+        
+        thread = threading.Thread(target=_async_run, daemon=True)
+        thread.start()
 
 
 # Global scheduler instance (initialized in app)
@@ -448,24 +466,6 @@ def init_scheduler(callback: Optional[Callable] = None, executor: Optional[objec
     """Initialize and start global scheduler."""
     global _scheduler_instance
     _scheduler_instance = AnalystScheduler(callback=callback, executor=executor)
-    def trigger_immediate_analysis(self, symbol: str = "XAUUSD", reason: str = "manual"):
-        """
-        Trigger immediate analysis (for position close or TTL expiration).
-        
-        Args:
-            symbol: Trading symbol
-            reason: Reason for trigger (position_closed, ttl_expired, manual)
-        """
-        logger.info(f"[AI-Scheduler] 🔄 Immediate analysis triggered: {reason}")
-        
-        # Run async to not block
-        def _async_run():
-            time.sleep(1)  # Small cooldown
-            self._run_analysis(symbol)
-        
-        thread = threading.Thread(target=_async_run, daemon=True)
-        thread.start()
-    
     _scheduler_instance.start()
     return _scheduler_instance
 
