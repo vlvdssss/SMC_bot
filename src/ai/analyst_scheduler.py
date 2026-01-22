@@ -463,10 +463,18 @@ def get_scheduler() -> AnalystScheduler:
     return _scheduler_instance
 
 
-def init_scheduler(callback: Optional[Callable] = None, executor: Optional[object] = None) -> AnalystScheduler:
+def init_scheduler(
+    callback: Optional[Callable] = None, 
+    executor: Optional[object] = None,
+    signal_manager: Optional['AISignalManager'] = None
+) -> AnalystScheduler:
     """Initialize and start global scheduler."""
     global _scheduler_instance
-    _scheduler_instance = AnalystScheduler(callback=callback, executor=executor)
+    _scheduler_instance = AnalystScheduler(
+        callback=callback, 
+        executor=executor,
+        signal_manager=signal_manager
+    )
     _scheduler_instance.start()
     return _scheduler_instance
 
