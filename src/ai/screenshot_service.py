@@ -12,6 +12,12 @@ from pathlib import Path
 from typing import Optional
 import MetaTrader5 as mt5
 from PIL import Image, ImageDraw, ImageFont
+
+# CRITICAL: Set matplotlib backend BEFORE importing pyplot
+# This prevents "main thread is not in main loop" errors in background threads
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend for threading
+
 import matplotlib.pyplot as plt  # type: ignore
 import matplotlib.dates as mdates  # type: ignore
 import pandas as pd
@@ -91,14 +97,19 @@ class ChartScreenshotService:
             filename = f"{symbol}_{timeframe_str}_{timestamp}.png"
             filepath = self.output_dir / filename
             
-            plt.savefig(filepath, facecolor='#1a1a1a', edgecolor='none', dpi=150)
-            plt.close()
-            
-            logger.info(f"[Screenshot] Captured: {filename}")
-            return str(filepath)
+            # Save and close figure explicitly
+            try:
+                plt.savefig(filepath, facecolor='#1a1a1a', edgecolor='none', dpi=150)
+                logger.info(f"[Screenshot] Captured: {filename}")
+                return str(filepath)
+            finally:
+                # CRITICAL: Always close figure to prevent memory leaks
+                plt.close(fig)
             
         except Exception as e:
-            logger.error(f"[Screenshot] Capture failed: {e}")
+            logger.error(f"[Screenshot] Capture failed for {symbol} {timeframe}: {str(e)}")
+            # Close any open figures
+            plt.close('all')
             return None
     
     def _plot_candlesticks(self, ax, df: pd.DataFrame):
