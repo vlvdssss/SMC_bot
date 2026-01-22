@@ -1390,6 +1390,19 @@ class BazaApp:
                         trader.ai_signal_manager.set_scheduler(scheduler)
                     app_logger.info("[LOOP] Auto-requery configured (TTL + position close)")
                     
+                    # 🔥 КРИТИЧНО: Запрашиваем первый анализ при старте Pure AI режима
+                    app_logger.info("[LOOP] 🔥 Requesting initial AI analysis for Pure AI mode...")
+                    try:
+                        # Запрос анализа для всех инструментов
+                        for symbol in ['XAUUSD', 'EURUSD']:
+                            scheduler.request_analysis(
+                                instrument=symbol,
+                                reason=f"Pure AI mode started - initial analysis"
+                            )
+                            app_logger.info(f"[LOOP] ✅ Initial analysis requested for {symbol}")
+                    except Exception as e:
+                        app_logger.error(f"[LOOP] Failed to request initial analysis: {e}")
+                    
                 except Exception as e:
                     app_logger.error(f"[LOOP] Failed to start AI Scheduler: {e}")
             
