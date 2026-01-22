@@ -27,6 +27,7 @@ a = Analysis(
     runtime_hooks=[],
     excludes=['matplotlib.tests', 'torch', 'scipy._lib.array_api_compat.torch'],
     noarchive=False,
+    optimize=0,
 )
 pyz = PYZ(a.pure)
 

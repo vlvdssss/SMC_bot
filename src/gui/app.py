@@ -1281,7 +1281,7 @@ class BazaApp:
             # Обновить состояние
             self.bot_running = True
             self.control_panel.set_bot_running(True)
-            self.mode_selector.update_status(False)
+            self.mode_selector.update_status(True)  # ← FIX: True = бот запущен
             
             # Уведомить BotManager о старте (для Telegram уведомлений)
             self.bot_manager.start(
@@ -1325,7 +1325,7 @@ class BazaApp:
             
             # Обновить UI
             self.control_panel.set_bot_running(False)
-            self.mode_selector.update_status(False)
+            self.mode_selector.update_status(False)  # ← Готов к запуску
             
             # Дождаться завершения потока
             if self.bot_thread and self.bot_thread.is_alive():

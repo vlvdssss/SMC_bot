@@ -95,8 +95,9 @@ class AnalystScheduler:
         # Reload config to get fresh value
         self.config = self._load_config()
         ai_enabled = self.config.get('ai_enabled', True)
-        schedule_enabled = self.config.get('market_analyst', {}).get('schedule', {}).get('enabled', True)
-        return ai_enabled and schedule_enabled
+        analyst_enabled = self.config.get('market_analyst', {}).get('enabled', True)
+        # В event-driven режиме schedule.enabled не влияет - AI запускается по событиям (TTL, position close)
+        return ai_enabled and analyst_enabled
     
     def _is_instrument_analysis_enabled(self, symbol: str) -> bool:
         """Проверить включен ли анализ для инструмента."""
