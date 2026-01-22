@@ -1380,7 +1380,11 @@ class BazaApp:
             # Запустить AI Scheduler для pure_ai режима
             if self.bot_manager.trading_mode == 'pure_ai' and AI_ANALYSIS_AVAILABLE:
                 try:
-                    scheduler = init_scheduler(executor=trader.executor)
+                    # КРИТИЧНО: Передаём существующий signal_manager из trader
+                    scheduler = init_scheduler(
+                        executor=trader.executor,
+                        signal_manager=trader.ai_signal_manager
+                    )
                     scheduler.start()
                     app_logger.info("[LOOP] AI Scheduler started for pure_ai mode")
                     
