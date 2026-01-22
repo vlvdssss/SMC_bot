@@ -1395,9 +1395,9 @@ class BazaApp:
                     try:
                         # Запрос анализа для всех инструментов
                         for symbol in ['XAUUSD', 'EURUSD']:
-                            scheduler.request_analysis(
-                                instrument=symbol,
-                                reason=f"Pure AI mode started - initial analysis"
+                            scheduler.trigger_immediate_analysis(
+                                symbol=symbol,
+                                reason="Pure AI mode started - initial analysis"
                             )
                             app_logger.info(f"[LOOP] ✅ Initial analysis requested for {symbol}")
                     except Exception as e:

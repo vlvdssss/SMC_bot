@@ -3,23 +3,9 @@
   "block_reason": null,
   "block_until": null,
   "risk_multiplier": 1.0,
-  "latest_analysis_time": "2026-01-22T00:22:06.378019",
+  "latest_analysis_time": null,
   "latest_analysis_version": "2.0",
   "active_signals": [],
-  "signal_history": [
-    {
-      "action": "created",
-      "signal_id": "XAUUSD_20260122_002206",
-      "timestamp": "2026-01-22T00:22:06.355050",
-      "confidence": 75,
-      "symbol": "XAUUSD"
-    },
-    {
-      "action": "price_invalidated",
-      "signal_id": "XAUUSD_20260122_002206",
-      "timestamp": "2026-01-22T00:27:21.268089",
-      "reason": "Status: price_invalidated"
-    }
-  ],
-  "updated_at": "2026-01-22T01:26:04.866312"
+  "signal_history": [],
+  "updated_at": null
 }
