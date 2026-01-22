@@ -72,9 +72,12 @@ class RealTimeNewsFetcher:
             except Exception as e:
                 logger.warning(f"Investing.com fetch failed: {e}")
         
-        # Если ничего не получили - используем заглушку с типичными событиями
-        if not events:
-            events = self._get_typical_events()
+        # Если мало HIGH-IMPACT событий - добавляем типичные как дополнение
+        high_impact_count = sum(1 for e in events if e.impact in ['HIGH', 'EXTREME'])
+        if high_impact_count < 2:
+            logger.info(f"Only {high_impact_count} HIGH-IMPACT events from API, adding typical events")
+            typical = self._get_typical_events()
+            events.extend(typical)
         
         # Кэшируем
         self.cache[cache_key] = events
@@ -433,26 +436,38 @@ class RealTimeNewsFetcher:
         Получает события высокого воздействия в ближайшие часы.
         
         Args:
-            hours_ahead: Сколько часов вперед смотреть
+            hours_ahead: Сколько часов вперед смотреть (по умолчанию 4)
+                        Если hours_ahead >= 24 - возвращает все HIGH/EXTREME события дня
         
         Returns:
             List[NewsEvent]: Высокоимпактные события
         """
         all_events = self.fetch_todays_events()
-        now = datetime.now()
-        cutoff_time = now + timedelta(hours=hours_ahead)
         
         high_impact = []
         for event in all_events:
             if event.impact in ['HIGH', 'EXTREME']:
-                # Парсим время события
-                try:
-                    event_hour = int(event.time.split(':')[0])
-                    if now.hour <= event_hour <= cutoff_time.hour:
-                        high_impact.append(event)
-                except:
-                    # Если не можем распарсить - добавляем на всякий случай
+                # Если запрашивают весь день (24+ часа) - возвращаем все HIGH/EXTREME
+                if hours_ahead >= 24:
                     high_impact.append(event)
+                else:
+                    # Проверяем время события
+                    now = datetime.now()
+                    try:
+                        # Парсим время события (формат "HH:MM UTC")
+                        time_str = event.time.replace(' UTC', '').strip()
+                        event_hour, event_minute = map(int, time_str.split(':'))
+                        
+                        # Создаем datetime для события
+                        event_dt = now.replace(hour=event_hour, minute=event_minute, second=0, microsecond=0)
+                        
+                        # Проверяем: событие в будущем И в пределах hours_ahead
+                        time_until = (event_dt - now).total_seconds() / 3600  # часы
+                        if -1 <= time_until <= hours_ahead:  # -1 час назад до hours_ahead вперед
+                            high_impact.append(event)
+                    except:
+                        # Если не можем распарсить - добавляем на всякий случай
+                        high_impact.append(event)
         
         return high_impact
     
