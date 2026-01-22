@@ -23,6 +23,7 @@ scipy>=1.13.0
 
 # GUI
 customtkinter>=5.0.0
+matplotlib>=3.7.0
 
 # Build
 pyinstaller>=6.0.0
