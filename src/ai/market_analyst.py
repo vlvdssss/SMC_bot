@@ -270,9 +270,10 @@ DO NOT write explanations or analysis. ONLY return structured machine-readable d
 **CRITICAL DECISION RULES:**
 1. Entry price MUST be within 10-30 pips of current price
 2. If price moved >50% toward target → action = NONE (missed opportunity)
-3. If confidence <70% → action = NONE (wait for better setup)
+3. If confidence <50% → action = NONE (too uncertain - wait for better setup)
 4. Decision is ONLY for RIGHT NOW (not future times)
 5. Return ONLY ONE decision (no arrays, no multiple signals)
+6. If market conditions are unclear but not dangerous → BUY/SELL with SOFT block (50-60% confidence is acceptable)
 
 **MARKET DATA:**
 Symbol: {symbol}
