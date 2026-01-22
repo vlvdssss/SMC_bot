@@ -457,11 +457,7 @@ class LiveTrader:
                         # Если разрешена торговля, открываем сделку
                         if self.enable_trading:
                             self.execute_trade(symbol, filtered_signal)
-                else:
-                    if signal:
-                        logger.info(f"[LiveTrader] ❌ Strategy signal NOT valid for {symbol}: {signal}")
-                    else:
-                        logger.debug(f"[LiveTrader] No strategy signal for {symbol}")
+                # Removed: NOT valid signal logging - too spammy in logs
             
             except Exception as e:
                 logger.error(f"Error checking {symbol}: {e}")
