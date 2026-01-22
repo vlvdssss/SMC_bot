@@ -1384,13 +1384,15 @@ class BazaApp:
                     scheduler.start()
                     app_logger.info("[LOOP] AI Scheduler started for pure_ai mode")
                     
-                    # Set references for auto-requery
+                    # Set references for auto-requery BEFORE requesting analysis
                     trader.analyst_scheduler = scheduler
                     if trader.ai_signal_manager:
                         trader.ai_signal_manager.set_scheduler(scheduler)
+                        trader.ai_signal_manager.set_executor(trader.executor)
                     app_logger.info("[LOOP] Auto-requery configured (TTL + position close)")
                     
                     # 🔥 КРИТИЧНО: Запрашиваем первый анализ при старте Pure AI режима
+                    # Scheduler reference уже установлен, так что NONE retry будет работать
                     app_logger.info("[LOOP] 🔥 Requesting initial AI analysis for Pure AI mode...")
                     try:
                         # Запрос анализа для всех инструментов

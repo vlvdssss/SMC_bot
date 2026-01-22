@@ -3,7 +3,7 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [('config', 'config'), ('data', 'data'), ('src', 'src')]
 binaries = []
-hiddenimports = ['MetaTrader5', 'openai', 'pandas', 'numpy', 'yaml', 'tkinter', 'customtkinter', 'PIL', 'matplotlib', 'sklearn', 'joblib', 'requests', 'dotenv', 'lightgbm', 'scipy', 'scipy._lib', 'scipy._lib.array_api_compat', 'scipy._lib.array_api_compat.numpy', 'scipy._lib.array_api_compat.numpy.fft', 'scipy.special', 'scipy.special._cdflib', 'src.ai.analyst_scheduler', 'src.ai.signal_manager', 'src.ai.market_analyst', 'src.ai.screenshot_analyzer', 'src.manual_trading.controller', 'src.manual_trading.ai_analyzer', 'src.manual_trading.calculator', 'src.manual_trading.validator']
+hiddenimports = ['MetaTrader5', 'openai', 'pandas', 'numpy', 'yaml', 'tkinter', 'customtkinter', 'PIL', 'matplotlib', 'matplotlib.pyplot', 'matplotlib.dates', 'matplotlib.backends', 'matplotlib.backends.backend_agg', 'sklearn', 'joblib', 'requests', 'dotenv', 'lightgbm', 'scipy', 'scipy._lib', 'scipy._lib.array_api_compat', 'scipy._lib.array_api_compat.numpy', 'scipy._lib.array_api_compat.numpy.fft', 'scipy.special', 'scipy.special._cdflib', 'src.ai.analyst_scheduler', 'src.ai.signal_manager', 'src.ai.market_analyst', 'src.ai.screenshot_analyzer', 'src.manual_trading.controller', 'src.manual_trading.ai_analyzer', 'src.manual_trading.calculator', 'src.manual_trading.validator']
 tmp_ret = collect_all('customtkinter')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('PIL')
@@ -27,6 +27,7 @@ a = Analysis(
     runtime_hooks=[],
     excludes=['matplotlib.tests', 'torch', 'scipy._lib.array_api_compat.torch'],
     noarchive=False,
+    optimize=0,
 )
 pyz = PYZ(a.pure)
 
