@@ -556,6 +556,128 @@ class SettingsDialog:
         self.trail_distance.config(command=lambda v: (update_distance_label(v), update_example()))
         self.trail_step.config(command=lambda v: (update_step_label(v), update_example()))
         
+        # === BREAKEVEN - АВТОМАТИЧЕСКИЙ ПЕРЕВОД В БЕЗУБЫТОК ===
+        self._create_section(content, "🛡️ Breakeven (Защита прибыли)")
+        
+        breakeven_config = trailing_config.get('breakeven', {})
+        
+        # Включить breakeven
+        be_enabled_frame = self._create_setting_row(content, "✅ Включить автоматический breakeven")
+        self.breakeven_enabled = tk.BooleanVar(value=breakeven_config.get('enabled', True))
+        tk.Checkbutton(be_enabled_frame,
+                      variable=self.breakeven_enabled,
+                      bg=Colors.BG_DARK,
+                      fg=Colors.TEXT_PRIMARY,
+                      selectcolor=Colors.BG_PANEL,
+                      activebackground=Colors.BG_DARK,
+                      activeforeground=Colors.SUCCESS,
+                      font=('Arial', 10, 'bold')).pack(side='right')
+        
+        # Информация о breakeven
+        be_info_frame = tk.Frame(content, bg=Colors.BG_CARD,
+                                highlightbackground=Colors.INFO,
+                                highlightthickness=1)
+        be_info_frame.pack(fill='x', pady=(5, 10), padx=40)
+        
+        tk.Label(be_info_frame,
+                text="ℹ️ Breakeven автоматически переводит SL в безубыток при достижении профита.\n"
+                     "Пример: профит +25 пипсов → SL на entry+5 пипсов (гарантия +$0.50 на 0.01 лот)",
+                font=('Arial', 9),
+                bg=Colors.BG_CARD,
+                fg=Colors.TEXT_SECONDARY,
+                justify='left',
+                wraplength=600).pack(padx=15, pady=10)
+        
+        # Активация breakeven
+        tk.Label(content,
+                text="🎯 Активация при профите (пипсы):",
+                font=('Arial', 10, 'bold'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_PRIMARY,
+                anchor='w').pack(fill='x', pady=(10, 5), padx=40)
+        
+        be_activation_frame = tk.Frame(content, bg=Colors.BG_DARK)
+        be_activation_frame.pack(fill='x', pady=5, padx=40)
+        
+        self.be_activation = tk.Scale(be_activation_frame,
+                                     from_=10,
+                                     to=50,
+                                     orient='horizontal',
+                                     length=300,
+                                     bg=Colors.BG_CARD,
+                                     fg=Colors.TEXT_PRIMARY,
+                                     activebackground=Colors.PRIMARY,
+                                     highlightthickness=0,
+                                     troughcolor=Colors.BG_PANEL,
+                                     font=('Arial', 9))
+        self.be_activation.set(breakeven_config.get('activation_profit_pips', 25))
+        self.be_activation.pack(side='left', padx=10)
+        
+        self.be_activation_label = tk.Label(be_activation_frame,
+                                           text=f"{self.be_activation.get()} пипсов",
+                                           font=('Arial', 10, 'bold'),
+                                           bg=Colors.BG_DARK,
+                                           fg=Colors.SUCCESS,
+                                           width=12)
+        self.be_activation_label.pack(side='left')
+        
+        def update_be_activation_label(val):
+            self.be_activation_label.config(text=f"{int(float(val))} пипсов")
+        
+        self.be_activation.config(command=update_be_activation_label)
+        
+        tk.Label(content,
+                text="💡 При достижении этого профита SL переводится в безубыток",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED,
+                justify='left').pack(fill='x', pady=(2, 5), padx=40)
+        
+        # Отступ от входа
+        tk.Label(content,
+                text="➕ Отступ от входа (защита прибыли в пипсах):",
+                font=('Arial', 10, 'bold'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_PRIMARY,
+                anchor='w').pack(fill='x', pady=(10, 5), padx=40)
+        
+        be_offset_frame = tk.Frame(content, bg=Colors.BG_DARK)
+        be_offset_frame.pack(fill='x', pady=5, padx=40)
+        
+        self.be_offset = tk.Scale(be_offset_frame,
+                                 from_=0,
+                                 to=15,
+                                 orient='horizontal',
+                                 length=300,
+                                 bg=Colors.BG_CARD,
+                                 fg=Colors.TEXT_PRIMARY,
+                                 activebackground=Colors.PRIMARY,
+                                 highlightthickness=0,
+                                 troughcolor=Colors.BG_PANEL,
+                                 font=('Arial', 9))
+        self.be_offset.set(breakeven_config.get('offset_pips', 5))
+        self.be_offset.pack(side='left', padx=10)
+        
+        self.be_offset_label = tk.Label(be_offset_frame,
+                                       text=f"+{self.be_offset.get()} пипсов",
+                                       font=('Arial', 10, 'bold'),
+                                       bg=Colors.BG_DARK,
+                                       fg=Colors.SUCCESS,
+                                       width=12)
+        self.be_offset_label.pack(side='left')
+        
+        def update_be_offset_label(val):
+            self.be_offset_label.config(text=f"+{int(float(val))} пипсов")
+        
+        self.be_offset.config(command=update_be_offset_label)
+        
+        tk.Label(content,
+                text="💡 SL ставится на entry + этот отступ (0 = точный безубыток)",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED,
+                justify='left').pack(fill='x', pady=(2, 15), padx=40)
+        
         # Trading Hours
         self._create_section(content, "Trading Hours (UTC)")
         
@@ -1232,7 +1354,7 @@ If you received this message, Telegram notifications are configured correctly! �
             
             portfolio_config['portfolio']['risk_model']['max_total_exposure'] = float(self.risk_per_trade.get())
             
-            # Обновить Trading config
+            # Обновить Trading config (first occurrence for save_ai_settings)
             trading_config = self.configs.get('trading.yaml', {})
             
             if 'trading' not in trading_config:
@@ -1254,6 +1376,14 @@ If you received this message, Telegram notifications are configured correctly! �
             trading_config['trading']['trailing_stop']['activation_profit_pips'] = int(self.trail_activation.get())
             trading_config['trading']['trailing_stop']['distance_pips'] = int(self.trail_distance.get())
             trading_config['trading']['trailing_stop']['step_pips'] = int(self.trail_step.get())
+            
+            # Breakeven (FIRST OCCURRENCE)
+            if 'breakeven' not in trading_config['trading']['trailing_stop']:
+                trading_config['trading']['trailing_stop']['breakeven'] = {}
+            
+            trading_config['trading']['trailing_stop']['breakeven']['enabled'] = self.breakeven_enabled.get()
+            trading_config['trading']['trailing_stop']['breakeven']['activation_profit_pips'] = int(self.be_activation.get())
+            trading_config['trading']['trailing_stop']['breakeven']['offset_pips'] = int(self.be_offset.get())
             
             # Trading hours
             if 'hours' not in trading_config['trading']:
@@ -1488,6 +1618,14 @@ If you received this message, Telegram notifications are configured correctly! �
             trading_config['trading']['trailing_stop']['activation_profit_pips'] = int(self.trail_activation.get())
             trading_config['trading']['trailing_stop']['distance_pips'] = int(self.trail_distance.get())
             trading_config['trading']['trailing_stop']['step_pips'] = int(self.trail_step.get())
+            
+            # Breakeven (SECOND OCCURRENCE)
+            if 'breakeven' not in trading_config['trading']['trailing_stop']:
+                trading_config['trading']['trailing_stop']['breakeven'] = {}
+            
+            trading_config['trading']['trailing_stop']['breakeven']['enabled'] = self.breakeven_enabled.get()
+            trading_config['trading']['trailing_stop']['breakeven']['activation_profit_pips'] = int(self.be_activation.get())
+            trading_config['trading']['trailing_stop']['breakeven']['offset_pips'] = int(self.be_offset.get())
             
             # Trading hours
             if 'hours' not in trading_config['trading']:

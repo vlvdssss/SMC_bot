@@ -286,7 +286,7 @@ class AISignalManager:
                     
                     # Check #1: Position already exists?
                     if hasattr(self, 'executor') and self.executor:
-                        if self.executor.has_position(symbol):
+                        if self.executor.has_position():
                             logger.warning(
                                 f"[AI-Signal] ⛔ Position already open for {symbol} - "
                                 f"skipping {action} signal creation"

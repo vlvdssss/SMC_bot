@@ -34,7 +34,11 @@ try:
     from src.ai.analyst_scheduler import get_scheduler, init_scheduler
     from src.ai.signal_manager import AISignalManager
     AI_ANALYSIS_AVAILABLE = True
-except ImportError:
+except Exception as e:
+    # Ловим ВСЕ ошибки, не только ImportError
+    # Могут быть проблемы с кодировкой, инициализацией и т.д.
+    import traceback
+    traceback.print_exc()
     AI_ANALYSIS_AVAILABLE = False
 
 

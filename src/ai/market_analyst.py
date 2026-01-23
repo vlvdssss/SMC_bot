@@ -125,7 +125,11 @@ class MarketAnalystService:
             # 6. Validate and add metadata
             validated = self._validate_analysis(analysis)
             
-            logger.info(f"[AI] Analysis completed: {validated.get('summary', {}).get('sentiment')}")
+            # Log completion with correct field
+            decision = validated.get('decision', {})
+            action = decision.get('action', 'NONE')
+            confidence = decision.get('confidence', 0)
+            logger.info(f"[AI] Analysis completed: {action} (confidence: {confidence}%)")
             return validated
             
         except Exception as e:
@@ -261,65 +265,101 @@ class MarketAnalystService:
             return []
     
     def _build_analysis_prompt(self, symbol: str, metrics: Dict, news: List[Dict]) -> str:
-        """Build Decision Engine prompt for GPT (v2.0 - simplified format)."""
+        """Build SIMPLE and PROVEN prompt for GPT (back to basics with fixed SL)."""
         
-        prompt = f"""You are a Trading Decision Engine. Your ONLY task is to make an immediate trading decision.
-
-DO NOT write explanations or analysis. ONLY return structured machine-readable data.
-
-**CRITICAL DECISION RULES:**
-1. Entry price MUST be within 10-30 pips of current price
-2. If price moved >50% toward target → action = NONE (missed opportunity)
-3. If confidence <50% → action = NONE (too uncertain - wait for better setup)
-4. Decision is ONLY for RIGHT NOW (not future times)
-5. Return ONLY ONE decision (no arrays, no multiple signals)
-6. If market conditions are unclear but not dangerous → BUY/SELL with SOFT block (50-60% confidence is acceptable)
+        # Calculate fixed stop-loss distance
+        current_price = metrics.get('current_price', 0)
+        fixed_stop_distance_pips = 100  # 100 pips = $10 risk for 0.01 lot on XAUUSD
+        fixed_stop_distance = fixed_stop_distance_pips * 0.01
+        
+        prompt = f"""You are an expert trading analyst. Analyze the market and provide ONE clear trading decision.
 
 **MARKET DATA:**
 Symbol: {symbol}
-Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-Current Price: ${metrics.get('current_price', 'N/A')}
-ATR: ${metrics.get('atr', 'N/A')} ({metrics.get('atr_pct', 'N/A')}%)
-Trend: {metrics.get('trend', 'N/A')}
-24H Range: ${metrics.get('low_24h', 'N/A')} - ${metrics.get('high_24h', 'N/A')}
-Premium/Discount: {metrics.get('premium_discount', 'N/A')}
-Volatility: {metrics.get('volatility_pct', 'N/A')}%
+Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Current Price: ${current_price}
+
+Technical Indicators:
+- ATR: ${metrics.get('atr', 0)} ({metrics.get('atr_pct', 0)}%)
+- Trend: {metrics.get('trend', 'neutral')}
+- EMA Fast (12): ${metrics.get('ema_fast', 0)}
+- EMA Slow (26): ${metrics.get('ema_slow', 0)}
+- 24H High: ${metrics.get('high_24h', 0)}
+- 24H Low: ${metrics.get('low_24h', 0)}
+- Premium/Discount: {metrics.get('premium_discount', 0.5):.1%}
+- Volatility: {metrics.get('volatility_pct', 0):.2f}%
+
+**CHART SCREENSHOTS:**
+You will receive 4 timeframe charts:
+- M5 (5-minute): for entry timing
+- M15 (15-minute): for structure
+- M30 (30-minute): for context
+- H1 (1-hour): for trend
 
 **HIGH-IMPACT NEWS:**
 """
         
         if news:
             for item in news:
-                prompt += f"\n- [{item['impact'].upper()}] {item['title']} at {item['time']}"
+                prompt += f"\n- [{item['impact']}] {item['title']} at {item['time']}"
         else:
-            prompt += "\nNo high-impact news"
+            prompt += "\nNo high-impact news in next 12 hours"
         
-        prompt += """
+        prompt += f"""
 
-**RESPONSE FORMAT (STRICT):**
+**YOUR TASK:**
+1. Look at ALL 4 charts carefully
+2. Identify trend direction (bullish/bearish/neutral)
+3. Find key support/resistance levels
+4. Check if NOW is good time to enter
+5. Make ONE decision: BUY, SELL, or NONE
 
-{
-  "timestamp": "2026-01-21T12:00:00",
-  "symbol": "XAUUSD",
-  "decision": {
+**DECISION RULES:**
+- Entry must be within 5-20 pips of current price
+- If no clear setup → action = NONE
+- If confidence <60% → action = NONE
+- STOP-LOSS: Always FIXED at {fixed_stop_distance_pips} pips (${fixed_stop_distance:.2f})
+- TAKE-PROFIT: Minimum 1.5:1 R:R (150 pips), optimal 2:1 or better
+- Place TP at next major support/resistance level
+
+**CONFIDENCE LEVELS:**
+- 80-100%: Very strong setup (all confirmations)
+- 70-79%: Good setup (most confirmations)
+- 60-69%: Acceptable setup (key confirmations present)
+- Below 60%: WAIT - not clear enough
+
+**RESPONSE FORMAT (JSON ONLY):**
+
+{{
+  "timestamp": "{datetime.now().isoformat()}",
+  "symbol": "{symbol}",
+  "decision": {{
     "action": "BUY|SELL|NONE",
-    "confidence": 85,
-    "block": "NONE|SOFT|HARD"
-  },
-  "trade": {
-    "entry": 2665.0,
-    "stop_loss": 2660.0,
-    "take_profit": 2675.0,
-    "risk_reward": 2.0
-  }
-}
+    "confidence": 75,
+    "block": "NONE|SOFT|HARD",
+    "reasoning": "Brief 1-2 sentence explanation"
+  }},
+  "trade": {{
+    "entry": {current_price},
+    "stop_loss": {current_price - fixed_stop_distance},
+    "take_profit": {current_price + (fixed_stop_distance * 1.5)},
+    "risk_reward": 1.5
+  }},
+  "analysis": {{
+    "trend": "bullish|bearish|neutral",
+    "key_level": "Support $X / Resistance $Y",
+    "entry_quality": "optimal|good|fair"
+  }}
+}}
 
-**RULES:**
-- If action = NONE → omit "trade" object completely
-- block levels: NONE (safe to trade), SOFT (reduce risk), HARD (do not trade)
-- confidence must be 0-100
-- NO explanations, NO analysis text, NO reasoning field
-- ONLY machine data
+**IMPORTANT:**
+- If action=NONE → omit "trade" object
+- Stop-Loss MUST be exactly {fixed_stop_distance_pips} pips
+- Take-Profit minimum 150 pips (ideally 200+ pips)
+- Include brief reasoning (max 2 sentences)
+- Return ONLY valid JSON, no extra text
+
+Now analyze the charts and provide your decision!
 """
 
         return prompt

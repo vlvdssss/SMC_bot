@@ -28,9 +28,13 @@ trading:
     fair_value_gaps: true
     order_blocks: true
   trailing_stop:
-    activation_profit_pips: 15
-    distance_pips: 20
+    activation_profit_pips: 20  # Активация после 20 пипсов профита ($2 на 0.01 лот)
+    distance_pips: 15  # Держать SL на 15 пипсах от текущей цены (ближе к цене)
     enabled: true
-    step_pips: 5
+    step_pips: 3  # Обновлять каждые 3 пипса (более частые обновления)
+    breakeven:
+      enabled: true  # Автоматический перевод в безубыток
+      activation_profit_pips: 25  # Когда достигнем +25 пипсов ($2.50 на 0.01 лот)
+      offset_pips: 5  # Ставим SL на +5 пипсов от входа (гарантия прибыли)
   trend_filter:
     enabled: true

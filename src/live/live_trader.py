@@ -88,6 +88,15 @@ class LiveTrader:
         self.executor = Executor(mt5_connector=self.mt5_connector)
         logger.info("[LiveTrader] Executor ready")
         
+        # Инициализация NewsFetcher (для V3)
+        self.news_fetcher = None
+        try:
+            from src.ai.news_fetcher import RealTimeNewsFetcher
+            self.news_fetcher = RealTimeNewsFetcher()
+            logger.info("[LiveTrader] NewsFetcher initialized")
+        except Exception as e:
+            logger.warning(f"[LiveTrader] NewsFetcher not available: {e}")
+        
         # Инициализация AI Signal Manager
         self.ai_signal_manager = None
         if AI_SIGNAL_MANAGER_AVAILABLE:
@@ -96,6 +105,21 @@ class LiveTrader:
                 self.ai_signal_manager = AISignalManager()
                 # Set executor reference for position checks
                 self.ai_signal_manager.set_executor(self.executor)
+                
+                # 🚀 АКТИВАЦИЯ SIGNAL QUALITY V3.0
+                try:
+                    from src.ai.activate_v3 import activate_v3, ENABLE_SIGNAL_QUALITY_V3
+                    if ENABLE_SIGNAL_QUALITY_V3 and self.news_fetcher:
+                        self.ai_signal_manager = activate_v3(
+                            self.ai_signal_manager,
+                            self.news_fetcher,
+                            enable=True
+                        )
+                    elif ENABLE_SIGNAL_QUALITY_V3:
+                        logger.warning("[LiveTrader] V3 enabled but news_fetcher not available - using V2")
+                except ImportError as e:
+                    logger.info(f"[LiveTrader] V3 module not found ({e}) - using V2 logic")
+                
                 logger.info("[LiveTrader] AI Signal Manager initialized with executor reference")
             except Exception as e:
                 logger.error(f"[LiveTrader] Failed to init AI Signal Manager: {e}")
@@ -577,6 +601,18 @@ class LiveTrader:
             if result:
                 logger.info(f"Trade executed for {symbol}: {result}")
                 
+                # Извлекаем данные из сигнала (используется в нескольких местах)
+                direction = signal.get('direction', '').upper()
+                if direction.lower() == 'long':
+                    direction = 'BUY'
+                elif direction.lower() == 'short':
+                    direction = 'SELL'
+                
+                entry = signal.get('entry_price', 0)
+                sl = signal.get('sl', signal.get('stop_loss', 0))
+                tp = signal.get('tp', signal.get('take_profit', 0))
+                lot_size = signal.get('lot_size', signal.get('volume', 0.01))
+                
                 # Отмечаем AI сигнал как исполненный (если есть)
                 if self.ai_signal_manager and signal.get('ai_signal_id'):
                     try:
@@ -596,17 +632,6 @@ class LiveTrader:
                         bot_manager = BotManager()
                         trading_mode = bot_manager.trading_mode
                         
-                        # Извлекаем данные из сигнала
-                        direction = signal.get('direction', '').upper()
-                        if direction.lower() == 'long':
-                            direction = 'BUY'
-                        elif direction.lower() == 'short':
-                            direction = 'SELL'
-                        
-                        entry = signal.get('entry_price', 0)
-                        sl = signal.get('sl', signal.get('stop_loss', 0))
-                        tp = signal.get('tp', signal.get('take_profit', 0))
-                        lot_size = signal.get('lot_size', signal.get('volume', 0.01))
                         reasoning = signal.get('reasoning', '')
                         confidence = signal.get('confidence', 0) * 100  # Convert to %
                         
@@ -626,7 +651,7 @@ class LiveTrader:
                     except Exception as tg_error:
                         logger.error(f"[Telegram] Failed to send trade opened notification: {tg_error}")
                 
-                # Запоминаем позицию для отслеживания закрытия
+                # Запоминаем позицию для отслеживания закрытия и трейлинга
                 try:
                     # Получаем последнюю открытую позицию из MT5
                     positions = self.mt5_connector.positions_get(symbol=symbol)
@@ -637,14 +662,16 @@ class LiveTrader:
                             'direction': direction,
                             'entry_price': entry,
                             'sl': sl,
+                            'current_sl': sl,  # Инициализируем текущий SL
                             'tp': tp,
                             'entry_time': datetime.now(),
                             'volume': lot_size,
-                            'sl_moved': False  # Флаг что SL еще не перемещен
+                            'sl_moved': False,  # Флаг что SL еще не перемещен
+                            'breakeven_moved': False  # Флаг что breakeven еще не выполнен
                         }
-                        logger.info(f"[Telegram] Tracking position #{pos.ticket} for close notification")
+                        logger.info(f"[Position] Tracking #{pos.ticket} for trailing/close notification")
                 except Exception as track_error:
-                    logger.error(f"[Telegram] Failed to track position: {track_error}")
+                    logger.error(f"[Position] Failed to track position: {track_error}")
                 
         except Exception as e:
             logger.error(f"Trade execution failed for {symbol}: {e}")
@@ -677,6 +704,12 @@ class LiveTrader:
             distance_pips = trailing_config.get('distance_pips', 20)
             step_pips = trailing_config.get('step_pips', 5)
             
+            # Breakeven settings
+            breakeven_config = trailing_config.get('breakeven', {})
+            breakeven_enabled = breakeven_config.get('enabled', True)
+            breakeven_activation = breakeven_config.get('activation_profit_pips', 25)
+            breakeven_offset = breakeven_config.get('offset_pips', 5)
+            
         except Exception as e:
             logger.error(f"[TrailingSL] Failed to load config: {e}")
             return
@@ -707,6 +740,22 @@ class LiveTrader:
                 if direction == 'BUY':
                     profit_pips = (current_price - entry) / pip_size
                     
+                    # ===== BREAKEVEN LOGIC =====
+                    # Проверяем перевод в безубыток (выполняется только один раз)
+                    if breakeven_enabled and not pos_info.get('breakeven_moved', False):
+                        if profit_pips >= breakeven_activation:
+                            # Переводим SL в безубыток (+offset_pips)
+                            breakeven_sl = entry + (breakeven_offset * pip_size)
+                            
+                            if breakeven_sl > current_sl:  # Только если это улучшает SL
+                                if self._modify_position_sl(ticket, breakeven_sl, symbol):
+                                    pos_info['current_sl'] = breakeven_sl
+                                    pos_info['breakeven_moved'] = True  # Помечаем что уже переведен
+                                    logger.info(f"[Breakeven] ✅ #{ticket} {symbol} BUY: Moved to breakeven at {breakeven_sl:.5f}")
+                                    logger.info(f"[Breakeven]    Profit: +{profit_pips:.1f} pips, SL now at entry+{breakeven_offset} pips")
+                                    continue  # Переходим к следующей позиции
+                    
+                    # ===== TRAILING STOP LOGIC =====
                     # Проверяем достигнут ли порог активации
                     if profit_pips < activation_profit:
                         continue  # Еще мало профита для trailing
@@ -732,6 +781,22 @@ class LiveTrader:
                 elif direction == 'SELL':
                     profit_pips = (entry - current_price) / pip_size
                     
+                    # ===== BREAKEVEN LOGIC =====
+                    # Проверяем перевод в безубыток (выполняется только один раз)
+                    if breakeven_enabled and not pos_info.get('breakeven_moved', False):
+                        if profit_pips >= breakeven_activation:
+                            # Переводим SL в безубыток (-offset_pips)
+                            breakeven_sl = entry - (breakeven_offset * pip_size)
+                            
+                            if breakeven_sl < current_sl:  # Только если это улучшает SL
+                                if self._modify_position_sl(ticket, breakeven_sl, symbol):
+                                    pos_info['current_sl'] = breakeven_sl
+                                    pos_info['breakeven_moved'] = True  # Помечаем что уже переведен
+                                    logger.info(f"[Breakeven] ✅ #{ticket} {symbol} SELL: Moved to breakeven at {breakeven_sl:.5f}")
+                                    logger.info(f"[Breakeven]    Profit: +{profit_pips:.1f} pips, SL now at entry-{breakeven_offset} pips")
+                                    continue  # Переходим к следующей позиции
+                    
+                    # ===== TRAILING STOP LOGIC =====
                     # Проверяем достигнут ли порог активации
                     if profit_pips < activation_profit:
                         continue  # Еще мало профита для trailing
