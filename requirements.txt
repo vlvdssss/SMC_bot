@@ -24,6 +24,7 @@ scipy>=1.13.0
 # GUI
 customtkinter>=5.0.0
 matplotlib>=3.7.0
+streamlit>=1.50.0  # For dashboard.py
 
 # Build
 pyinstaller>=6.0.0

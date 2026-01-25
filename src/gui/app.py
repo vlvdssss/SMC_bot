@@ -34,10 +34,12 @@ try:
     from src.ai.analyst_scheduler import get_scheduler, init_scheduler
     from src.ai.signal_manager import AISignalManager
     AI_ANALYSIS_AVAILABLE = True
+    app_logger.info("✅ AI modules loaded successfully")
 except Exception as e:
     # Ловим ВСЕ ошибки, не только ImportError
     # Могут быть проблемы с кодировкой, инициализацией и т.д.
     import traceback
+    app_logger.error(f"❌ AI modules failed to load: {e}")
     traceback.print_exc()
     AI_ANALYSIS_AVAILABLE = False
 
@@ -70,6 +72,7 @@ class Colors:
     SUCCESS = '#3fb950'           # Успех (зелёный)
     ERROR = '#f85149'             # Ошибка (красный)
     WARNING = '#d29922'           # Предупреждение (жёлтый)
+    INFO = '#58a6ff'              # Информация (синий)
     
     BUY = '#26a69a'               # Покупка (бирюзовый)
     SELL = '#ef5350'              # Продажа (красный)

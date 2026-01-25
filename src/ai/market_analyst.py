@@ -317,7 +317,7 @@ You will receive 4 timeframe charts:
 **DECISION RULES:**
 - Entry must be within 5-20 pips of current price
 - If no clear setup → action = NONE
-- If confidence <60% → action = NONE
+- If confidence <50% → action = NONE
 - STOP-LOSS: Always FIXED at {fixed_stop_distance_pips} pips (${fixed_stop_distance:.2f})
 - TAKE-PROFIT: Minimum 1.5:1 R:R (150 pips), optimal 2:1 or better
 - Place TP at next major support/resistance level
@@ -325,8 +325,9 @@ You will receive 4 timeframe charts:
 **CONFIDENCE LEVELS:**
 - 80-100%: Very strong setup (all confirmations)
 - 70-79%: Good setup (most confirmations)
-- 60-69%: Acceptable setup (key confirmations present)
-- Below 60%: WAIT - not clear enough
+- 60-69%: Good setup (most confirmations)
+- 50-59%: Acceptable setup (key confirmations present)
+- Below 50%: WAIT - not clear enough
 
 **RESPONSE FORMAT (JSON ONLY):**
 

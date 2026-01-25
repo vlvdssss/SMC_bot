@@ -144,26 +144,32 @@ class AISignalManager:
         current_hour = now.hour
         current_weekday = now.weekday()  # 0=Monday, 6=Sunday
         
-        # Night block: 22:00 - 02:00
-        if current_hour >= 22 or current_hour < 2:
+        # Check config for time restrictions
+        restrictions = self.config.get('market_analyst', {}).get('schedule', {}).get('restrictions', {})
+        
+        # Night block: 22:00 - 02:00 (check config)
+        night_block_enabled = restrictions.get('night_block', {}).get('enabled', False)
+        if night_block_enabled and (current_hour >= 22 or current_hour < 2):
             return False, "Night time block (22:00-02:00)"
         
-        # Weekend block: Friday 22:00 - Monday 02:00
-        # Friday after 22:00
-        if current_weekday == 4 and current_hour >= 22:
-            return False, "Weekend block starting (Friday 22:00)"
-        
-        # Saturday (all day)
-        if current_weekday == 5:
-            return False, "Weekend block (Saturday)"
-        
-        # Sunday (all day)
-        if current_weekday == 6:
-            return False, "Weekend block (Sunday)"
-        
-        # Monday before 02:00
-        if current_weekday == 0 and current_hour < 2:
-            return False, "Weekend block ending (Monday 02:00)"
+        # Weekend block: Friday 22:00 - Monday 02:00 (check config)
+        weekend_block_enabled = restrictions.get('weekend_block', {}).get('enabled', True)
+        if weekend_block_enabled:
+            # Friday after 22:00
+            if current_weekday == 4 and current_hour >= 22:
+                return False, "Weekend block starting (Friday 22:00)"
+            
+            # Saturday (all day)
+            if current_weekday == 5:
+                return False, "Weekend block (Saturday)"
+            
+            # Sunday (all day)
+            if current_weekday == 6:
+                return False, "Weekend block (Sunday)"
+            
+            # Monday before 02:00
+            if current_weekday == 0 and current_hour < 2:
+                return False, "Weekend block ending (Monday 02:00)"
         
         return True, "OK"
     

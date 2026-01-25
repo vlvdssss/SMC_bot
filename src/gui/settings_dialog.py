@@ -25,6 +25,7 @@ class Colors:
     SUCCESS = '#3fb950'
     WARNING = '#d29922'
     ERROR = '#f85149'
+    INFO = '#58a6ff'          # Информация (синий)
 
 
 class SettingsDialog:
