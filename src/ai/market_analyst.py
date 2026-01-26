@@ -317,29 +317,38 @@ Analyze the charts and metrics. Find support/resistance levels, identify trend, 
 }
 
 **CRITICAL RULES FOR TP/SL:**
-1. **STOP-LOSS**: Place at nearest key support/resistance that invalidates your setup
-   - For BUY: below recent swing low or support
-   - For SELL: above recent swing high or resistance
-   - **MINIMUM**: $5 from entry (NEVER less than $5!)
-   - **TYPICAL RANGE**: $7-$15 from entry (70-150 pips)
-   - **MAXIMUM**: $20 from entry
+1. **STOP-LOSS**: ⚠️ ALWAYS EXACTLY $10 FROM ENTRY (FIXED!) ⚠️
+   - For BUY: entry - $10
+   - For SELL: entry + $10
+   - **NO EXCEPTIONS** - this is risk management requirement!
 
 2. **TAKE-PROFIT**: Place at next major resistance/support level
+   - **MINIMUM**: $10 from entry (R:R 1:1)
+   - **OPTIMAL**: $15-$30 from entry (R:R 1.5:1 - 3:1)
    - Must be realistic based on current volatility (ATR)
-   - Minimum R:R 1.5:1, optimal 2:1 or better
    - Consider 24H range and key levels
 
-3. **ENTRY**: Within 5-20 pips of current price
+3. **ENTRY**: Within $2 of current price (tight)
 
-**DECISION RULES:**
+**STRICT DECISION RULES (HIGH QUALITY SIGNALS ONLY!):**
 - If no clear setup → action = NONE
-- If confidence <60% → action = NONE
-- Entry must be close to current price (within $2)
-- **BUY ONLY if**: price above both EMAs OR strong bullish structure visible
-- **SELL ONLY if**: price below both EMAs OR strong bearish structure visible
-- Use market structure (support/resistance) for SL/TP placement
-- Include brief reasoning why this trade makes sense
-- **NEVER set SL closer than $5** - this is critical!
+- If confidence <75% → action = NONE (raised from 60%)
+- Entry must be within $2 of current price
+
+- **BUY ALLOWED ONLY IF ALL CONDITIONS MET:**
+  ✅ Current price > EMA Fast (9)
+  ✅ EMA Fast > EMA Slow (26)  
+  ✅ H1 trend = bullish
+  ✅ Clear bullish structure visible on charts
+  
+- **SELL ALLOWED ONLY IF ALL CONDITIONS MET:**
+  ✅ Current price < EMA Fast (9)
+  ✅ EMA Fast < EMA Slow (26)
+  ✅ H1 trend = bearish
+  ✅ Clear bearish structure visible on charts
+
+- If EMAs contradict your direction → action = NONE (critical filter!)
+- Include brief reasoning explaining EMA alignment and structure
 
 **IMPORTANT:**
 - If action=NONE → omit "trade" object completely
@@ -547,21 +556,26 @@ Now analyze the charts and provide your decision!
                             analysis["decision"]["action"] = "NONE"
                             break
                     
-                    # Validate SL distance (minimum $5)
+                    # Validate SL distance (MUST be exactly $10 ±$1)
                     if analysis["decision"]["action"] in ["BUY", "SELL"]:
                         entry = float(trade.get("entry", 0))
                         sl = float(trade.get("stop_loss", 0))
+                        tp = float(trade.get("take_profit", 0))
                         sl_distance = abs(entry - sl)
+                        tp_distance = abs(tp - entry)
                         
-                        if sl_distance < 5.0:
-                            logger.warning(f"[AI] ❌ REJECTING signal: SL too close (${sl_distance:.2f} < $5)")
-                            logger.warning(f"[AI] Entry: {entry}, SL: {sl}")
+                        # Check SL = $10 ±$1
+                        if sl_distance < 9.0 or sl_distance > 11.0:
+                            logger.warning(f"[AI] ❌ REJECTING signal: SL must be $10 (got ${sl_distance:.2f})")
                             analysis["decision"]["action"] = "NONE"
-                            analysis["decision"]["reasoning"] = f"SL too close (${sl_distance:.2f} < $5 minimum)"
-                        elif sl_distance > 20.0:
-                            logger.warning(f"[AI] ⚠️ WARNING: SL very wide (${sl_distance:.2f} > $20)")
+                            analysis["decision"]["reasoning"] = f"SL must be exactly $10 (got ${sl_distance:.2f})"
+                        # Check TP minimum $10
+                        elif tp_distance < 10.0:
+                            logger.warning(f"[AI] ❌ REJECTING signal: TP too close (${tp_distance:.2f} < $10)")
+                            analysis["decision"]["action"] = "NONE"
+                            analysis["decision"]["reasoning"] = f"TP too close (${tp_distance:.2f} < $10 minimum)"
                         else:
-                            logger.info(f"[AI] ✅ SL distance OK: ${sl_distance:.2f}")
+                            logger.info(f"[AI] ✅ Risk validated: SL=${sl_distance:.1f}, TP=${tp_distance:.1f}, R:R={tp_distance/sl_distance:.2f}:1")
             
             # Add metadata
             analysis["analyzed_at"] = datetime.now().isoformat()

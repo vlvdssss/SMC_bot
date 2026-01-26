@@ -113,3 +113,30 @@ class RiskManager:
             'max_open_positions': self.max_open_positions,
             'max_daily_trades': self.max_daily_trades
         }
+    
+    def calculate_trailing_activation(self, entry: float, take_profit: float, trailing_percent: float = 0.3) -> float:
+        """
+        Calculate trailing stop activation level (30% of TP distance by default).
+        
+        Args:
+            entry: Entry price
+            take_profit: Take profit level
+            trailing_percent: Percentage of TP distance to activate trailing (default 0.3 = 30%)
+        
+        Returns:
+            Profit in $ when trailing should activate
+        
+        Example:
+            Entry: 5083, TP: 5113 (+$30)
+            Activation: 30% of $30 = +$9 profit
+            When profit reaches +$9, trailing activates
+        """
+        tp_distance = abs(take_profit - entry)
+        activation_distance = tp_distance * trailing_percent
+        
+        self.logger.info(
+            f"[Risk] Trailing activation calculated: "
+            f"+${activation_distance:.2f} (30% of ${tp_distance:.2f} TP distance)"
+        )
+        
+        return activation_distance
