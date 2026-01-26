@@ -32,18 +32,8 @@ market_analyst:
       weekend_block:
         enabled: true
         friday_start: '22:00'
-        monday_end: 02:00
-    times:
-    - 03:00
-    - 03:15
-    - 06:00
-    - 06:15
-    - 09:00
-    - '11:15'
-    - '12:00'
-    - '15:00'
-    - '18:00'
-    - '21:00'
+        monday_end: '01:00'
+    times: []
   screenshots:
     bars: 100
     cleanup_days: 7

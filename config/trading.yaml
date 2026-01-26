@@ -1,7 +1,7 @@
 trading:
   hours:
     end: '23:00'
-    start: 02:00
+    start: 01:00
   indicators:
     atr_period: 14
     ema_periods:
@@ -28,13 +28,13 @@ trading:
     fair_value_gaps: true
     order_blocks: true
   trailing_stop:
-    activation_profit_pips: 20  # Активация после 20 пипсов профита ($2 на 0.01 лот)
-    distance_pips: 15  # Держать SL на 15 пипсах от текущей цены (ближе к цене)
-    enabled: true
-    step_pips: 3  # Обновлять каждые 3 пипса (более частые обновления)
+    activation_profit_pips: 20
     breakeven:
-      enabled: true  # Автоматический перевод в безубыток
-      activation_profit_pips: 25  # Когда достигнем +25 пипсов ($2.50 на 0.01 лот)
-      offset_pips: 5  # Ставим SL на +5 пипсов от входа (гарантия прибыли)
+      activation_profit_pips: 25
+      enabled: true
+      offset_pips: 5
+    distance_pips: 15
+    enabled: true
+    step_pips: 3
   trend_filter:
     enabled: true

@@ -147,17 +147,25 @@ class AISignalManager:
         # Check config for time restrictions
         restrictions = self.config.get('market_analyst', {}).get('schedule', {}).get('restrictions', {})
         
-        # Night block: 22:00 - 02:00 (check config)
-        night_block_enabled = restrictions.get('night_block', {}).get('enabled', False)
-        if night_block_enabled and (current_hour >= 22 or current_hour < 2):
-            return False, "Night time block (22:00-02:00)"
+        # Night block: check config for start/end times
+        night_block_config = restrictions.get('night_block', {})
+        night_block_enabled = night_block_config.get('enabled', False)
+        if night_block_enabled:
+            night_start = int(night_block_config.get('start', '22:00').split(':')[0])
+            night_end = int(night_block_config.get('end', '02:00').split(':')[0])
+            if current_hour >= night_start or current_hour < night_end:
+                return False, f"Night time block ({night_start:02d}:00-{night_end:02d}:00)"
         
-        # Weekend block: Friday 22:00 - Monday 02:00 (check config)
-        weekend_block_enabled = restrictions.get('weekend_block', {}).get('enabled', True)
+        # Weekend block: check config for Friday start and Monday end
+        weekend_block_config = restrictions.get('weekend_block', {})
+        weekend_block_enabled = weekend_block_config.get('enabled', True)
         if weekend_block_enabled:
-            # Friday after 22:00
-            if current_weekday == 4 and current_hour >= 22:
-                return False, "Weekend block starting (Friday 22:00)"
+            friday_start = int(weekend_block_config.get('friday_start', '22:00').split(':')[0])
+            monday_end = int(weekend_block_config.get('monday_end', '02:00').split(':')[0])
+            
+            # Friday after configured hour
+            if current_weekday == 4 and current_hour >= friday_start:
+                return False, f"Weekend block starting (Friday {friday_start:02d}:00)"
             
             # Saturday (all day)
             if current_weekday == 5:
@@ -167,9 +175,9 @@ class AISignalManager:
             if current_weekday == 6:
                 return False, "Weekend block (Sunday)"
             
-            # Monday before 02:00
-            if current_weekday == 0 and current_hour < 2:
-                return False, "Weekend block ending (Monday 02:00)"
+            # Monday before configured hour
+            if current_weekday == 0 and current_hour < monday_end:
+                return False, f"Weekend block ending (Monday {monday_end:02d}:00)"
         
         return True, "OK"
     
@@ -269,6 +277,7 @@ class AISignalManager:
                 action = decision.get("action", "NONE").upper()
                 confidence = decision.get("confidence", 0)
                 block_level = decision.get("block", "NONE").upper()
+                reasoning = decision.get("reasoning", f"{action} @ {confidence}% confidence")  # Берём из GPT
                 
                 summary["decision_action"] = action
                 summary["block_type"] = block_level.lower()
@@ -324,7 +333,7 @@ class AISignalManager:
                         "take_profit": trade_data.get("take_profit"),
                         "confidence": confidence,
                         "risk_reward": trade_data.get("risk_reward", 1.5),
-                        "reasoning": f"GPT Decision Engine: {action} @ {confidence}% confidence",
+                        "reasoning": reasoning,  # Используем reasoning из GPT
                         "trigger_time": "immediate"  # v2.0 always immediate
                     }
                     
@@ -344,6 +353,9 @@ class AISignalManager:
                     # Add to active signals
                     self.active_signals.append(signal)
                     summary["signals_created"] = 1
+                    
+                    # КРИТИЧНО: Сохранить сразу после создания
+                    self._save_state()
                     
                     # Log to history
                     self.signal_history.append({

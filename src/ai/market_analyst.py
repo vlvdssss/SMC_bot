@@ -137,51 +137,41 @@ class MarketAnalystService:
             return self._get_fallback_response(str(e))
     
     def _capture_charts(self, symbol: str) -> Dict[str, str]:
-        """Capture M5, M15, M30, and H1 chart screenshots (4 timeframes)."""
+        """Capture M15, M30, and H1 chart screenshots (3 timeframes for intraday)."""
         try:
             screenshots = {}
             
-            # M5 chart
-            m5_path = self.screenshot_service.capture_chart(
-                symbol=symbol, 
-                timeframe=mt5.TIMEFRAME_M5,
-                bars=100
-            )
-            if m5_path:
-                with open(m5_path, 'rb') as f:
-                    screenshots['M5'] = base64.b64encode(f.read()).decode('utf-8')
-            
-            # M15 chart
+            # M15 chart - short-term structure
             m15_path = self.screenshot_service.capture_chart(
                 symbol=symbol, 
                 timeframe=mt5.TIMEFRAME_M15,
-                bars=100
+                bars=150
             )
             if m15_path:
                 with open(m15_path, 'rb') as f:
                     screenshots['M15'] = base64.b64encode(f.read()).decode('utf-8')
             
-            # M30 chart
+            # M30 chart - medium-term context
             m30_path = self.screenshot_service.capture_chart(
                 symbol=symbol, 
                 timeframe=mt5.TIMEFRAME_M30,
-                bars=100
+                bars=150
             )
             if m30_path:
                 with open(m30_path, 'rb') as f:
                     screenshots['M30'] = base64.b64encode(f.read()).decode('utf-8')
             
-            # H1 chart
+            # H1 chart - main trend direction
             h1_path = self.screenshot_service.capture_chart(
-                symbol=symbol,
+                symbol=symbol, 
                 timeframe=mt5.TIMEFRAME_H1,
-                bars=100
+                bars=150
             )
             if h1_path:
                 with open(h1_path, 'rb') as f:
                     screenshots['H1'] = base64.b64encode(f.read()).decode('utf-8')
             
-            logger.info(f"[AI] ✅ Captured {len(screenshots)}/4 timeframe screenshots")
+            logger.info(f"[AI] Captured {len(screenshots)}/3 timeframe screenshots (M15, M30, H1)")
             return screenshots
             
         except Exception as e:
@@ -265,100 +255,92 @@ class MarketAnalystService:
             return []
     
     def _build_analysis_prompt(self, symbol: str, metrics: Dict, news: List[Dict]) -> str:
-        """Build SIMPLE and PROVEN prompt for GPT (back to basics with fixed SL)."""
+        """Build comprehensive prompt for GPT analysis (original smart version)."""
         
-        # Calculate fixed stop-loss distance
-        current_price = metrics.get('current_price', 0)
-        fixed_stop_distance_pips = 100  # 100 pips = $10 risk for 0.01 lot on XAUUSD
-        fixed_stop_distance = fixed_stop_distance_pips * 0.01
-        
-        prompt = f"""You are an expert trading analyst. Analyze the market and provide ONE clear trading decision.
+        prompt = f"""You are an expert forex/gold trader and market analyst. Analyze the market and provide actionable trading signals.
 
-**MARKET DATA:**
-Symbol: {symbol}
-Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-Current Price: ${current_price}
+**SYMBOL:** {symbol}
+**TIMESTAMP:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-Technical Indicators:
-- ATR: ${metrics.get('atr', 0)} ({metrics.get('atr_pct', 0)}%)
-- Trend: {metrics.get('trend', 'neutral')}
-- EMA Fast (12): ${metrics.get('ema_fast', 0)}
-- EMA Slow (26): ${metrics.get('ema_slow', 0)}
-- 24H High: ${metrics.get('high_24h', 0)}
-- 24H Low: ${metrics.get('low_24h', 0)}
-- Premium/Discount: {metrics.get('premium_discount', 0.5):.1%}
-- Volatility: {metrics.get('volatility_pct', 0):.2f}%
+**TECHNICAL METRICS:**
+- Current Price: ${metrics.get('current_price', 'N/A')}
+- ATR: ${metrics.get('atr', 'N/A')} ({metrics.get('atr_pct', 'N/A')}%)
+- Trend: {metrics.get('trend', 'N/A')}
+- 24H Range: ${metrics.get('low_24h', 'N/A')} - ${metrics.get('high_24h', 'N/A')}
+- Premium/Discount: {metrics.get('premium_discount', 'N/A')} (0=discount, 1=premium)
+- Volatility: {metrics.get('volatility_pct', 'N/A')}%
+- EMA Fast: ${metrics.get('ema_fast', 'N/A')}
+- EMA Slow: ${metrics.get('ema_slow', 'N/A')}
 
 **CHART SCREENSHOTS:**
-You will receive 4 timeframe charts:
-- M5 (5-minute): for entry timing
-- M15 (15-minute): for structure
+You will receive 3 timeframe charts:
+- M15 (15-minute): for structure and entry timing
 - M30 (30-minute): for context
-- H1 (1-hour): for trend
+- H1 (1-hour): for main trend direction
 
 **HIGH-IMPACT NEWS:**
 """
         
         if news:
             for item in news:
-                prompt += f"\n- [{item['impact']}] {item['title']} at {item['time']}"
+                prompt += f"\n- [{item['impact'].upper()}] {item['title']} at {item['time']}"
         else:
-            prompt += "\nNo high-impact news in next 12 hours"
+            prompt += "\nNo significant news in next 12 hours"
         
-        prompt += f"""
+        prompt += """
 
 **YOUR TASK:**
-1. Look at ALL 4 charts carefully
-2. Identify trend direction (bullish/bearish/neutral)
-3. Find key support/resistance levels
-4. Check if NOW is good time to enter
-5. Make ONE decision: BUY, SELL, or NONE
-
-**DECISION RULES:**
-- Entry must be within 5-20 pips of current price
-- If no clear setup → action = NONE
-- If confidence <50% → action = NONE
-- STOP-LOSS: Always FIXED at {fixed_stop_distance_pips} pips (${fixed_stop_distance:.2f})
-- TAKE-PROFIT: Minimum 1.5:1 R:R (150 pips), optimal 2:1 or better
-- Place TP at next major support/resistance level
-
-**CONFIDENCE LEVELS:**
-- 80-100%: Very strong setup (all confirmations)
-- 70-79%: Good setup (most confirmations)
-- 60-69%: Good setup (most confirmations)
-- 50-59%: Acceptable setup (key confirmations present)
-- Below 50%: WAIT - not clear enough
+Analyze the charts and metrics. Find support/resistance levels, identify trend, and provide ONE trading signal.
 
 **RESPONSE FORMAT (JSON ONLY):**
 
-{{
-  "timestamp": "{datetime.now().isoformat()}",
-  "symbol": "{symbol}",
-  "decision": {{
+{
+  "timestamp": "2026-01-26T12:00:00",
+  "symbol": "XAUUSD",
+  "decision": {
     "action": "BUY|SELL|NONE",
     "confidence": 75,
     "block": "NONE|SOFT|HARD",
-    "reasoning": "Brief 1-2 sentence explanation"
-  }},
-  "trade": {{
-    "entry": {current_price},
-    "stop_loss": {current_price - fixed_stop_distance},
-    "take_profit": {current_price + (fixed_stop_distance * 1.5)},
-    "risk_reward": 1.5
-  }},
-  "analysis": {{
+    "reasoning": "Brief 1-2 sentence explanation why you chose this direction"
+  },
+  "trade": {
+    "entry": 2665.0,
+    "stop_loss": 2655.0,
+    "take_profit": 2685.0,
+    "risk_reward": 2.0
+  },
+  "analysis": {
     "trend": "bullish|bearish|neutral",
-    "key_level": "Support $X / Resistance $Y",
+    "key_level": "Support $2650 / Resistance $2680",
     "entry_quality": "optimal|good|fair"
-  }}
-}}
+  }
+}
+
+**CRITICAL RULES FOR TP/SL:**
+1. **STOP-LOSS**: Place at nearest key support/resistance that invalidates your setup
+   - For BUY: below recent swing low or support
+   - For SELL: above recent swing high or resistance
+   - Typical range: $5-$15 from entry (50-150 pips)
+
+2. **TAKE-PROFIT**: Place at next major resistance/support level
+   - Must be realistic based on current volatility (ATR)
+   - Minimum R:R 1.5:1, optimal 2:1 or better
+   - Consider 24H range and key levels
+
+3. **ENTRY**: Within 5-20 pips of current price
+
+**DECISION RULES:**
+- If no clear setup → action = NONE
+- If confidence <60% → action = NONE
+- Entry must be close to current price (within $2)
+- Use market structure (support/resistance) for SL/TP placement
+- Include brief reasoning why this trade makes sense
 
 **IMPORTANT:**
-- If action=NONE → omit "trade" object
-- Stop-Loss MUST be exactly {fixed_stop_distance_pips} pips
-- Take-Profit minimum 150 pips (ideally 200+ pips)
-- Include brief reasoning (max 2 sentences)
+- If action=NONE → omit "trade" object completely
 - Return ONLY valid JSON, no extra text
+- Be specific with price levels (not ranges)
+- Base your levels on actual chart structure you see
 
 Now analyze the charts and provide your decision!
 """

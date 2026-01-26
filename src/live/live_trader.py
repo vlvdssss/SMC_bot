@@ -56,10 +56,16 @@ class LiveTrader:
             enable_trading: True = реальная торговля, False = только мониторинг
             enable_gpt: True = использовать GPT фильтр, False = отключить
         """
+        # Check if already initialized (prevent duplicate logs)
+        if hasattr(self, '_initialized') and self._initialized:
+            logger.debug("[LiveTrader] Already initialized, skipping duplicate init...")
+            return
+        
         logger.info("="*80)
         logger.info("[LiveTrader] Initializing LiveTrader...")
         logger.info(f"[LiveTrader] Mode: {'REAL TRADING' if enable_trading else 'MONITORING ONLY'}")
         logger.info(f"[LiveTrader] GPT filter: {'ENABLED' if enable_gpt else 'DISABLED'}")
+        self._initialized = False
         
         self.config_dir: str = config_dir
         self.enable_trading: bool = enable_trading

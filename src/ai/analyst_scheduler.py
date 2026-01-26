@@ -66,6 +66,10 @@ class AnalystScheduler:
         self.history_dir = Path("data/ai_analysis")
         self.history_dir.mkdir(parents=True, exist_ok=True)
         
+        # Analysis lock to prevent duplicate runs
+        self._analysis_lock = threading.Lock()
+        self._last_analysis_time = {}  # symbol -> timestamp
+        
         logger.info(f"[AI-Scheduler] v2.0 initialized with schedule: {config_times}")
     
     def _load_config(self) -> dict:
@@ -311,6 +315,9 @@ class AnalystScheduler:
         except Exception as e:
             logger.error(f"[AI-Scheduler] Analysis failed: {e}")
             return {"error": str(e), "timestamp": datetime.now().isoformat()}
+        finally:
+            # Release lock
+            self._analysis_lock.release()
     
     def _log_analysis_summary(self, analysis: dict):
         """Log human-readable summary."""
