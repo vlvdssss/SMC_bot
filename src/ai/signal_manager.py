@@ -789,11 +789,15 @@ class AISignalManager:
             return True
     
     def _is_price_triggered(self, signal: AISignal, current_price: float) -> bool:
-        """Check if price reached entry level."""
+        """Check if price is close to entry level (within tolerance)."""
+        tolerance = 2.0  # $2 tolerance for entry
+        
         if signal.type == "BUY":
-            return current_price <= signal.entry_price
+            # BUY: trigger when price is within ±$2 of entry
+            return abs(current_price - signal.entry_price) <= tolerance
         elif signal.type == "SELL":
-            return current_price >= signal.entry_price
+            # SELL: trigger when price is within ±$2 of entry
+            return abs(current_price - signal.entry_price) <= tolerance
         return False
     
     def _cleanup_expired_signals(self):
