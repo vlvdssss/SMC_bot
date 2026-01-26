@@ -320,7 +320,9 @@ Analyze the charts and metrics. Find support/resistance levels, identify trend, 
 1. **STOP-LOSS**: Place at nearest key support/resistance that invalidates your setup
    - For BUY: below recent swing low or support
    - For SELL: above recent swing high or resistance
-   - Typical range: $5-$15 from entry (50-150 pips)
+   - **MINIMUM**: $5 from entry (NEVER less than $5!)
+   - **TYPICAL RANGE**: $7-$15 from entry (70-150 pips)
+   - **MAXIMUM**: $20 from entry
 
 2. **TAKE-PROFIT**: Place at next major resistance/support level
    - Must be realistic based on current volatility (ATR)
@@ -333,8 +335,11 @@ Analyze the charts and metrics. Find support/resistance levels, identify trend, 
 - If no clear setup → action = NONE
 - If confidence <60% → action = NONE
 - Entry must be close to current price (within $2)
+- **BUY ONLY if**: price above both EMAs OR strong bullish structure visible
+- **SELL ONLY if**: price below both EMAs OR strong bearish structure visible
 - Use market structure (support/resistance) for SL/TP placement
 - Include brief reasoning why this trade makes sense
+- **NEVER set SL closer than $5** - this is critical!
 
 **IMPORTANT:**
 - If action=NONE → omit "trade" object completely
@@ -541,6 +546,22 @@ Now analyze the charts and provide your decision!
                             logger.error(f"[AI] Trade missing field: {field}")
                             analysis["decision"]["action"] = "NONE"
                             break
+                    
+                    # Validate SL distance (minimum $5)
+                    if analysis["decision"]["action"] in ["BUY", "SELL"]:
+                        entry = float(trade.get("entry", 0))
+                        sl = float(trade.get("stop_loss", 0))
+                        sl_distance = abs(entry - sl)
+                        
+                        if sl_distance < 5.0:
+                            logger.warning(f"[AI] ❌ REJECTING signal: SL too close (${sl_distance:.2f} < $5)")
+                            logger.warning(f"[AI] Entry: {entry}, SL: {sl}")
+                            analysis["decision"]["action"] = "NONE"
+                            analysis["decision"]["reasoning"] = f"SL too close (${sl_distance:.2f} < $5 minimum)"
+                        elif sl_distance > 20.0:
+                            logger.warning(f"[AI] ⚠️ WARNING: SL very wide (${sl_distance:.2f} > $20)")
+                        else:
+                            logger.info(f"[AI] ✅ SL distance OK: ${sl_distance:.2f}")
             
             # Add metadata
             analysis["analyzed_at"] = datetime.now().isoformat()
