@@ -799,69 +799,128 @@ class LiveTrader:
                     
                     from datetime import datetime, timedelta
                     
-                    # Ищем в истории сделок
+                    # Ищем в истории сделок (расширенный диапазон - 24 часа)
                     history = self.mt5_connector.history_deals_get(
-                        datetime.now() - timedelta(hours=1),
+                        datetime.now() - timedelta(hours=24),
                         datetime.now()
                     )
+                    
+                    deal_found = False
+                    closing_deal = None
                     
                     if history:
                         for deal in history:
                             if deal.position_id == ticket:
-                                logger.info(f"[Closed] Found closing deal for #{ticket}")
-                                # Нашли сделку закрытия
-                                pos_info = self.tracked_positions[ticket]
-                                
-                                # Вычисляем profit
-                                profit = deal.profit if hasattr(deal, 'profit') else 0.0
-                                
-                                # Вычисляем длительность
-                                duration = datetime.now() - pos_info['entry_time']
-                                hours = int(duration.total_seconds() // 3600)
-                                minutes = int((duration.total_seconds() % 3600) // 60)
-                                duration_str = f"{hours}ч {minutes}м" if hours > 0 else f"{minutes}м"
-                                
-                                # Вычисляем пипсы
-                                price_diff = abs(deal.price - pos_info['entry_price'])
-                                pips = price_diff * 10000  # для forex
-                                if pos_info['symbol'] == 'XAUUSD':
-                                    pips = price_diff * 100  # для золота
-                                
-                                # Определяем причину закрытия
-                                result_reason = "TP" if profit > 0 else "SL" if profit < 0 else "BE"
-                                
-                                # Получаем режим торговли
-                                from src.core.bot_manager import BotManager
-                                bot_manager = BotManager()
-                                trading_mode = bot_manager.trading_mode
-                                
-                                # Отправляем уведомление
-                                self.telegram.send_trade_closed(
-                                    symbol=pos_info['symbol'],
-                                    direction=pos_info['direction'],
-                                    profit=profit,
-                                    pips=pips,
-                                    duration=duration_str,
-                                    mode='pure_ai' if trading_mode == 'pure_ai' else 'strategy',
-                                    result_reason=result_reason
-                                )
-                                
-                                logger.info(f"[Telegram] Trade closed notification sent for #{ticket}")
-                                
-                                # Помечаем что уведомление отправлено
-                                pos_info['notification_sent'] = True
-                                
-                                # AUTO-REQUERY: Trigger immediate GPT analysis after position close
-                                if hasattr(self, 'analyst_scheduler') and self.analyst_scheduler:
-                                    logger.info("[LiveTrader] 🔄 Position closed - triggering immediate GPT analysis")
-                                    self.analyst_scheduler.trigger_immediate_analysis(
-                                        symbol=pos_info['symbol'],
-                                        reason="position_closed"
-                                    )
-                                
-                                # Удаляем из отслеживаемых
-                                del self.tracked_positions[ticket]
-                                break
+                                # Ищем именно сделку ЗАКРЫТИЯ (entry == OUT)
+                                if deal.entry == 1:  # 1 = OUT (закрытие)
+                                    deal_found = True
+                                    closing_deal = deal
+                                    logger.info(f"[Closed] Found closing deal for #{ticket}")
+                                    break
+                    
+                    if deal_found and closing_deal:
+                        # Нашли сделку закрытия - отправляем полный отчёт
+                        pos_info = self.tracked_positions[ticket]
+                        
+                        # Вычисляем profit
+                        profit = closing_deal.profit if hasattr(closing_deal, 'profit') else 0.0
+                        
+                        # Вычисляем длительность
+                        duration = datetime.now() - pos_info['entry_time']
+                        hours = int(duration.total_seconds() // 3600)
+                        minutes = int((duration.total_seconds() % 3600) // 60)
+                        duration_str = f"{hours}ч {minutes}м" if hours > 0 else f"{minutes}м"
+                        
+                        # Вычисляем пипсы
+                        price_diff = abs(closing_deal.price - pos_info['entry_price'])
+                        pips = price_diff * 10000  # для forex
+                        if pos_info['symbol'] == 'XAUUSD':
+                            pips = price_diff * 100  # для золота
+                        
+                        # Определяем причину закрытия
+                        result_reason = "TP" if profit > 0 else "SL" if profit < 0 else "BE"
+                        
+                        # Получаем режим торговли
+                        from src.core.bot_manager import BotManager
+                        bot_manager = BotManager()
+                        trading_mode = bot_manager.trading_mode
+                        
+                        # Отправляем уведомление
+                        self.telegram.send_trade_closed(
+                            symbol=pos_info['symbol'],
+                            direction=pos_info['direction'],
+                            profit=profit,
+                            pips=pips,
+                            duration=duration_str,
+                            mode='pure_ai' if trading_mode == 'pure_ai' else 'strategy',
+                            result_reason=result_reason
+                        )
+                        
+                        logger.info(f"[Telegram] Trade closed notification sent for #{ticket}")
+                        
+                        # AUTO-REQUERY: Trigger immediate GPT analysis after position close
+                        if hasattr(self, 'analyst_scheduler') and self.analyst_scheduler:
+                            logger.info("[LiveTrader] 🔄 Position closed - triggering immediate GPT analysis")
+                            self.analyst_scheduler.trigger_immediate_analysis(
+                                symbol=pos_info['symbol'],
+                                reason="position_closed"
+                            )
+                        
+                        # Удаляем из отслеживаемых
+                        del self.tracked_positions[ticket]
+                    
+                    else:
+                        # Не нашли в истории - отправляем упрощённое уведомление (ручное закрытие)
+                        pos_info = self.tracked_positions[ticket]
+                        logger.warning(f"[Closed] Deal for #{ticket} not found - sending MANUAL close notification")
+                        
+                        # Получаем текущую цену для расчёта profit
+                        current_price = self.mt5_connector.get_current_price(pos_info['symbol'])
+                        
+                        if current_price:
+                            # Вычисляем примерный profit
+                            if pos_info['direction'] == 'BUY':
+                                price_diff = current_price - pos_info['entry_price']
+                            else:
+                                price_diff = pos_info['entry_price'] - current_price
+                            
+                            # Примерный profit (без учёта комиссий)
+                            lot_size = pos_info.get('volume', 0.01)
+                            if pos_info['symbol'] == 'XAUUSD':
+                                profit_estimate = price_diff * lot_size * 100
+                                pips = abs(price_diff) * 100
+                            else:
+                                profit_estimate = price_diff * lot_size * 100000
+                                pips = abs(price_diff) * 10000
+                            
+                            # Длительность
+                            duration = datetime.now() - pos_info['entry_time']
+                            hours = int(duration.total_seconds() // 3600)
+                            minutes = int((duration.total_seconds() % 3600) // 60)
+                            duration_str = f"{hours}ч {minutes}м" if hours > 0 else f"{minutes}м"
+                            
+                            # Причина закрытия - MANUAL (ручное)
+                            result_reason = "MANUAL"
+                            
+                            # Отправляем уведомление
+                            from src.core.bot_manager import BotManager
+                            bot_manager = BotManager()
+                            trading_mode = bot_manager.trading_mode
+                            
+                            self.telegram.send_trade_closed(
+                                symbol=pos_info['symbol'],
+                                direction=pos_info['direction'],
+                                profit=profit_estimate,
+                                pips=pips,
+                                duration=duration_str,
+                                mode='pure_ai' if trading_mode == 'pure_ai' else 'strategy',
+                                result_reason=result_reason
+                            )
+                            
+                            logger.info(f"[Telegram] MANUAL close notification sent for #{ticket} (estimated)")
+                        
+                        # Удаляем из tracked
+                        del self.tracked_positions[ticket]
         
         except Exception as e:
             logger.error(f"[Telegram] Failed to check closed positions: {e}")

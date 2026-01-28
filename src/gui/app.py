@@ -550,21 +550,37 @@ class AnalystPanel(tk.Frame):
         header_frame = tk.Frame(self.summary_left_scrollable, bg=Colors.BG_PANEL)
         header_frame.pack(fill='x', pady=(0, 15))
         
-        # Показываем сигналы pending И triggered (не filled/expired)
+        # Показываем pending/triggered сигналы + открытые позиции
         active_signals = [s for s in signal_manager.active_signals if s.status in ["pending", "triggered"]]
         
+        # Добавляем открытые позиции как "сигналы"
+        open_positions = []
+        if hasattr(self, 'bot_manager') and self.bot_manager and self.bot_manager.live_trader:
+            tracked = self.bot_manager.live_trader.tracked_positions
+            for ticket, pos_info in tracked.items():
+                if not pos_info.get('notification_sent', False):
+                    open_positions.append(pos_info)
+        
+        total_active = len(active_signals) + len(open_positions)
+        
         tk.Label(header_frame,
-                text=f"ACTIVE SIGNALS ({len(active_signals)})",
+                text=f"ACTIVE SIGNALS ({total_active})",
                 font=('Arial', 13, 'bold'),
                 bg=Colors.BG_PANEL,
                 fg=Colors.ACCENT).pack(side='left')
         
-        # Сигналы как карточки
+        # Сначала показываем открытые позиции
+        if open_positions:
+            for pos in open_positions:
+                self._create_position_card(self.summary_left_scrollable, pos)
+        
+        # Потом pending/triggered сигналы
         if active_signals:
             for signal in active_signals:
                 self._create_signal_card(self.summary_left_scrollable, signal)
-        else:
-            # Placeholder если нет сигналов
+        
+        # Placeholder если ничего нет
+        if not active_signals and not open_positions:
             placeholder = tk.Frame(self.summary_left_scrollable, bg=Colors.BG_CARD,
                                   highlightbackground=Colors.BORDER, highlightthickness=1)
             placeholder.pack(fill='x', pady=(0, 15))
@@ -574,6 +590,58 @@ class AnalystPanel(tk.Frame):
                     font=('Arial', 11),
                     bg=Colors.BG_CARD,
                     fg=Colors.TEXT_MUTED).pack(pady=30)
+    
+    def _create_position_card(self, parent, pos_info):
+        """Создать карточку открытой позиции"""
+        card = tk.Frame(parent, bg=Colors.BG_CARD,
+                       highlightbackground="#FFD700", highlightthickness=2)  # Gold border
+        card.pack(fill='x', pady=(0, 12))
+        
+        card_content = tk.Frame(card, bg=Colors.BG_CARD)
+        card_content.pack(fill='both', padx=15, pady=12)
+        
+        # Header: OPEN POSITION badge + Symbol
+        top_row = tk.Frame(card_content, bg=Colors.BG_CARD)
+        top_row.pack(fill='x', pady=(0, 10))
+        
+        # Direction badge
+        type_color = Colors.BUY if pos_info['direction'] == 'BUY' else Colors.SELL
+        tk.Label(top_row,
+                text=f" {pos_info['direction']} ",
+                font=('Arial', 12, 'bold'),
+                bg=type_color,
+                fg='white',
+                padx=10, pady=2).pack(side='left', padx=(0, 8))
+        
+        tk.Label(top_row,
+                text=pos_info['symbol'],
+                font=('Arial', 12, 'bold'),
+                bg=Colors.BG_CARD,
+                fg='white').pack(side='left')
+        
+        # Ticket number
+        tk.Label(top_row,
+                text=f"#{pos_info['ticket']}",
+                font=('Arial', 9),
+                bg=Colors.BG_CARD,
+                fg=Colors.TEXT_MUTED).pack(side='right')
+        
+        # Entry price + current P&L
+        info_row = tk.Frame(card_content, bg=Colors.BG_CARD)
+        info_row.pack(fill='x', pady=(0, 8))
+        
+        tk.Label(info_row,
+                text=f"Entry: {pos_info['entry_price']:.5f}",
+                font=('Consolas', 10),
+                bg=Colors.BG_CARD,
+                fg=Colors.TEXT_SECONDARY).pack(side='left')
+        
+        # Status indicator (золотой цвет для открытых)
+        tk.Label(card_content,
+                text="● OPEN POSITION",
+                font=('Arial', 9),
+                bg=Colors.BG_CARD,
+                fg="#FFD700").pack(anchor='w')
     
     def _create_signal_card(self, parent, signal):
         """Создать карточку сигнала"""
