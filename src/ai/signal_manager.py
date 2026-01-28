@@ -476,16 +476,17 @@ class AISignalManager:
             logger.info("[AI-Signal] No trading restrictions")
     
     def _validate_signal(self, signal_data: Dict) -> bool:
-        """Validate signal has required fields and meets quality criteria with EMA filter."""
+        """Validate signal has required fields and meets quality criteria (V4: 70% confidence)."""
         required = ["type", "entry_price", "stop_loss", "take_profit", "confidence"]
         for field in required:
             if field not in signal_data or signal_data[field] is None:
                 logger.warning(f"[AI-Signal] Invalid signal - missing {field}")
                 return False
         
-        # Base confidence check (raised to 70%)
-        if signal_data["confidence"] < 70:
-            logger.info(f"[AI-Signal] ❌ Rejected low confidence: {signal_data['confidence']}% (minimum: 70%)")
+        # V4: Higher confidence threshold for M5 scalping
+        MIN_CONFIDENCE_V4 = 70  # Increased from 50 to 70
+        if signal_data["confidence"] < MIN_CONFIDENCE_V4:
+            logger.info(f"[AI-Signal] V4: Skipped low confidence: {signal_data['confidence']}% (required: {MIN_CONFIDENCE_V4}%)")
             return False
         
         # Risk/Reward ratio check
@@ -502,29 +503,14 @@ class AISignalManager:
         
         rr_ratio = reward / risk
         
-        # Check minimum RR = 1:1 (since SL is fixed $10, TP must be >= $10)
-        min_rr_threshold = 1.0
+        # V4: Fixed 2:1 ratio expected (TP=$10, SL=$5)
+        min_rr_threshold = 2.0  # Fixed for V4
+
         if rr_ratio < min_rr_threshold:
-            logger.info(f"[AI-Signal] ❌ Rejected poor RR ratio: {rr_ratio:.2f} < {min_rr_threshold} (risk: ${risk:.2f}, reward: ${reward:.2f})")
+            logger.info(f"[AI-Signal] Rejected poor RR ratio: {rr_ratio:.2f} < {min_rr_threshold} (risk: ${risk:.2f}, reward: ${reward:.2f})")
             return False
-        
-        # ✅ QUALITY SCORE SYSTEM - дополнительная фильтрация
-        quality_score = signal_data["confidence"]
-        
-        # Bonus: good RR ratio
-        if rr_ratio >= 2.0:
-            quality_score += 10
-            logger.debug(f"[AI-Signal] 🎁 Bonus +10% for good RR={rr_ratio:.2f}")
-        elif rr_ratio >= 1.5:
-            quality_score += 5
-            logger.debug(f"[AI-Signal] 🎁 Bonus +5% for decent RR={rr_ratio:.2f}")
-        
-        # Final threshold: 75% quality score
-        if quality_score < 75:
-            logger.info(f"[AI-Signal] ❌ Rejected low quality score: {quality_score:.1f}% (minimum: 75%)")
-            return False
-        
-        logger.info(f"[AI-Signal] ✅ Signal validated: Quality={quality_score:.1f}%, RR={rr_ratio:.2f}, Confidence={signal_data['confidence']}%")
+
+        logger.info(f"[AI-Signal] V4 Signal validated: RR={rr_ratio:.2f}, confidence={signal_data['confidence']}%")
         return True
     
     def is_duplicate_signal(

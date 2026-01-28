@@ -122,8 +122,8 @@ class MarketAnalystService:
             # 5. Call GPT API
             analysis = self._call_gpt_api(prompt, screenshots)
             
-            # 6. Validate and add metadata
-            validated = self._validate_analysis(analysis)
+            # 6. Validate and add metadata (pass metrics for entry validation)
+            validated = self._validate_analysis(analysis, metrics)
             
             # Log completion with correct field
             decision = validated.get('decision', {})
@@ -137,41 +137,21 @@ class MarketAnalystService:
             return self._get_fallback_response(str(e))
     
     def _capture_charts(self, symbol: str) -> Dict[str, str]:
-        """Capture M15, M30, and H1 chart screenshots (3 timeframes for intraday)."""
+        """Capture M5 chart screenshot (V4: single timeframe for fast intraday analysis)."""
         try:
             screenshots = {}
             
-            # M15 chart - short-term structure
-            m15_path = self.screenshot_service.capture_chart(
+            # M5 chart - fast intraday trading (V4 logic)
+            m5_path = self.screenshot_service.capture_chart(
                 symbol=symbol, 
-                timeframe=mt5.TIMEFRAME_M15,
-                bars=150
+                timeframe=mt5.TIMEFRAME_M5,
+                bars=200  # 200 M5 bars = ~16 hours of data
             )
-            if m15_path:
-                with open(m15_path, 'rb') as f:
-                    screenshots['M15'] = base64.b64encode(f.read()).decode('utf-8')
+            if m5_path:
+                with open(m5_path, 'rb') as f:
+                    screenshots['M5'] = base64.b64encode(f.read()).decode('utf-8')
             
-            # M30 chart - medium-term context
-            m30_path = self.screenshot_service.capture_chart(
-                symbol=symbol, 
-                timeframe=mt5.TIMEFRAME_M30,
-                bars=150
-            )
-            if m30_path:
-                with open(m30_path, 'rb') as f:
-                    screenshots['M30'] = base64.b64encode(f.read()).decode('utf-8')
-            
-            # H1 chart - main trend direction
-            h1_path = self.screenshot_service.capture_chart(
-                symbol=symbol, 
-                timeframe=mt5.TIMEFRAME_H1,
-                bars=150
-            )
-            if h1_path:
-                with open(h1_path, 'rb') as f:
-                    screenshots['H1'] = base64.b64encode(f.read()).decode('utf-8')
-            
-            logger.info(f"[AI] Captured {len(screenshots)}/3 timeframe screenshots (M15, M30, H1)")
+            logger.info(f"[AI] Captured M5 screenshot for V4 analysis ({len(screenshots)}/1)")
             return screenshots
             
         except Exception as e:
@@ -179,50 +159,50 @@ class MarketAnalystService:
             return {}
     
     def _calculate_metrics(self, symbol: str) -> Dict[str, Any]:
-        """Calculate technical metrics for analysis."""
+        """Calculate technical metrics for M5 analysis (V4 logic)."""
         try:
-            # Get recent data
-            rates_m15 = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M15, 0, 200)
-            rates_h1 = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 0, 200)
+            # Get recent M5 data only
+            rates_m5 = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 200)
             
-            if rates_m15 is None or rates_h1 is None:
+            if rates_m5 is None:
                 return {}
             
-            df_m15 = pd.DataFrame(rates_m15)
-            df_h1 = pd.DataFrame(rates_h1)
+            df_m5 = pd.DataFrame(rates_m5)
             
-            # ATR calculation
-            df_h1['high_low'] = df_h1['high'] - df_h1['low']
-            atr = df_h1['high_low'].tail(14).mean()
+            # ATR calculation (на M5, 14 периодов)
+            df_m5['high_low'] = df_m5['high'] - df_m5['low']
+            atr = df_m5['high_low'].tail(14).mean()
             
-            # Trend detection (EMA cross)
-            df_h1['ema_fast'] = df_h1['close'].ewm(span=12).mean()
-            df_h1['ema_slow'] = df_h1['close'].ewm(span=26).mean()
-            trend = "bullish" if df_h1['ema_fast'].iloc[-1] > df_h1['ema_slow'].iloc[-1] else "bearish"
+            # Trend detection (EMA cross на M5)
+            df_m5['ema_fast'] = df_m5['close'].ewm(span=12).mean()
+            df_m5['ema_slow'] = df_m5['close'].ewm(span=26).mean()
+            trend = "bullish" if df_m5['ema_fast'].iloc[-1] > df_m5['ema_slow'].iloc[-1] else "bearish"
             
             # Current price and structure
-            current_price = df_m15['close'].iloc[-1]
-            high_24h = df_h1['high'].tail(24).max()
-            low_24h = df_h1['low'].tail(24).min()
+            current_price = df_m5['close'].iloc[-1]
             
-            # Premium/Discount (from strategy logic)
-            range_24h = high_24h - low_24h
-            premium_discount = (current_price - low_24h) / range_24h if range_24h > 0 else 0.5
+            # Support/Resistance (последние 50 свечей M5 = ~4 часа)
+            high_recent = df_m5['high'].tail(50).max()
+            low_recent = df_m5['low'].tail(50).min()
             
-            # Volatility
-            volatility = df_h1['close'].pct_change().tail(24).std() * 100
+            # Premium/Discount
+            range_recent = high_recent - low_recent
+            premium_discount = (current_price - low_recent) / range_recent if range_recent > 0 else 0.5
+            
+            # Volatility (M5 последние 50 свечей)
+            volatility = df_m5['close'].pct_change().tail(50).std() * 100
             
             metrics = {
                 "current_price": round(current_price, 2),
                 "atr": round(atr, 2),
                 "atr_pct": round((atr / current_price) * 100, 2),
                 "trend": trend,
-                "high_24h": round(high_24h, 2),
-                "low_24h": round(low_24h, 2),
+                "high_recent": round(high_recent, 2),
+                "low_recent": round(low_recent, 2),
                 "premium_discount": round(premium_discount, 3),
                 "volatility_pct": round(volatility, 2),
-                "ema_fast": round(df_h1['ema_fast'].iloc[-1], 2),
-                "ema_slow": round(df_h1['ema_slow'].iloc[-1], 2)
+                "ema_fast": round(df_m5['ema_fast'].iloc[-1], 2),
+                "ema_slow": round(df_m5['ema_slow'].iloc[-1], 2)
             }
             
             return metrics
@@ -255,28 +235,25 @@ class MarketAnalystService:
             return []
     
     def _build_analysis_prompt(self, symbol: str, metrics: Dict, news: List[Dict]) -> str:
-        """Build comprehensive prompt for GPT analysis (original smart version)."""
+        """Build simplified M5 prompt for V4 fast intraday analysis."""
         
-        prompt = f"""You are an expert forex/gold trader and market analyst. Analyze the market and provide actionable trading signals.
+        prompt = f"""You are an expert forex/gold scalper trading on M5 timeframe. Analyze ONLY the M5 chart and give a fast decision.
 
 **SYMBOL:** {symbol}
 **TIMESTAMP:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-**TECHNICAL METRICS:**
+**M5 TECHNICAL DATA:**
 - Current Price: ${metrics.get('current_price', 'N/A')}
 - ATR: ${metrics.get('atr', 'N/A')} ({metrics.get('atr_pct', 'N/A')}%)
-- Trend: {metrics.get('trend', 'N/A')}
-- 24H Range: ${metrics.get('low_24h', 'N/A')} - ${metrics.get('high_24h', 'N/A')}
-- Premium/Discount: {metrics.get('premium_discount', 'N/A')} (0=discount, 1=premium)
+- Trend (EMA 12/26): {metrics.get('trend', 'N/A')}
+- Recent Range: ${metrics.get('low_recent', 'N/A')} - ${metrics.get('high_recent', 'N/A')} (last 50 M5 candles = ~4 hours)
+- Premium/Discount: {metrics.get('premium_discount', 'N/A')} (0=support, 1=resistance)
 - Volatility: {metrics.get('volatility_pct', 'N/A')}%
 - EMA Fast: ${metrics.get('ema_fast', 'N/A')}
 - EMA Slow: ${metrics.get('ema_slow', 'N/A')}
 
-**CHART SCREENSHOTS:**
-You will receive 3 timeframe charts:
-- M15 (15-minute): for structure and entry timing
-- M30 (30-minute): for context
-- H1 (1-hour): for main trend direction
+**M5 CHART:**
+You will receive ONE screenshot of M5 timeframe (last 200 candles = ~16 hours).
 
 **HIGH-IMPACT NEWS:**
 """
@@ -290,73 +267,58 @@ You will receive 3 timeframe charts:
         prompt += """
 
 **YOUR TASK:**
-Analyze the charts and metrics. Find support/resistance levels, identify trend, and provide ONE trading signal.
+Look at the LAST 20-30 M5 candles. Find quick scalping setups based on:
+- Recent support/resistance bounces
+- 2-3 candle reversal patterns
+- EMA crossovers
+- Quick momentum shifts
+
+**TRADING RULES (V4 LOGIC):**
+- **FIXED SL**: $5 from entry (DO NOT CALCULATE, ALWAYS $5)
+- **FIXED TP**: $10 from entry (DO NOT CALCULATE, ALWAYS $10)
+- **BUY ONLY if**: price bounced from support and moving up 2-3 candles OR bullish momentum
+- **SELL ONLY if**: price rejected resistance and moving down 2-3 candles OR bearish momentum
+- **WAIT if**: no clear setup, consolidation, or low confidence
 
 **RESPONSE FORMAT (JSON ONLY):**
 
 {
-  "timestamp": "2026-01-26T12:00:00",
+  "timestamp": "2026-01-27T12:00:00",
   "symbol": "XAUUSD",
   "decision": {
     "action": "BUY|SELL|NONE",
     "confidence": 75,
-    "block": "NONE|SOFT|HARD",
-    "reasoning": "Brief 1-2 sentence explanation why you chose this direction"
+    "block": "NONE",
+    "reasoning": "Brief explanation (1-2 sentences max)"
   },
   "trade": {
     "entry": 2665.0,
-    "stop_loss": 2655.0,
-    "take_profit": 2685.0,
+    "stop_loss": 2660.0,
+    "take_profit": 2675.0,
     "risk_reward": 2.0
   },
   "analysis": {
     "trend": "bullish|bearish|neutral",
-    "key_level": "Support $2650 / Resistance $2680",
+    "key_level": "Support $2660 / Resistance $2670",
     "entry_quality": "optimal|good|fair"
   }
 }
 
-**CRITICAL RULES FOR TP/SL:**
-1. **STOP-LOSS**: ⚠️ ALWAYS EXACTLY $10 FROM ENTRY (FIXED!) ⚠️
-   - For BUY: entry - $10
-   - For SELL: entry + $10
-   - **NO EXCEPTIONS** - this is risk management requirement!
+**CRITICAL (V4 REQUIREMENTS):**
+1. **SL/TP are FIXED** - system will calculate automatically as entry ± $5/$10
+2. Entry must be close to current price (within $1)
+3. If confidence <70% → action = NONE (V4: higher threshold for M5)
+4. Focus on LAST 20-30 candles only (not full chart history)
+5. Look for quick reversals and momentum - this is scalping!
+6. Return ONLY valid JSON, no extra text
 
-2. **TAKE-PROFIT**: Place at next major resistance/support level
-   - **MINIMUM**: $10 from entry (R:R 1:1)
-   - **OPTIMAL**: $15-$30 from entry (R:R 1.5:1 - 3:1)
-   - Must be realistic based on current volatility (ATR)
-   - Consider 24H range and key levels
+**EXAMPLES OF GOOD M5 SETUPS:**
+- Price touched recent low ($2660), bounced with 2 green candles → BUY
+- Price rejected recent high ($2670), dropped with 2 red candles → SELL
+- EMA fast crossed above slow with momentum → BUY
+- Clear consolidation or choppy → NONE/WAIT
 
-3. **ENTRY**: Within $2 of current price (tight)
-
-**STRICT DECISION RULES (HIGH QUALITY SIGNALS ONLY!):**
-- If no clear setup → action = NONE
-- If confidence <75% → action = NONE (raised from 60%)
-- Entry must be within $2 of current price
-
-- **BUY ALLOWED ONLY IF ALL CONDITIONS MET:**
-  ✅ Current price > EMA Fast (9)
-  ✅ EMA Fast > EMA Slow (26)  
-  ✅ H1 trend = bullish
-  ✅ Clear bullish structure visible on charts
-  
-- **SELL ALLOWED ONLY IF ALL CONDITIONS MET:**
-  ✅ Current price < EMA Fast (9)
-  ✅ EMA Fast < EMA Slow (26)
-  ✅ H1 trend = bearish
-  ✅ Clear bearish structure visible on charts
-
-- If EMAs contradict your direction → action = NONE (critical filter!)
-- Include brief reasoning explaining EMA alignment and structure
-
-**IMPORTANT:**
-- If action=NONE → omit "trade" object completely
-- Return ONLY valid JSON, no extra text
-- Be specific with price levels (not ranges)
-- Base your levels on actual chart structure you see
-
-Now analyze the charts and provide your decision!
+Analyze the M5 chart NOW and give your decision!
 """
 
         return prompt
@@ -505,8 +467,8 @@ Now analyze the charts and provide your decision!
             logger.error(f"[AI] Детали: {e}")
             raise
     
-    def _validate_analysis(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate and sanitize GPT Decision Engine response (v2.0)."""
+    def _validate_analysis(self, analysis: Dict[str, Any], metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate and sanitize GPT Decision Engine response (v2.0) + V4 entry price check."""
         try:
             # New format: decision instead of signals[]
             required_fields = ["timestamp", "symbol", "decision"]
@@ -556,33 +518,57 @@ Now analyze the charts and provide your decision!
                             analysis["decision"]["action"] = "NONE"
                             break
                     
-                    # Validate SL distance (MUST be exactly $10 ±$1)
+                    # V4 LOGIC: Apply FIXED SL/TP ($5/$10)
                     if analysis["decision"]["action"] in ["BUY", "SELL"]:
                         entry = float(trade.get("entry", 0))
-                        sl = float(trade.get("stop_loss", 0))
-                        tp = float(trade.get("take_profit", 0))
-                        sl_distance = abs(entry - sl)
-                        tp_distance = abs(tp - entry)
+                        action = analysis["decision"]["action"]
+                        current_price = metrics.get("current_price", 0)
                         
-                        # Check SL = $10 ±$1
-                        if sl_distance < 9.0 or sl_distance > 11.0:
-                            logger.warning(f"[AI] ❌ REJECTING signal: SL must be $10 (got ${sl_distance:.2f})")
-                            analysis["decision"]["action"] = "NONE"
-                            analysis["decision"]["reasoning"] = f"SL must be exactly $10 (got ${sl_distance:.2f})"
-                        # Check TP minimum $10
-                        elif tp_distance < 10.0:
-                            logger.warning(f"[AI] ❌ REJECTING signal: TP too close (${tp_distance:.2f} < $10)")
-                            analysis["decision"]["action"] = "NONE"
-                            analysis["decision"]["reasoning"] = f"TP too close (${tp_distance:.2f} < $10 minimum)"
-                        else:
-                            logger.info(f"[AI] ✅ Risk validated: SL=${sl_distance:.1f}, TP=${tp_distance:.1f}, R:R={tp_distance/sl_distance:.2f}:1")
+                        # V4 VALIDATION: Entry must be close to current price (within $2)
+                        if current_price > 0:
+                            entry_distance = abs(entry - current_price)
+                            MAX_ENTRY_DISTANCE = 2.0  # $2 maximum
+                            
+                            if entry_distance > MAX_ENTRY_DISTANCE:
+                                logger.warning(f"[AI] ❌ REJECTING signal: Entry too far from market!")
+                                logger.warning(f"[AI]    Current Price: ${current_price:.2f}")
+                                logger.warning(f"[AI]    Entry Price: ${entry:.2f}")
+                                logger.warning(f"[AI]    Distance: ${entry_distance:.2f} > ${MAX_ENTRY_DISTANCE:.2f}")
+                                analysis["decision"]["action"] = "NONE"
+                                analysis["decision"]["reasoning"] = f"Entry ${entry:.2f} too far from market ${current_price:.2f}"
+                                return analysis
+                            
+                            logger.info(f"[AI] ✅ Entry validation OK: ${entry:.2f} (distance: ${entry_distance:.2f})")
+                        
+                        # FIXED PARAMETERS (V4)
+                        FIXED_SL_DISTANCE = 5.0   # $5
+                        FIXED_TP_DISTANCE = 10.0  # $10
+                        
+                        # Calculate fixed SL/TP based on direction
+                        if action == "BUY":
+                            new_sl = entry - FIXED_SL_DISTANCE
+                            new_tp = entry + FIXED_TP_DISTANCE
+                        else:  # SELL
+                            new_sl = entry + FIXED_SL_DISTANCE
+                            new_tp = entry - FIXED_TP_DISTANCE
+                        
+                        # Override GPT values with fixed ones
+                        analysis["trade"]["stop_loss"] = round(new_sl, 2)
+                        analysis["trade"]["take_profit"] = round(new_tp, 2)
+                        analysis["trade"]["risk_reward"] = 2.0  # Always 2:1 (10/5)
+                        
+                        logger.info(f"[AI] ✅ V4 FIXED SL/TP Applied:")
+                        logger.info(f"[AI]    Entry: ${entry:.2f}")
+                        logger.info(f"[AI]    SL: ${new_sl:.2f} (fixed $5)")
+                        logger.info(f"[AI]    TP: ${new_tp:.2f} (fixed $10)")
+                        logger.info(f"[AI]    R:R: 2:1")
             
             # Add metadata
             analysis["analyzed_at"] = datetime.now().isoformat()
-            analysis["analysis_version"] = "2.0"  # Updated version
-            analysis["prompt_version"] = self.PROMPT_VERSION
+            analysis["analysis_version"] = "4.0"  # V4: M5 + Fixed SL/TP
+            analysis["prompt_version"] = "2026-01-V4"
             
-            logger.info(f"[AI] ✅ Validated decision: {analysis.get('decision', {}).get('action')} "
+            logger.info(f"[AI] ✅ V4 Validated decision: {analysis.get('decision', {}).get('action')} "
                        f"(confidence: {analysis.get('decision', {}).get('confidence')}%, "
                        f"block: {analysis.get('decision', {}).get('block')})")
             

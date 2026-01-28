@@ -369,7 +369,74 @@ class SettingsDialog:
                 bg=Colors.BG_CARD,
                 fg=Colors.TEXT_SECONDARY,
                 justify='left',
-                wraplength=650).pack(padx=15, pady=10, anchor='w')
+                wraplength=650).pack(padx=15, pady=10)
+        
+        # ====== РЕЖИМ АКТИВАЦИИ (PIPS или PERCENT) ======
+        mode_frame = self._create_setting_row(content, "📊 Режим активации trailing")
+        self.trail_mode = tk.StringVar(value=trailing_config.get('activation_mode', 'percent'))  # 'pips' или 'percent'
+        
+        mode_selector = tk.Frame(mode_frame, bg=Colors.BG_DARK)
+        mode_selector.pack(side='right')
+        
+        tk.Radiobutton(mode_selector,
+                      text="Процент от TP",
+                      variable=self.trail_mode,
+                      value='percent',
+                      bg=Colors.BG_DARK,
+                      fg=Colors.TEXT_PRIMARY,
+                      selectcolor=Colors.PRIMARY,
+                      activebackground=Colors.BG_DARK,
+                      font=('Arial', 10)).pack(side='left', padx=5)
+        
+        tk.Radiobutton(mode_selector,
+                      text="Фиксированные пипсы",
+                      variable=self.trail_mode,
+                      value='pips',
+                      bg=Colors.BG_DARK,
+                      fg=Colors.TEXT_PRIMARY,
+                      selectcolor=Colors.PRIMARY,
+                      activebackground=Colors.BG_DARK,
+                      font=('Arial', 10)).pack(side='left', padx=5)
+        
+        # ====== ПРОЦЕНТ ОТ TP (НОВОЕ!) ======
+        tk.Label(content,
+                text="📈 Активация при профите (% от TP distance):",
+                font=('Arial', 10, 'bold'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_PRIMARY,
+                anchor='w').pack(fill='x', pady=(10, 5), padx=40)
+        
+        percent_frame = tk.Frame(content, bg=Colors.BG_DARK)
+        percent_frame.pack(fill='x', pady=5, padx=40)
+        
+        tk.Label(percent_frame,
+                text="Процент:",
+                font=('Arial', 10),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_SECONDARY).pack(side='left', padx=5)
+        
+        self.trail_activation_percent = tk.Entry(percent_frame,
+                                                 font=('Arial', 10, 'bold'),
+                                                 width=8,
+                                                 bg=Colors.BG_CARD,
+                                                 fg=Colors.SUCCESS,
+                                                 insertbackground=Colors.TEXT_PRIMARY)
+        self.trail_activation_percent.insert(0, str(trailing_config.get('activation_percent', 30)))
+        self.trail_activation_percent.pack(side='left', padx=5)
+        self._bind_paste(self.trail_activation_percent)
+        
+        tk.Label(percent_frame,
+                text="% (30% = активация при 30% до TP)",
+                font=('Arial', 9),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED).pack(side='left', padx=5)
+        
+        tk.Label(content,
+                text="💡 Пример: TP +$30, 30% = активация при +$9 профита",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED,
+                justify='left').pack(fill='x', pady=(2, 10), padx=40)
         
         # === ПАРАМЕТР 1: Activation Profit ===
         tk.Label(content,
@@ -384,34 +451,23 @@ class SettingsDialog:
         tk.Label(activation_frame, text="Профит (пипсы):",
                 font=('Arial', 10),
                 bg=Colors.BG_DARK,
-                fg=Colors.TEXT_SECONDARY).pack(side='left')
+                fg=Colors.TEXT_SECONDARY).pack(side='left', padx=5)
         
-        self.trail_activation = tk.Scale(activation_frame,
-                                        from_=5, to=50,
-                                        orient='horizontal',
-                                        length=300,
+        self.trail_activation = tk.Entry(activation_frame,
+                                        font=('Arial', 10, 'bold'),
+                                        width=8,
                                         bg=Colors.BG_CARD,
-                                        fg=Colors.TEXT_PRIMARY,
-                                        activebackground=Colors.PRIMARY,
-                                        highlightthickness=0,
-                                        troughcolor=Colors.BG_PANEL,
-                                        font=('Arial', 9))
-        self.trail_activation.set(trailing_config.get('activation_profit_pips', 15))
-        self.trail_activation.pack(side='left', padx=10)
+                                        fg=Colors.SUCCESS,
+                                        insertbackground=Colors.TEXT_PRIMARY)
+        self.trail_activation.insert(0, str(trailing_config.get('activation_profit_pips', 15)))
+        self.trail_activation.pack(side='left', padx=5)
+        self._bind_paste(self.trail_activation)
         
-        self.trail_activation_label = tk.Label(activation_frame,
-                                              text=f"{self.trail_activation.get()} пипсов",
-                                              font=('Arial', 10, 'bold'),
-                                              bg=Colors.BG_DARK,
-                                              fg=Colors.SUCCESS,
-                                              width=12)
-        self.trail_activation_label.pack(side='left')
-        
-        # Update label on change
-        def update_activation_label(val):
-            self.trail_activation_label.config(text=f"{int(float(val))} пипсов")
-        
-        self.trail_activation.config(command=update_activation_label)
+        tk.Label(activation_frame,
+                text="пипсов профита",
+                font=('Arial', 9),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED).pack(side='left', padx=5)
         
         # Подсказка
         tk.Label(content, 
@@ -434,34 +490,23 @@ class SettingsDialog:
         tk.Label(distance_frame, text="Расстояние (пипсы):",
                 font=('Arial', 10),
                 bg=Colors.BG_DARK,
-                fg=Colors.TEXT_SECONDARY).pack(side='left')
+                fg=Colors.TEXT_SECONDARY).pack(side='left', padx=5)
         
-        self.trail_distance = tk.Scale(distance_frame,
-                                      from_=10, to=100,
-                                      orient='horizontal',
-                                      length=300,
+        self.trail_distance = tk.Entry(distance_frame,
+                                      font=('Arial', 10, 'bold'),
+                                      width=8,
                                       bg=Colors.BG_CARD,
-                                      fg=Colors.TEXT_PRIMARY,
-                                      activebackground=Colors.PRIMARY,
-                                      highlightthickness=0,
-                                      troughcolor=Colors.BG_PANEL,
-                                      font=('Arial', 9))
-        self.trail_distance.set(trailing_config.get('distance_pips', 20))
-        self.trail_distance.pack(side='left', padx=10)
+                                      fg=Colors.SUCCESS,
+                                      insertbackground=Colors.TEXT_PRIMARY)
+        self.trail_distance.insert(0, str(trailing_config.get('distance_pips', 15)))
+        self.trail_distance.pack(side='left', padx=5)
+        self._bind_paste(self.trail_distance)
         
-        self.trail_distance_label = tk.Label(distance_frame,
-                                            text=f"{self.trail_distance.get()} пипсов",
-                                            font=('Arial', 10, 'bold'),
-                                            bg=Colors.BG_DARK,
-                                            fg=Colors.SUCCESS,
-                                            width=12)
-        self.trail_distance_label.pack(side='left')
-        
-        # Update label on change
-        def update_distance_label(val):
-            self.trail_distance_label.config(text=f"{int(float(val))} пипсов")
-        
-        self.trail_distance.config(command=update_distance_label)
+        tk.Label(distance_frame,
+                text="пипсов от цены",
+                font=('Arial', 9),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED).pack(side='left', padx=5)
         
         # Подсказка
         tk.Label(content, 
@@ -484,34 +529,23 @@ class SettingsDialog:
         tk.Label(step_frame, text="Шаг (пипсы):",
                 font=('Arial', 10),
                 bg=Colors.BG_DARK,
-                fg=Colors.TEXT_SECONDARY).pack(side='left')
+                fg=Colors.TEXT_SECONDARY).pack(side='left', padx=5)
         
-        self.trail_step = tk.Scale(step_frame,
-                                  from_=1, to=20,
-                                  orient='horizontal',
-                                  length=300,
+        self.trail_step = tk.Entry(step_frame,
+                                  font=('Arial', 10, 'bold'),
+                                  width=8,
                                   bg=Colors.BG_CARD,
-                                  fg=Colors.TEXT_PRIMARY,
-                                  activebackground=Colors.PRIMARY,
-                                  highlightthickness=0,
-                                  troughcolor=Colors.BG_PANEL,
-                                  font=('Arial', 9))
-        self.trail_step.set(trailing_config.get('step_pips', 5))
-        self.trail_step.pack(side='left', padx=10)
+                                  fg=Colors.SUCCESS,
+                                  insertbackground=Colors.TEXT_PRIMARY)
+        self.trail_step.insert(0, str(trailing_config.get('step_pips', 3)))
+        self.trail_step.pack(side='left', padx=5)
+        self._bind_paste(self.trail_step)
         
-        self.trail_step_label = tk.Label(step_frame,
-                                        text=f"{self.trail_step.get()} пипсов",
-                                        font=('Arial', 10, 'bold'),
-                                        bg=Colors.BG_DARK,
-                                        fg=Colors.SUCCESS,
-                                        width=12)
-        self.trail_step_label.pack(side='left')
-        
-        # Update label on change
-        def update_step_label(val):
-            self.trail_step_label.config(text=f"{int(float(val))} пипсов")
-        
-        self.trail_step.config(command=update_step_label)
+        tk.Label(step_frame,
+                text="пипсов движения",
+                font=('Arial', 9),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED).pack(side='left', padx=5)
         
         # Подсказка
         tk.Label(content, 
@@ -546,19 +580,20 @@ class SettingsDialog:
                                       wraplength=650)
         self.trail_example.pack(padx=15, pady=(0, 10), anchor='w')
         
-        # Update example on slider change
+        # Update example when values change
         def update_example(*args):
-            self.trail_example.config(text=self._generate_trail_example(
-                int(self.trail_activation.get()),
-                int(self.trail_distance.get()),
-                int(self.trail_step.get())))
+            try:
+                activation = int(self.trail_activation.get() or 15)
+                distance = int(self.trail_distance.get() or 15)
+                step = int(self.trail_step.get() or 3)
+                self.trail_example.config(text=self._generate_trail_example(activation, distance, step))
+            except:
+                pass
         
-        self.trail_activation.config(command=lambda v: (update_activation_label(v), update_example()))
-        self.trail_distance.config(command=lambda v: (update_distance_label(v), update_example()))
-        self.trail_step.config(command=lambda v: (update_step_label(v), update_example()))
-        
-        # === BREAKEVEN - АВТОМАТИЧЕСКИЙ ПЕРЕВОД В БЕЗУБЫТОК ===
-        self._create_section(content, "🛡️ Breakeven (Защита прибыли)")
+        # Bind change events
+        self.trail_activation.bind('<KeyRelease>', update_example)
+        self.trail_distance.bind('<KeyRelease>', update_example)
+        self.trail_step.bind('<KeyRelease>', update_example)
         
         breakeven_config = trailing_config.get('breakeven', {})
         
@@ -589,9 +624,76 @@ class SettingsDialog:
                 justify='left',
                 wraplength=600).pack(padx=15, pady=10)
         
+        # Режим активации breakeven
+        be_mode_frame = self._create_setting_row(content, "📊 Режим активации breakeven")
+        self.be_mode = tk.StringVar(value=breakeven_config.get('activation_mode', 'percent'))  # 'pips' или 'percent'
+        
+        be_mode_selector = tk.Frame(be_mode_frame, bg=Colors.BG_DARK)
+        be_mode_selector.pack(side='right')
+        
+        tk.Radiobutton(be_mode_selector,
+                      text="Процент от TP",
+                      variable=self.be_mode,
+                      value='percent',
+                      bg=Colors.BG_DARK,
+                      fg=Colors.TEXT_PRIMARY,
+                      selectcolor=Colors.PRIMARY,
+                      activebackground=Colors.BG_DARK,
+                      font=('Arial', 10)).pack(side='left', padx=5)
+        
+        tk.Radiobutton(be_mode_selector,
+                      text="Фиксированные пипсы",
+                      variable=self.be_mode,
+                      value='pips',
+                      bg=Colors.BG_DARK,
+                      fg=Colors.TEXT_PRIMARY,
+                      selectcolor=Colors.PRIMARY,
+                      activebackground=Colors.BG_DARK,
+                      font=('Arial', 10)).pack(side='left', padx=5)
+        
+        # Процент от TP для breakeven
+        tk.Label(content,
+                text="📈 Активация breakeven (% от TP distance):",
+                font=('Arial', 10, 'bold'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_PRIMARY,
+                anchor='w').pack(fill='x', pady=(10, 5), padx=40)
+        
+        be_percent_frame = tk.Frame(content, bg=Colors.BG_DARK)
+        be_percent_frame.pack(fill='x', pady=5, padx=40)
+        
+        tk.Label(be_percent_frame,
+                text="Процент:",
+                font=('Arial', 10),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_SECONDARY).pack(side='left', padx=5)
+        
+        self.be_activation_percent = tk.Entry(be_percent_frame,
+                                             font=('Arial', 10, 'bold'),
+                                             width=8,
+                                             bg=Colors.BG_CARD,
+                                             fg=Colors.SUCCESS,
+                                             insertbackground=Colors.TEXT_PRIMARY)
+        self.be_activation_percent.insert(0, str(breakeven_config.get('activation_percent', 30)))
+        self.be_activation_percent.pack(side='left', padx=5)
+        self._bind_paste(self.be_activation_percent)
+        
+        tk.Label(be_percent_frame,
+                text="% (также 30% как trailing)",
+                font=('Arial', 9),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED).pack(side='left', padx=5)
+        
+        tk.Label(content,
+                text="💡 Breakeven и Trailing используют один процент для консистентности",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED,
+                justify='left').pack(fill='x', pady=(2, 10), padx=40)
+        
         # Активация breakeven
         tk.Label(content,
-                text="🎯 Активация при профите (пипсы):",
+                text="🎯 Активация при профите (фиксированные пипсы):",
                 font=('Arial', 10, 'bold'),
                 bg=Colors.BG_DARK,
                 fg=Colors.TEXT_PRIMARY,
@@ -600,32 +702,27 @@ class SettingsDialog:
         be_activation_frame = tk.Frame(content, bg=Colors.BG_DARK)
         be_activation_frame.pack(fill='x', pady=5, padx=40)
         
-        self.be_activation = tk.Scale(be_activation_frame,
-                                     from_=10,
-                                     to=50,
-                                     orient='horizontal',
-                                     length=300,
+        tk.Label(be_activation_frame,
+                text="Пипсы:",
+                font=('Arial', 10),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_SECONDARY).pack(side='left', padx=5)
+        
+        self.be_activation = tk.Entry(be_activation_frame,
+                                     font=('Arial', 10, 'bold'),
+                                     width=8,
                                      bg=Colors.BG_CARD,
-                                     fg=Colors.TEXT_PRIMARY,
-                                     activebackground=Colors.PRIMARY,
-                                     highlightthickness=0,
-                                     troughcolor=Colors.BG_PANEL,
-                                     font=('Arial', 9))
-        self.be_activation.set(breakeven_config.get('activation_profit_pips', 25))
-        self.be_activation.pack(side='left', padx=10)
+                                     fg=Colors.SUCCESS,
+                                     insertbackground=Colors.TEXT_PRIMARY)
+        self.be_activation.insert(0, str(breakeven_config.get('activation_profit_pips', 25)))
+        self.be_activation.pack(side='left', padx=5)
+        self._bind_paste(self.be_activation)
         
-        self.be_activation_label = tk.Label(be_activation_frame,
-                                           text=f"{self.be_activation.get()} пипсов",
-                                           font=('Arial', 10, 'bold'),
-                                           bg=Colors.BG_DARK,
-                                           fg=Colors.SUCCESS,
-                                           width=12)
-        self.be_activation_label.pack(side='left')
-        
-        def update_be_activation_label(val):
-            self.be_activation_label.config(text=f"{int(float(val))} пипсов")
-        
-        self.be_activation.config(command=update_be_activation_label)
+        tk.Label(be_activation_frame,
+                text="пипсов профита",
+                font=('Arial', 9),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED).pack(side='left', padx=5)
         
         tk.Label(content,
                 text="💡 При достижении этого профита SL переводится в безубыток",
@@ -645,32 +742,27 @@ class SettingsDialog:
         be_offset_frame = tk.Frame(content, bg=Colors.BG_DARK)
         be_offset_frame.pack(fill='x', pady=5, padx=40)
         
-        self.be_offset = tk.Scale(be_offset_frame,
-                                 from_=0,
-                                 to=15,
-                                 orient='horizontal',
-                                 length=300,
+        tk.Label(be_offset_frame,
+                text="Пипсы:",
+                font=('Arial', 10),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_SECONDARY).pack(side='left', padx=5)
+        
+        self.be_offset = tk.Entry(be_offset_frame,
+                                 font=('Arial', 10, 'bold'),
+                                 width=8,
                                  bg=Colors.BG_CARD,
-                                 fg=Colors.TEXT_PRIMARY,
-                                 activebackground=Colors.PRIMARY,
-                                 highlightthickness=0,
-                                 troughcolor=Colors.BG_PANEL,
-                                 font=('Arial', 9))
-        self.be_offset.set(breakeven_config.get('offset_pips', 5))
-        self.be_offset.pack(side='left', padx=10)
+                                 fg=Colors.SUCCESS,
+                                 insertbackground=Colors.TEXT_PRIMARY)
+        self.be_offset.insert(0, str(breakeven_config.get('offset_pips', 5)))
+        self.be_offset.pack(side='left', padx=5)
+        self._bind_paste(self.be_offset)
         
-        self.be_offset_label = tk.Label(be_offset_frame,
-                                       text=f"+{self.be_offset.get()} пипсов",
-                                       font=('Arial', 10, 'bold'),
-                                       bg=Colors.BG_DARK,
-                                       fg=Colors.SUCCESS,
-                                       width=12)
-        self.be_offset_label.pack(side='left')
-        
-        def update_be_offset_label(val):
-            self.be_offset_label.config(text=f"+{int(float(val))} пипсов")
-        
-        self.be_offset.config(command=update_be_offset_label)
+        tk.Label(be_offset_frame,
+                text="пипсов отступа",
+                font=('Arial', 9),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED).pack(side='left', padx=5)
         
         tk.Label(content,
                 text="💡 SL ставится на entry + этот отступ (0 = точный безубыток)",
@@ -1374,6 +1466,8 @@ If you received this message, Telegram notifications are configured correctly! �
                 trading_config['trading']['trailing_stop'] = {}
             
             trading_config['trading']['trailing_stop']['enabled'] = self.trail_enabled.get()
+            trading_config['trading']['trailing_stop']['activation_mode'] = self.trail_mode.get()  # 'pips' or 'percent'
+            trading_config['trading']['trailing_stop']['activation_percent'] = int(self.trail_activation_percent.get())  # NEW
             trading_config['trading']['trailing_stop']['activation_profit_pips'] = int(self.trail_activation.get())
             trading_config['trading']['trailing_stop']['distance_pips'] = int(self.trail_distance.get())
             trading_config['trading']['trailing_stop']['step_pips'] = int(self.trail_step.get())
@@ -1383,6 +1477,8 @@ If you received this message, Telegram notifications are configured correctly! �
                 trading_config['trading']['trailing_stop']['breakeven'] = {}
             
             trading_config['trading']['trailing_stop']['breakeven']['enabled'] = self.breakeven_enabled.get()
+            trading_config['trading']['trailing_stop']['breakeven']['activation_mode'] = self.be_mode.get()  # NEW
+            trading_config['trading']['trailing_stop']['breakeven']['activation_percent'] = int(self.be_activation_percent.get())  # NEW
             trading_config['trading']['trailing_stop']['breakeven']['activation_profit_pips'] = int(self.be_activation.get())
             trading_config['trading']['trailing_stop']['breakeven']['offset_pips'] = int(self.be_offset.get())
             

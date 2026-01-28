@@ -418,7 +418,7 @@ class CurrentSettingsPanel(tk.Frame):
                 self._ai_label.config(text=model.upper())
                 
         except Exception as e:
-            logger.error(f"[CurrentSettingsPanel] Ошибка обновления: {e}")
+            app_logger.error(f"[CurrentSettingsPanel] Ошибка обновления: {e}")
 
 
 # ==================== AI ANALYST PANEL ====================
@@ -643,7 +643,8 @@ class AnalystPanel(tk.Frame):
         header_frame = tk.Frame(self.summary_left_scrollable, bg=Colors.BG_PANEL)
         header_frame.pack(fill='x', pady=(0, 15))
         
-        active_signals = [s for s in signal_manager.active_signals if s.status == "pending"]
+        # Показываем сигналы pending И triggered (не filled/expired)
+        active_signals = [s for s in signal_manager.active_signals if s.status in ["pending", "triggered"]]
         
         tk.Label(header_frame,
                 text=f"ACTIVE SIGNALS ({len(active_signals)})",
@@ -794,61 +795,16 @@ class AnalystPanel(tk.Frame):
         progress_canvas.create_rectangle(0, 0, progress_width, 6,
                                         fill=progress_color, outline='')
         
-        # Bottom row: Reasoning + Delete button
-        bottom_row = tk.Frame(card_content, bg=Colors.BG_CARD)
-        bottom_row.pack(fill='x', pady=(8, 0))
-        
         # Reasoning (если есть)
         if signal.reasoning:
-            reasoning_text = signal.reasoning[:100] + "..." if len(signal.reasoning) > 100 else signal.reasoning
-            tk.Label(bottom_row,
+            reasoning_text = signal.reasoning[:120] + "..." if len(signal.reasoning) > 120 else signal.reasoning
+            tk.Label(card_content,
                     text=f"💡 {reasoning_text}",
-                    font=('Arial', 9, 'italic'),
+                    font=('Arial', 9),
                     bg=Colors.BG_CARD,
-                    fg=Colors.TEXT_MUTED,
-                    wraplength=400,
-                    justify='left').pack(side='left', fill='x', expand=True)
-        
-        # Delete button
-        delete_btn = tk.Button(bottom_row,
-                               text="🗑️",
-                               font=('Arial', 14),
-                               bg=Colors.ERROR,
-                               fg='white',
-                               bd=0,
-                               padx=8,
-                               pady=2,
-                               cursor='hand2',
-                               command=lambda: self._delete_signal(signal.id))
-        delete_btn.pack(side='right')
-    
-    def _delete_signal(self, signal_id: str):
-        """Удалить сигнал по ID"""
-        try:
-            from src.ai.signal_manager import AISignalManager
-            
-            # Подтверждение
-            if not messagebox.askyesno(
-                "Delete Signal",
-                f"Are you sure you want to delete signal {signal_id}?"
-            ):
-                return
-            
-            # Удаляем сигнал
-            manager = AISignalManager()
-            manager.active_signals = [s for s in manager.active_signals if s.id != signal_id]
-            manager._save_state()
-            
-            app_logger.info(f"[GUI] Signal {signal_id} deleted by user")
-            
-            # Обновляем отображение
-            self.refresh_analysis()
-            
-            messagebox.showinfo("Success", "Signal deleted successfully")
-            
-        except Exception as e:
-            app_logger.error(f"[GUI] Failed to delete signal: {e}")
-            messagebox.showerror("Error", f"Failed to delete signal: {e}")
+                    fg=Colors.TEXT_SECONDARY,
+                    wraplength=500,
+                    justify='left').pack(anchor='w', pady=(5, 0))
     
     def _create_history_section(self, signal_manager):
         """Создать секцию истории"""
@@ -1480,11 +1436,17 @@ class BazaApp:
                         app_logger.debug("[LOOP] Running pure AI mode")
                         trader.check_signals()
                     
+                    # Проверить trailing stop для открытых позиций
+                    trader.check_trailing_stop()
+                    
+                    # Проверить закрытые позиции (Telegram уведомления)
+                    trader.check_closed_positions()
+                    
                     # Обновить открытые позиции
                     self._update_positions()
                     
-                    # Пауза перед следующей итерацией (15 секунд)
-                    self.stop_event.wait(15)
+                    # Пауза перед следующей итерацией (3 секунды для быстрого trailing)
+                    self.stop_event.wait(3)
                     
                 except Exception as e:
                     app_logger.error(f"[LOOP] Error in trading loop: {e}")

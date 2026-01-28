@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 import sys
 from src.core.logger import logger
+from src.core.risk_manager import RiskManager
 
 # Helper для работы с путями в EXE
 def get_data_path(filename):
@@ -94,6 +95,18 @@ class LiveTrader:
         self.executor = Executor(mt5_connector=self.mt5_connector)
         logger.info("[LiveTrader] Executor ready")
         
+        # Инициализация RiskManager для trailing расчётов
+        logger.info("[LiveTrader] Initializing RiskManager...")
+        risk_config = self.config.get('trading', {}).get('risk', {})
+        self.risk_manager = RiskManager(config=risk_config)
+        logger.info("[LiveTrader] RiskManager ready")
+        
+        # Инициализация V4 Trailing Stop Handler
+        logger.info("[LiveTrader] Initializing V4 Trailing Stop (60%/50% fixed)...")
+        from src.live.trailing_stop_v4 import TrailingStopV4
+        self.trailing_v4 = TrailingStopV4(mt5_connector=self.mt5_connector)
+        logger.info("[LiveTrader] V4 Trailing Stop ready (Telegram will be set after monitoring init)")
+        
         # Инициализация NewsFetcher (для V3)
         self.news_fetcher = None
         try:
@@ -145,6 +158,11 @@ class LiveTrader:
         # Отслеживание открытых позиций для Telegram уведомлений
         self.tracked_positions = {}  # {ticket: {symbol, direction, entry_time, ...}}
         
+        # Устанавливаем Telegram в TrailingStopV4 после инициализации
+        if hasattr(self, 'trailing_v4') and self.telegram:
+            self.trailing_v4.telegram = self.telegram
+            logger.info("[LiveTrader] Telegram notifier set to V4 Trailing Stop")
+        
         logger.info("[LiveTrader] LiveTrader fully initialized")
         logger.info("="*80)
     
@@ -154,12 +172,12 @@ class LiveTrader:
     
     def load_configs(self) -> None:
         """Загрузка конфигурационных файлов."""
+        import yaml
         config_path = Path(self.config_dir)
         
         # Загружаем MT5 конфиг
         mt5_config_path = config_path / 'mt5.yaml'
         if mt5_config_path.exists():
-            import yaml
             with open(mt5_config_path, 'r') as f:
                 self.mt5_config = yaml.safe_load(f)
         else:
@@ -168,7 +186,6 @@ class LiveTrader:
         # Загружаем конфиг инструментов
         instruments_config_path = config_path / 'instruments.yaml'
         if instruments_config_path.exists():
-            import yaml
             with open(instruments_config_path, 'r') as f:
                 self.instruments_config = yaml.safe_load(f)
         else:
@@ -177,11 +194,18 @@ class LiveTrader:
         # Загружаем конфиг портфеля
         portfolio_config_path = config_path / 'portfolio.yaml'
         if portfolio_config_path.exists():
-            import yaml
             with open(portfolio_config_path, 'r') as f:
                 self.portfolio_config = yaml.safe_load(f)
         else:
             self.portfolio_config = {}
+        
+        # Загружаем trading.yaml (для RiskManager и других настроек)
+        trading_config_path = config_path / 'trading.yaml'
+        if trading_config_path.exists():
+            with open(trading_config_path, 'r') as f:
+                self.config = yaml.safe_load(f)
+        else:
+            self.config = {}
     
     def _is_trading_enabled_for_instrument(self, symbol: str) -> bool:
         """Проверить включена ли торговля для инструмента."""
@@ -684,149 +708,22 @@ class LiveTrader:
     
     def check_trailing_stop(self):
         """
-        Продвинутый trailing stop с настраиваемыми параметрами.
+        V4 Trailing Stop - Fixed parameters for M5 scalping.
         
-        Логика:
-        1. Проверяет профит каждой позиции
-        2. Если профит >= activation_profit_pips → активирует trailing
-        3. Постоянно двигает SL на distance_pips от текущей цены
-        4. Обновляет только если цена ушла >= step_pips (защита от спама)
+        Uses TrailingStopV4 module with fixed activation/stop levels.
         """
         if not self.tracked_positions:
             return
         
-        # Загрузить конфиг trailing stop
         try:
-            import yaml
-            with open('config/trading.yaml', 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f)
-            
-            trailing_config = config.get('trading', {}).get('trailing_stop', {})
-            
-            if not trailing_config.get('enabled', False):
-                return  # Trailing отключен в конфиге
-            
-            activation_profit = trailing_config.get('activation_profit_pips', 15)
-            distance_pips = trailing_config.get('distance_pips', 20)
-            step_pips = trailing_config.get('step_pips', 5)
-            
-            # Breakeven settings
-            breakeven_config = trailing_config.get('breakeven', {})
-            breakeven_enabled = breakeven_config.get('enabled', True)
-            breakeven_activation = breakeven_config.get('activation_profit_pips', 25)
-            breakeven_offset = breakeven_config.get('offset_pips', 5)
-            
-        except Exception as e:
-            logger.error(f"[TrailingSL] Failed to load config: {e}")
-            return
-        
-        try:
-            for ticket, pos_info in list(self.tracked_positions.items()):
-                # Проверяем что позиция еще открыта
-                positions = self.mt5_connector.positions_get(ticket=ticket)
-                if not positions or len(positions) == 0:
-                    continue
-                
-                current_position = positions[0]
-                symbol = current_position.symbol
-                current_price = current_position.price_current
-                entry = pos_info['entry_price']
-                current_sl = pos_info.get('current_sl', pos_info['sl'])  # Текущий SL (может быть обновлен)
-                direction = pos_info['direction']
-                
-                # Получаем point для символа (для конвертации пипсов)
-                symbol_info = self.mt5_connector.symbol_info(symbol)
-                if not symbol_info:
-                    continue
-                
-                point = symbol_info.point
-                pip_size = point * 10 if 'JPY' not in symbol else point  # 1 пип = 10 поинтов (кроме JPY)
-                
-                # Вычисляем текущий профит в пипсах
-                if direction == 'BUY':
-                    profit_pips = (current_price - entry) / pip_size
-                    
-                    # ===== BREAKEVEN LOGIC =====
-                    # Проверяем перевод в безубыток (выполняется только один раз)
-                    if breakeven_enabled and not pos_info.get('breakeven_moved', False):
-                        if profit_pips >= breakeven_activation:
-                            # Переводим SL в безубыток (+offset_pips)
-                            breakeven_sl = entry + (breakeven_offset * pip_size)
-                            
-                            if breakeven_sl > current_sl:  # Только если это улучшает SL
-                                if self._modify_position_sl(ticket, breakeven_sl, symbol):
-                                    pos_info['current_sl'] = breakeven_sl
-                                    pos_info['breakeven_moved'] = True  # Помечаем что уже переведен
-                                    logger.info(f"[Breakeven] ✅ #{ticket} {symbol} BUY: Moved to breakeven at {breakeven_sl:.5f}")
-                                    logger.info(f"[Breakeven]    Profit: +{profit_pips:.1f} pips, SL now at entry+{breakeven_offset} pips")
-                                    continue  # Переходим к следующей позиции
-                    
-                    # ===== TRAILING STOP LOGIC =====
-                    # Проверяем достигнут ли порог активации
-                    if profit_pips < activation_profit:
-                        continue  # Еще мало профита для trailing
-                    
-                    # Вычисляем новый SL (distance_pips ниже текущей цены)
-                    new_sl = current_price - (distance_pips * pip_size)
-                    
-                    # Проверяем что новый SL выше текущего (защита от откатов)
-                    if new_sl <= current_sl:
-                        continue  # Не двигаем SL назад
-                    
-                    # Проверяем что цена ушла на достаточное расстояние (step_pips)
-                    sl_movement_pips = (new_sl - current_sl) / pip_size
-                    if sl_movement_pips < step_pips:
-                        continue  # Слишком маленький шаг, не обновляем
-                    
-                    # Обновляем SL в MT5
-                    if self._modify_position_sl(ticket, new_sl, symbol):
-                        pos_info['current_sl'] = new_sl
-                        logger.info(f"[TrailingSL] ✅ #{ticket} {symbol} BUY: SL moved {current_sl:.5f} → {new_sl:.5f} (+{sl_movement_pips:.1f} pips)")
-                        logger.info(f"[TrailingSL]    Current profit: +{profit_pips:.1f} pips, Distance from price: {distance_pips} pips")
-                
-                elif direction == 'SELL':
-                    profit_pips = (entry - current_price) / pip_size
-                    
-                    # ===== BREAKEVEN LOGIC =====
-                    # Проверяем перевод в безубыток (выполняется только один раз)
-                    if breakeven_enabled and not pos_info.get('breakeven_moved', False):
-                        if profit_pips >= breakeven_activation:
-                            # Переводим SL в безубыток (-offset_pips)
-                            breakeven_sl = entry - (breakeven_offset * pip_size)
-                            
-                            if breakeven_sl < current_sl:  # Только если это улучшает SL
-                                if self._modify_position_sl(ticket, breakeven_sl, symbol):
-                                    pos_info['current_sl'] = breakeven_sl
-                                    pos_info['breakeven_moved'] = True  # Помечаем что уже переведен
-                                    logger.info(f"[Breakeven] ✅ #{ticket} {symbol} SELL: Moved to breakeven at {breakeven_sl:.5f}")
-                                    logger.info(f"[Breakeven]    Profit: +{profit_pips:.1f} pips, SL now at entry-{breakeven_offset} pips")
-                                    continue  # Переходим к следующей позиции
-                    
-                    # ===== TRAILING STOP LOGIC =====
-                    # Проверяем достигнут ли порог активации
-                    if profit_pips < activation_profit:
-                        continue  # Еще мало профита для trailing
-                    
-                    # Вычисляем новый SL (distance_pips выше текущей цены)
-                    new_sl = current_price + (distance_pips * pip_size)
-                    
-                    # Проверяем что новый SL ниже текущего (защита от откатов)
-                    if new_sl >= current_sl:
-                        continue  # Не двигаем SL назад
-                    
-                    # Проверяем что цена ушла на достаточное расстояние (step_pips)
-                    sl_movement_pips = (current_sl - new_sl) / pip_size
-                    if sl_movement_pips < step_pips:
-                        continue  # Слишком маленький шаг, не обновляем
-                    
-                    # Обновляем SL в MT5
-                    if self._modify_position_sl(ticket, new_sl, symbol):
-                        pos_info['current_sl'] = new_sl
-                        logger.info(f"[TrailingSL] ✅ #{ticket} {symbol} SELL: SL moved {current_sl:.5f} → {new_sl:.5f} (+{sl_movement_pips:.1f} pips)")
-                        logger.info(f"[TrailingSL]    Current profit: +{profit_pips:.1f} pips, Distance from price: {distance_pips} pips")
+            # V4: Use new simplified trailing stop handler
+            if hasattr(self, 'trailing_v4'):
+                self.trailing_v4.check_and_apply(self.tracked_positions)
+            else:
+                logger.warning("[LiveTrader] V4 trailing stop handler not initialized")
         
         except Exception as e:
-            logger.error(f"[TrailingSL] Failed to check trailing stop: {e}")
+            logger.error(f"[V4-Trailing] Failed: {e}")
             import traceback
             logger.error(traceback.format_exc())
     
@@ -878,17 +775,28 @@ class LiveTrader:
     
     def check_closed_positions(self):
         """Проверяет закрытые позиции и отправляет Telegram уведомления."""
-        if not self.telegram or not self.tracked_positions:
+        if not self.telegram:
+            return
+        
+        if not self.tracked_positions:
             return
         
         try:
             # Проходим по отслеживаемым позициям
             for ticket in list(self.tracked_positions.keys()):
+                pos_info = self.tracked_positions[ticket]
+                
+                # Пропускаем если уже обработали закрытие
+                if pos_info.get('notification_sent', False):
+                    continue
+                
                 # Проверяем есть ли позиция в открытых
                 position = self.mt5_connector.positions_get(ticket=ticket)
                 
                 if not position or len(position) == 0:
-                    # Позиция закрыта - проверяем историю
+                    # Позиция закрыта - проверяем историю ОДИН РАЗ
+                    logger.info(f"[Closed] Position #{ticket} CLOSED - fetching history...")
+                    
                     from datetime import datetime, timedelta
                     
                     # Ищем в истории сделок
@@ -900,6 +808,7 @@ class LiveTrader:
                     if history:
                         for deal in history:
                             if deal.position_id == ticket:
+                                logger.info(f"[Closed] Found closing deal for #{ticket}")
                                 # Нашли сделку закрытия
                                 pos_info = self.tracked_positions[ticket]
                                 
@@ -938,6 +847,9 @@ class LiveTrader:
                                 )
                                 
                                 logger.info(f"[Telegram] Trade closed notification sent for #{ticket}")
+                                
+                                # Помечаем что уведомление отправлено
+                                pos_info['notification_sent'] = True
                                 
                                 # AUTO-REQUERY: Trigger immediate GPT analysis after position close
                                 if hasattr(self, 'analyst_scheduler') and self.analyst_scheduler:
