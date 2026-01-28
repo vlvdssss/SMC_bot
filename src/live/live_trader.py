@@ -444,8 +444,53 @@ class LiveTrader:
         else:
             logger.warning("ML Predictor not available (missing dependencies)")
     
+    def _check_trading_hours(self) -> bool:
+        """
+        Проверить разрешено ли торговать сейчас
+        
+        Правила:
+        - ЗАПРЕТ: 13:00 - 18:00 (каждый день) - Night ban
+        - РАЗРЕШЕНО: Понедельник 01:00 - Пятница 21:00
+        - ЗАПРЕТ: Суббота, Воскресенье
+        
+        Returns:
+            True если торговля разрешена
+        """
+        now = datetime.now()
+        weekday = now.weekday()  # 0=Monday, 6=Sunday
+        hour = now.hour
+        
+        # Проверка выходных
+        if weekday >= 5:  # Saturday=5, Sunday=6
+            if weekday == 5:
+                logger.debug(f"[Trading Hours] Saturday - trading blocked")
+            else:
+                logger.debug(f"[Trading Hours] Sunday - trading blocked")
+            return False
+        
+        # Проверка времени недели
+        if weekday == 0 and hour < 1:  # Monday before 01:00
+            logger.debug(f"[Trading Hours] Monday before 01:00 - trading blocked")
+            return False
+        
+        if weekday == 4 and hour >= 21:  # Friday after 21:00
+            logger.debug(f"[Trading Hours] Friday after 21:00 - trading blocked")
+            return False
+        
+        # Проверка запретного времени 13:00-18:00 (Night ban)
+        if 13 <= hour < 18:
+            logger.debug(f"[Trading Hours] Night ban (13:00-18:00) - trading blocked")
+            return False
+        
+        return True
+    
     def check_signals(self):
         """Проверка сигналов для всех стратегий."""
+        # Проверка времени торговли
+        if not self._check_trading_hours():
+            logger.debug("[LiveTrader] Trading blocked by schedule")
+            return []
+        
         signals = []
         
         # Проверяем AI сигналы ПЕРЕД проверкой позиций (AI сигналы сохраняются и ждут)
@@ -794,10 +839,14 @@ class LiveTrader:
                 position = self.mt5_connector.positions_get(ticket=ticket)
                 
                 if not position or len(position) == 0:
-                    # Позиция закрыта - проверяем историю ОДИН РАЗ
+                    # Позиция закрыта - проверяем историю
                     logger.info(f"[Closed] Position #{ticket} CLOSED - fetching history...")
                     
                     from datetime import datetime, timedelta
+                    import time
+                    
+                    # Даём MT5 время записать в историю (500ms)
+                    time.sleep(0.5)
                     
                     # Ищем в истории сделок (расширенный диапазон - 24 часа)
                     history = self.mt5_connector.history_deals_get(
@@ -810,13 +859,11 @@ class LiveTrader:
                     
                     if history:
                         for deal in history:
-                            if deal.position_id == ticket:
-                                # Ищем именно сделку ЗАКРЫТИЯ (entry == OUT)
-                                if deal.entry == 1:  # 1 = OUT (закрытие)
-                                    deal_found = True
-                                    closing_deal = deal
-                                    logger.info(f"[Closed] Found closing deal for #{ticket}")
-                                    break
+                            if deal.position_id == ticket and deal.entry == 1:  # 1 = OUT
+                                deal_found = True
+                                closing_deal = deal
+                                logger.info(f"[Closed] Found closing deal for #{ticket}, profit=${deal.profit:.2f}")
+                                break
                     
                     if deal_found and closing_deal:
                         # Нашли сделку закрытия - отправляем полный отчёт
@@ -870,54 +917,10 @@ class LiveTrader:
                         del self.tracked_positions[ticket]
                     
                     else:
-                        # Не нашли в истории - отправляем упрощённое уведомление (ручное закрытие)
+                        # Не нашли в истории - просто удаляем без уведомления
+                        # (сделка уже закрыта, точный profit неизвестен)
                         pos_info = self.tracked_positions[ticket]
-                        logger.warning(f"[Closed] Deal for #{ticket} not found - sending MANUAL close notification")
-                        
-                        # Получаем текущую цену для расчёта profit
-                        current_price = self.mt5_connector.get_current_price(pos_info['symbol'])
-                        
-                        if current_price:
-                            # Вычисляем примерный profit
-                            if pos_info['direction'] == 'BUY':
-                                price_diff = current_price - pos_info['entry_price']
-                            else:
-                                price_diff = pos_info['entry_price'] - current_price
-                            
-                            # Примерный profit (без учёта комиссий)
-                            lot_size = pos_info.get('volume', 0.01)
-                            if pos_info['symbol'] == 'XAUUSD':
-                                profit_estimate = price_diff * lot_size * 100
-                                pips = abs(price_diff) * 100
-                            else:
-                                profit_estimate = price_diff * lot_size * 100000
-                                pips = abs(price_diff) * 10000
-                            
-                            # Длительность
-                            duration = datetime.now() - pos_info['entry_time']
-                            hours = int(duration.total_seconds() // 3600)
-                            minutes = int((duration.total_seconds() % 3600) // 60)
-                            duration_str = f"{hours}ч {minutes}м" if hours > 0 else f"{minutes}м"
-                            
-                            # Причина закрытия - MANUAL (ручное)
-                            result_reason = "MANUAL"
-                            
-                            # Отправляем уведомление
-                            from src.core.bot_manager import BotManager
-                            bot_manager = BotManager()
-                            trading_mode = bot_manager.trading_mode
-                            
-                            self.telegram.send_trade_closed(
-                                symbol=pos_info['symbol'],
-                                direction=pos_info['direction'],
-                                profit=profit_estimate,
-                                pips=pips,
-                                duration=duration_str,
-                                mode='pure_ai' if trading_mode == 'pure_ai' else 'strategy',
-                                result_reason=result_reason
-                            )
-                            
-                            logger.info(f"[Telegram] MANUAL close notification sent for #{ticket} (estimated)")
+                        logger.warning(f"[Closed] Deal for #{ticket} not found in history - removing silently")
                         
                         # Удаляем из tracked
                         del self.tracked_positions[ticket]
