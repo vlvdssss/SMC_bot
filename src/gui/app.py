@@ -1130,16 +1130,6 @@ class BazaApp:
                  cursor='hand2',
                  command=self.show_mt5_dialog).pack(fill='x', pady=(0, 10))
         
-        # Update Button
-        tk.Button(left_panel, text="🔄 Проверить обновления",
-                 font=('Arial', 10),
-                 bg=Colors.BG_CARD,
-                 fg=Colors.TEXT_PRIMARY,
-                 activebackground=Colors.BG_HOVER,
-                 relief='flat',
-                 cursor='hand2',
-                 command=self.check_for_updates).pack(fill='x', pady=(0, 10))
-        
         # Test GPT Connection Button
         tk.Button(left_panel, text="🧪 Test GPT",
                  font=('Arial', 10),
