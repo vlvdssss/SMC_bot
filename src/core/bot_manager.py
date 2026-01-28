@@ -71,7 +71,7 @@ class BotManager:
         self.status = BotStatus.STOPPED
         self.is_running = False  # Для Telegram бота
         self.mode = 'demo'  # Режим работы: demo, backtest, live
-        self.trading_mode = 'strategy'  # Режим торговли: strategy, pure_ai
+        self.trading_mode = 'pure_ai'  # Pure AI режим (фиксированный)
         self.bot_thread: Optional[threading.Thread] = None
         self.stop_event = threading.Event()
         self.pause_event = threading.Event()

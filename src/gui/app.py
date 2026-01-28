@@ -26,10 +26,6 @@ from src.gui.mt5_dialog import MT5Dialog
 from src.core.logger import logger as app_logger
 from src.core.market_data_updater import MarketDataUpdater
 
-# Система обновлений
-from version import APP_VERSION, VERSION_CHECK_URL
-from updater import UpdateChecker, UpdateWindow
-
 try:
     from src.ai.analyst_scheduler import get_scheduler, init_scheduler
     from src.ai.signal_manager import AISignalManager
@@ -141,85 +137,6 @@ class HeaderPanel(tk.Frame):
     def update_price(self, price: float):
         """Обновить цену"""
         self.price_label.config(text=f"{price:.2f}")
-
-
-# ==================== MODE SELECTOR ====================
-class ModeSelector(tk.Frame):
-    """Выбор режима торговли через Radiobutton"""
-    
-    def __init__(self, parent, on_mode_change):
-        super().__init__(parent, bg=Colors.BG_DARK)
-        self.on_mode_change = on_mode_change
-        self.mode_var = tk.StringVar(value="strategy")
-        
-        # Заголовок
-        tk.Label(self, text="Режим торговли:", 
-                font=('Arial', 12, 'bold'),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_PRIMARY).pack(anchor='w', pady=(0, 15))
-        
-        # Strategy + AI
-        rb1 = tk.Radiobutton(
-            self,
-            text="Strategy + AI  (Стратегия + GPT фильтр)",
-            variable=self.mode_var,
-            value="strategy",
-            font=('Arial', 11),
-            bg=Colors.BG_DARK,
-            fg=Colors.TEXT_PRIMARY,
-            selectcolor=Colors.BG_CARD,
-            activebackground=Colors.BG_DARK,
-            activeforeground=Colors.SUCCESS,
-            command=self._on_mode_change
-        )
-        rb1.pack(anchor='w', pady=5)
-        
-        # Pure AI Trading
-        rb2 = tk.Radiobutton(
-            self,
-            text="Pure AI Trading  (Только GPT сигналы)",
-            variable=self.mode_var,
-            value="pure_ai",
-            font=('Arial', 11),
-            bg=Colors.BG_DARK,
-            fg=Colors.TEXT_PRIMARY,
-            selectcolor=Colors.BG_CARD,
-            activebackground=Colors.BG_DARK,
-            activeforeground=Colors.SUCCESS,
-            command=self._on_mode_change
-        )
-        rb2.pack(anchor='w', pady=5)
-        
-        # Статус
-        status_frame = tk.Frame(self, bg=Colors.BG_CARD, 
-                               highlightbackground=Colors.BORDER,
-                               highlightthickness=1)
-        status_frame.pack(fill='x', pady=(15, 0))
-        
-        self.status_label = tk.Label(status_frame, text="● Готов к запуску",
-                font=('Arial', 10, 'bold'),
-                bg=Colors.BG_CARD,
-                fg=Colors.TEXT_MUTED)
-        self.status_label.pack(pady=8)
-        
-        self.mode_status_label = tk.Label(status_frame, text="Режим: Live",
-                font=('Arial', 9),
-                bg=Colors.BG_CARD,
-                fg=Colors.TEXT_SECONDARY)
-        self.mode_status_label.pack(pady=(0, 8))
-    
-    def update_status(self, is_running):
-        """Обновить статус активности"""
-        if is_running:
-            self.status_label.config(text="● Бот активен", fg=Colors.SUCCESS)
-        else:
-            self.status_label.config(text="● Готов к запуску", fg=Colors.TEXT_MUTED)
-    
-    def _on_mode_change(self):
-        """Обработка смены режима"""
-        mode = self.mode_var.get()
-        if self.on_mode_change:
-            self.on_mode_change(mode)
 
 
 # ==================== CONTROL PANEL ====================
@@ -358,9 +275,6 @@ class CurrentSettingsPanel(tk.Frame):
                                  highlightthickness=1)
         settings_frame.pack(fill='x')
         
-        # Trading Mode
-        self._create_setting_row(settings_frame, "Mode:", "Strategy+AI")
-        
         # Risk %
         self._create_setting_row(settings_frame, "Risk:", "1.0%")
         
@@ -392,13 +306,6 @@ class CurrentSettingsPanel(tk.Frame):
     def update_settings(self, settings):
         """Обновить отображаемые настройки"""
         try:
-            # Trading Mode
-            mode_map = {'strategy': 'Strategy+AI', 'pure_ai': 'Pure AI'}
-            if hasattr(self, '_mode_label'):
-                self._mode_label.config(
-                    text=mode_map.get(settings.get('trading_mode', 'strategy'), 'Unknown')
-                )
-            
             # Risk %
             if hasattr(self, '_risk_label'):
                 risk = settings.get('risk_percent', 1.0)
@@ -1127,7 +1034,7 @@ class BazaApp:
     
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title(f"BAZA Trading Terminal v{APP_VERSION}")
+        self.root.title("BAZA Trading Bot - Pure AI Mode")
         
         # Максимальное окно с фиксированным размером
         self.root.state('zoomed')  # Максимизировать окно
@@ -1191,10 +1098,6 @@ class BazaApp:
         left_panel.pack(side='left', fill='y', padx=(0, 20))
         left_panel.pack_propagate(False)
         
-        # Mode Selector
-        self.mode_selector = ModeSelector(left_panel, self._on_mode_change)
-        self.mode_selector.pack(fill='x', pady=(0, 20))
-        
         # Control Panel
         self.control_panel = ControlPanel(left_panel, self._start_bot, self._stop_bot)
         self.control_panel.pack(fill='x', pady=(0, 20))
@@ -1251,26 +1154,6 @@ class BazaApp:
         self.analyst_panel = AnalystPanel(main_container)
         self.analyst_panel.pack(side='right', fill='both', expand=True)
     
-    def _on_mode_change(self, mode):
-        """Обработка смены режима"""
-        app_logger.info(f"[MODE] Switched to: {mode}")
-        
-        # Обновить режим в BotManager
-        if mode == 'strategy':
-            self.bot_manager.trading_mode = 'strategy'
-            app_logger.info("[MODE] Strategy + AI enabled")
-        else:
-            self.bot_manager.trading_mode = 'pure_ai'
-            app_logger.info("[MODE] Pure AI Trading enabled")
-        
-        # Обновить статус в UI
-        self.mode_selector.update_status(self.bot_running)
-        
-        # Обновить панель настроек
-        if hasattr(self, 'settings_info_panel'):
-            settings = self.bot_manager.get_current_settings()
-            self.settings_info_panel.update_settings(settings)
-    
     def _start_bot(self):
         """Запуск бота"""
         if self.bot_running:
@@ -1289,7 +1172,6 @@ class BazaApp:
             # Обновить состояние
             self.bot_running = True
             self.control_panel.set_bot_running(True)
-            self.mode_selector.update_status(True)  # ← FIX: True = бот запущен
             
             # Уведомить BotManager о старте (для Telegram уведомлений)
             self.bot_manager.start(
@@ -1333,7 +1215,6 @@ class BazaApp:
             
             # Обновить UI
             self.control_panel.set_bot_running(False)
-            self.mode_selector.update_status(False)  # ← Готов к запуску
             
             # Дождаться завершения потока
             if self.bot_thread and self.bot_thread.is_alive():
@@ -1385,8 +1266,8 @@ class BazaApp:
             
             app_logger.info("[LOOP] LiveTrader initialized with connected MT5")
             
-            # Запустить AI Scheduler для pure_ai режима
-            if self.bot_manager.trading_mode == 'pure_ai' and AI_ANALYSIS_AVAILABLE:
+            # Запустить AI Scheduler для Pure AI режима
+            if AI_ANALYSIS_AVAILABLE:
                 try:
                     # КРИТИЧНО: Передаём существующий signal_manager из trader
                     scheduler = init_scheduler(
@@ -1394,7 +1275,7 @@ class BazaApp:
                         signal_manager=trader.ai_signal_manager
                     )
                     scheduler.start()
-                    app_logger.info("[LOOP] AI Scheduler started for pure_ai mode")
+                    app_logger.info("[LOOP] AI Scheduler started for Pure AI mode")
                     
                     # Set references for auto-requery BEFORE requesting analysis
                     trader.analyst_scheduler = scheduler
@@ -1426,15 +1307,9 @@ class BazaApp:
                     # Обновить статистику из MT5
                     self._update_stats_from_mt5()
                     
-                    # Проверить сигналы (в зависимости от режима)
-                    if self.bot_manager.trading_mode == 'strategy':
-                        # Strategy + AI mode - стратегии с AI фильтрацией
-                        app_logger.debug("[LOOP] Running strategy mode")
-                        trader.check_signals()
-                    else:
-                        # Pure AI mode
-                        app_logger.debug("[LOOP] Running pure AI mode")
-                        trader.check_signals()
+                    # Pure AI mode - проверить сигналы
+                    app_logger.debug("[LOOP] Running pure AI mode")
+                    trader.check_signals()
                     
                     # Проверить trailing stop для открытых позиций
                     trader.check_trailing_stop()
@@ -1740,54 +1615,6 @@ class BazaApp:
     def _on_mt5_saved(self):
         """Callback после сохранения MT5 настроек"""
         app_logger.info("[MT5] Settings updated, reconnection recommended")
-    
-    def check_for_updates(self):
-        """Проверить наличие обновлений"""
-        app_logger.info(f"[UPDATE] Checking for updates (current version: {APP_VERSION})")
-        
-        # Запускаем проверку в отдельном потоке чтобы не блокировать UI
-        def check_thread():
-            try:
-                checker = UpdateChecker(APP_VERSION, VERSION_CHECK_URL)
-                update_info = checker.check_for_updates()
-                
-                if update_info:
-                    # Обновление доступно - показываем окно обновления в главном потоке
-                    self.root.after(0, lambda: self._show_update_window(update_info))
-                else:
-                    # Обновлений нет
-                    self.root.after(0, lambda: messagebox.showinfo(
-                        "Обновления",
-                        f"У вас установлена последняя версия!\n\n"
-                        f"Версия: {APP_VERSION}",
-                        parent=self.root
-                    ))
-                    
-            except ConnectionError as e:
-                app_logger.error(f"[UPDATE] Connection error: {e}")
-                self.root.after(0, lambda: messagebox.showerror(
-                    "Ошибка подключения",
-                    f"Не удалось проверить обновления:\n{e}\n\n"
-                    f"Проверьте интернет-соединение.",
-                    parent=self.root
-                ))
-            except Exception as e:
-                app_logger.error(f"[UPDATE] Unexpected error: {e}")
-                self.root.after(0, lambda: messagebox.showerror(
-                    "Ошибка",
-                    f"Произошла ошибка при проверке обновлений:\n{e}",
-                    parent=self.root
-                ))
-        
-        threading.Thread(target=check_thread, daemon=True).start()
-    
-    def _show_update_window(self, update_info):
-        """Показать окно обновления"""
-        try:
-            UpdateWindow(self.root, APP_VERSION, update_info)
-        except Exception as e:
-            app_logger.error(f"[UPDATE] Failed to show update window: {e}")
-            messagebox.showerror("Ошибка", f"Не удалось открыть окно обновления: {e}")
     
     def test_gpt_connection(self):
         """Тестовая отправка в GPT для проверки подключения"""
