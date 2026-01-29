@@ -271,46 +271,49 @@ class AnalystScheduler:
         7. Execute callback
         8. Return results
         """
-        try:
-            # Check kill-switch
-            if not self.is_ai_enabled():
-                logger.warning("[AI-Scheduler] AI disabled, using fallback")
-                return self._get_fallback_analysis(symbol)
-            
-            # Check if position already open - BLOCK AI analysis (v2.0 logic)
-            if self.executor and hasattr(self.executor, 'has_position'):
-                if self.executor.has_position():
-                    logger.info("[AI-Scheduler] 🚫 Position open - BLOCKING AI analysis (v2.0 rule)")
-                    return {
-                        "error": "position_open",
-                        "reason": "Position open - AI analysis blocked until close",
-                        "symbol": symbol,
-                        "timestamp": datetime.now().isoformat()
-                    }
-            
-            # Check time restrictions
-            time_allowed, time_reason = self.signal_manager._is_trading_time_allowed()
-            if not time_allowed:
-                logger.warning(f"[AI-Scheduler] Analysis blocked: {time_reason}")
+        # Quick checks BEFORE acquiring lock
+        # Check kill-switch
+        if not self.is_ai_enabled():
+            logger.warning("[AI-Scheduler] AI disabled, using fallback")
+            return self._get_fallback_analysis(symbol)
+        
+        # Check if position already open - BLOCK AI analysis (v2.0 logic)
+        if self.executor and hasattr(self.executor, 'has_position'):
+            if self.executor.has_position():
+                logger.info("[AI-Scheduler] 🚫 Position open - BLOCKING AI analysis (v2.0 rule)")
                 return {
-                    "error": "time_restriction",
-                    "reason": time_reason,
+                    "error": "position_open",
+                    "reason": "Position open - AI analysis blocked until close",
                     "symbol": symbol,
                     "timestamp": datetime.now().isoformat()
                 }
-            
-            # Check volatility pre-filter (skip GPT if market too quiet)
-            vol_passed, vol_reason = self.signal_manager.check_volatility_filter(symbol)
-            if not vol_passed:
-                logger.warning(f"[AI-Scheduler] Analysis skipped: {vol_reason}")
-                return {
-                    "error": "volatility_filter",
-                    "reason": vol_reason,
-                    "symbol": symbol,
-                    "timestamp": datetime.now().isoformat()
-                }
-            
-            logger.ai(f"Starting analysis for {symbol} ({vol_reason})")
+        
+        # Check time restrictions
+        time_allowed, time_reason = self.signal_manager._is_trading_time_allowed()
+        if not time_allowed:
+            logger.warning(f"[AI-Scheduler] Analysis blocked: {time_reason}")
+            return {
+                "error": "time_restriction",
+                "reason": time_reason,
+                "symbol": symbol,
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Check volatility pre-filter (skip GPT if market too quiet)
+        vol_passed, vol_reason = self.signal_manager.check_volatility_filter(symbol)
+        if not vol_passed:
+            logger.warning(f"[AI-Scheduler] Analysis skipped: {vol_reason}")
+            return {
+                "error": "volatility_filter",
+                "reason": vol_reason,
+                "symbol": symbol,
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # NOW acquire lock for actual analysis
+        with self._analysis_lock:
+            try:
+                logger.ai(f"Starting analysis for {symbol} ({vol_reason})")
             
             # Step 1: Run analysis with fallback on error
             try:
@@ -349,12 +352,9 @@ class AnalystScheduler:
             
             return analysis
             
-        except Exception as e:
-            logger.error(f"[AI-Scheduler] Analysis failed: {e}")
-            return {"error": str(e), "timestamp": datetime.now().isoformat()}
-        finally:
-            # Release lock
-            self._analysis_lock.release()
+            except Exception as e:
+                logger.error(f"[AI-Scheduler] Analysis failed: {e}")
+                return {"error": str(e), "timestamp": datetime.now().isoformat()}
     
     def _log_analysis_summary(self, analysis: dict):
         """Log human-readable summary."""
