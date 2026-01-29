@@ -179,11 +179,7 @@ class AnalystScheduler:
                         else:
                             logger.info("[AI-Scheduler] XAUUSD analysis disabled in config")
                         
-                        if self._is_instrument_analysis_enabled("EURUSD"):
-                            self._run_analysis("EURUSD")
-                            analysis_ran = True
-                        else:
-                            logger.info("[AI-Scheduler] EURUSD analysis disabled in config")
+                        # Note: Only XAUUSD is analyzed, EURUSD disabled
                         
                         if analysis_ran:
                             self.last_run = now
@@ -196,14 +192,10 @@ class AnalystScheduler:
                         if self._should_run(current_time, schedule_time):
                             logger.info(f"[AI-Scheduler] ⏰ Schedule trigger: {current_time.strftime('%H:%M')}")
                             
-                            # Анализируем инструменты
+                            # Анализируем только XAUUSD
                             analysis_ran = False
                             if self._is_instrument_analysis_enabled("XAUUSD"):
                                 self._run_analysis("XAUUSD")
-                                analysis_ran = True
-                            
-                            if self._is_instrument_analysis_enabled("EURUSD"):
-                                self._run_analysis("EURUSD")
                                 analysis_ran = True
                             
                             if analysis_ran:
