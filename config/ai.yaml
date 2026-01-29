@@ -23,7 +23,9 @@ market_analyst:
     max_monthly_cost: 50.0
     min_minutes_between_calls: 15
   schedule:
-    enabled: false
+    enabled: true
+    mode: interval  # 'interval' - каждые N минут, 'schedule' - по расписанию
+    interval_minutes: 60  # Для interval mode: каждые 60 минут (1 час)
     restrictions:
       night_block:
         enabled: false
@@ -33,7 +35,7 @@ market_analyst:
         enabled: true
         friday_start: '22:00'
         monday_end: '01:00'
-    times: []
+    times: []  # Для schedule mode: ['06:00', '18:00']
   screenshots:
     bars: 100
     cleanup_days: 7

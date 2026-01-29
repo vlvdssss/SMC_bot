@@ -53,9 +53,14 @@ class AnalystScheduler:
         # Load config
         self.config = self._load_config()
         
-        # Schedule times from config or defaults
-        config_times = self.config.get('market_analyst', {}).get('schedule', {}).get('times', ['06:00', '18:00'])
-        self.schedule_times = [self._parse_time(t) for t in config_times]
+        # Режим работы: interval (каждые N минут) или schedule (по расписанию)
+        schedule_config = self.config.get('market_analyst', {}).get('schedule', {})
+        self.mode = schedule_config.get('mode', 'interval')  # 'interval' or 'schedule'
+        self.interval_minutes = schedule_config.get('interval_minutes', 60)  # Default: 1 hour
+        
+        # Schedule times from config (для режима 'schedule')
+        config_times = schedule_config.get('times', [])
+        self.schedule_times = [self._parse_time(t) for t in config_times] if config_times else []
         
         self.running = False
         self.thread = None
@@ -70,7 +75,10 @@ class AnalystScheduler:
         self._analysis_lock = threading.Lock()
         self._last_analysis_time = {}  # symbol -> timestamp
         
-        logger.info(f"[AI-Scheduler] v2.0 initialized with schedule: {config_times}")
+        if self.mode == 'interval':
+            logger.info(f"[AI-Scheduler] v2.0 initialized in INTERVAL mode: every {self.interval_minutes} minutes")
+        else:
+            logger.info(f"[AI-Scheduler] v2.0 initialized in SCHEDULE mode: {config_times}")
     
     def _load_config(self) -> dict:
         """Load AI config."""
@@ -136,24 +144,34 @@ class AnalystScheduler:
         logger.info("[AI-Scheduler] Stopped")
     
     def _scheduler_loop(self):
-        """Main scheduler loop - checks every minute."""
+        """Main scheduler loop - supports interval and schedule modes."""
         while self.running:
             try:
                 # Check kill-switch first
                 if not self.is_ai_enabled():
-                    logger.info("[AI-Scheduler] AI disabled, skipping (kill-switch active)")
+                    logger.debug("[AI-Scheduler] AI disabled, skipping (kill-switch active)")
                     time.sleep(60)
                     continue
                 
                 now = datetime.now()
-                current_time = now.time()
                 
-                # Check if it's time to run
-                for schedule_time in self.schedule_times:
-                    if self._should_run(current_time, schedule_time):
-                        logger.info(f"[AI-Scheduler] ✓ Triggered at {current_time.strftime('%H:%M')} (scheduled: {schedule_time.strftime('%H:%M')})")
-                        
-                        # Анализируем инструменты если включены
+                # INTERVAL MODE: каждые N минут с момента запуска или последнего анализа
+                if self.mode == 'interval':
+                    should_run = False
+                    
+                    if self.last_run is None:
+                        # Первый запуск - запускаем сразу
+                        should_run = True
+                        logger.info(f"[AI-Scheduler] ⏰ First run (interval mode: {self.interval_minutes}min)")
+                    else:
+                        # Проверяем прошло ли нужное время
+                        time_since_last = (now - self.last_run).total_seconds() / 60  # в минутах
+                        if time_since_last >= self.interval_minutes:
+                            should_run = True
+                            logger.info(f"[AI-Scheduler] ⏰ Interval trigger: {int(time_since_last)}min passed (target: {self.interval_minutes}min)")
+                    
+                    if should_run:
+                        # Анализируем инструменты
                         analysis_ran = False
                         if self._is_instrument_analysis_enabled("XAUUSD"):
                             self._run_analysis("XAUUSD")
@@ -167,12 +185,31 @@ class AnalystScheduler:
                         else:
                             logger.info("[AI-Scheduler] EURUSD analysis disabled in config")
                         
-                        # Обновляем last_run ТОЛЬКО если анализ действительно запустился
                         if analysis_ran:
                             self.last_run = now
-                            logger.info(f"[AI-Scheduler] last_run updated: {now.strftime('%H:%M:%S')}")
-                        
-                        break  # Only run once per minute
+                            logger.info(f"[AI-Scheduler] ✅ Analysis completed, next run in {self.interval_minutes} minutes")
+                
+                # SCHEDULE MODE: по фиксированному расписанию
+                elif self.mode == 'schedule' and self.schedule_times:
+                    current_time = now.time()
+                    for schedule_time in self.schedule_times:
+                        if self._should_run(current_time, schedule_time):
+                            logger.info(f"[AI-Scheduler] ⏰ Schedule trigger: {current_time.strftime('%H:%M')}")
+                            
+                            # Анализируем инструменты
+                            analysis_ran = False
+                            if self._is_instrument_analysis_enabled("XAUUSD"):
+                                self._run_analysis("XAUUSD")
+                                analysis_ran = True
+                            
+                            if self._is_instrument_analysis_enabled("EURUSD"):
+                                self._run_analysis("EURUSD")
+                                analysis_ran = True
+                            
+                            if analysis_ran:
+                                self.last_run = now
+                            
+                            break  # Only run once per minute
                 
                 # Sleep 60 seconds
                 time.sleep(60)
