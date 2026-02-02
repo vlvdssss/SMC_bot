@@ -1453,6 +1453,10 @@ class BazaApp:
                     app_logger.debug("[LOOP] Running pure AI mode")
                     trader.check_signals()
                     
+                    # Проверить TTL истечение сигналов (для авто-запроса нового анализа)
+                    if trader.ai_signal_manager:
+                        trader.ai_signal_manager._cleanup_expired_signals()
+                    
                     # Проверить trailing stop для открытых позиций
                     trader.check_trailing_stop()
                     
