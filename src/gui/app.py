@@ -1325,6 +1325,15 @@ class BazaApp:
             if AI_ANALYSIS_AVAILABLE and hasattr(self, 'analyst_panel'):
                 self.root.after(500, self.analyst_panel.refresh_analysis)
             
+            # Запустить первый анализ при старте (для EVENT-DRIVEN режима)
+            if hasattr(self.bot_manager, 'analyst_scheduler') and self.bot_manager.analyst_scheduler:
+                self.bot_manager.analyst_scheduler.trigger_immediate_analysis(
+                    symbol="XAUUSD",
+                    reason="startup",
+                    cooldown_minutes=0
+                )
+                app_logger.info("[BOT] Triggered startup analysis for first signal")
+            
             app_logger.info(f"[BOT] Started in '{self.bot_manager.trading_mode}' mode")
             
         except Exception as e:
