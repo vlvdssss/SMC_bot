@@ -379,10 +379,26 @@ class AISignalManager:
                 
                 # 3. Handle NONE action
                 elif action == "NONE":
-                    logger.info(
-                        f"[AI-Signal] 🔵 NONE decision for {symbol} - "
-                        f"confidence: {confidence}% - scheduling retry in 15 min"
+                    logger.warning(
+                        f"[AI-Signal] ⚠️ НЕТ ВХОДА: GPT не уверен в сигнале для {symbol} "
+                        f"(confidence: {confidence}%) - рынок неясный/рискованный"
                     )
+                    logger.info(
+                        f"[AI-Signal] ⏰ Следующая попытка анализа через 15 минут"
+                    )
+                    
+                    # Telegram notification about NONE decision
+                    if hasattr(self, 'telegram') and self.telegram:
+                        try:
+                            self.telegram.send_message(
+                                f"🔵 <b>NONE - Вход отменён</b>\n\n"
+                                f"GPT не уверен в текущей ситуации на {symbol}\n"
+                                f"Уверенность: {confidence}%\n"
+                                f"Причина: Рынок неясный или рискованный\n\n"
+                                f"⏰ Следующий анализ через 15 минут"
+                            )
+                        except Exception as e:
+                            logger.debug(f"[AI-Signal] Failed to send NONE notification: {e}")
                     
                     # Schedule retry after 15 minutes
                     self._schedule_none_retry(symbol)
