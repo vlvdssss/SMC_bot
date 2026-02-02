@@ -556,11 +556,15 @@ class AnalystPanel(tk.Frame):
         
         # Добавляем открытые позиции как "сигналы"
         open_positions = []
-        if hasattr(self, 'bot_manager') and self.bot_manager and self.bot_manager.live_trader:
-            tracked = self.bot_manager.live_trader.tracked_positions
-            for ticket, pos_info in tracked.items():
-                if not pos_info.get('notification_sent', False):
-                    open_positions.append(pos_info)
+        if (hasattr(self, 'bot_manager') and self.bot_manager and 
+            hasattr(self.bot_manager, 'live_trader') and self.bot_manager.live_trader):
+            try:
+                tracked = self.bot_manager.live_trader.tracked_positions
+                for ticket, pos_info in tracked.items():
+                    if not pos_info.get('notification_sent', False):
+                        open_positions.append(pos_info)
+            except Exception as e:
+                app_logger.debug(f"[GUI] Could not get tracked positions: {e}")
         
         total_active = len(active_signals) + len(open_positions)
         
