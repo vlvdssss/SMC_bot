@@ -263,6 +263,26 @@ class AnalystScheduler:
         7. Execute callback
         8. Return results
         """
+        # ЗАЩИТА ОТ ДУБЛИРОВАНИЯ: проверяем что анализ не запускался в последние 60 секунд
+        now = datetime.now()
+        last_time = self._last_analysis_time.get(symbol)
+        
+        if last_time:
+            time_since_last = (now - last_time).total_seconds()
+            MIN_INTERVAL_SECONDS = 60  # Минимум 60 секунд между анализами
+            
+            if time_since_last < MIN_INTERVAL_SECONDS:
+                logger.warning(
+                    f"[AI-Scheduler] ⏸️ Duplicate analysis blocked: last run was "
+                    f"{time_since_last:.1f}s ago (min interval: {MIN_INTERVAL_SECONDS}s)"
+                )
+                return {
+                    "error": "duplicate_blocked",
+                    "reason": f"Analysis ran {time_since_last:.1f}s ago (< {MIN_INTERVAL_SECONDS}s)",
+                    "symbol": symbol,
+                    "timestamp": now.isoformat()
+                }
+        
         # Quick checks BEFORE acquiring lock
         # Check kill-switch
         if not self.is_ai_enabled():
