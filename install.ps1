@@ -1,192 +1,190 @@
 # ===================================================================
-# BAZA Trading Bot - Автоматический установщик
+# BAZA Trading Bot - Automatic Installer
 # ===================================================================
-# Этот скрипт автоматически настраивает окружение и устанавливает зависимости
+# This script automatically sets up the environment and installs dependencies
 # ===================================================================
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "BAZA Trading Bot - Установщик" -ForegroundColor Cyan
+Write-Host "BAZA Trading Bot - Installer" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Функция для вывода ошибок
+# Functions for output
 function Write-ErrorMessage {
     param([string]$Message)
-    Write-Host "[ОШИБКА] $Message" -ForegroundColor Red
+    Write-Host "[ERROR] $Message" -ForegroundColor Red
 }
 
-# Функция для вывода успеха
 function Write-SuccessMessage {
     param([string]$Message)
     Write-Host "[OK] $Message" -ForegroundColor Green
 }
 
-# Функция для вывода информации
 function Write-InfoMessage {
     param([string]$Message)
     Write-Host "[INFO] $Message" -ForegroundColor Yellow
 }
 
 # ===================================================================
-# 1. Проверка Python
+# 1. Check Python
 # ===================================================================
-Write-InfoMessage "Проверка установки Python..."
+Write-InfoMessage "Checking Python installation..."
 
 try {
     $pythonVersion = python --version 2>&1
     if ($LASTEXITCODE -eq 0) {
-        Write-SuccessMessage "Python найден: $pythonVersion"
+        Write-SuccessMessage "Python found: $pythonVersion"
         
-        # Проверка версии Python (нужен 3.9+)
+        # Check Python version (need 3.9+)
         $versionMatch = $pythonVersion -match "Python (\d+)\.(\d+)"
         if ($versionMatch) {
             $majorVersion = [int]$Matches[1]
             $minorVersion = [int]$Matches[2]
             
             if ($majorVersion -lt 3 -or ($majorVersion -eq 3 -and $minorVersion -lt 9)) {
-                Write-ErrorMessage "Требуется Python 3.9 или выше. Установленная версия: $pythonVersion"
-                Write-InfoMessage "Скачайте Python с https://www.python.org/downloads/"
+                Write-ErrorMessage "Python 3.9+ required. Current version: $pythonVersion"
+                Write-InfoMessage "Download Python from https://www.python.org/downloads/"
                 exit 1
             }
         }
     }
 } catch {
-    Write-ErrorMessage "Python не найден!"
-    Write-InfoMessage "Установите Python 3.9+ с https://www.python.org/downloads/"
-    Write-InfoMessage "При установке обязательно отметьте 'Add Python to PATH'"
+    Write-ErrorMessage "Python not found!"
+    Write-InfoMessage "Install Python 3.9+ from https://www.python.org/downloads/"
+    Write-InfoMessage "Make sure to check 'Add Python to PATH' during installation"
     exit 1
 }
 
 Write-Host ""
 
 # ===================================================================
-# 2. Удаление старого виртуального окружения (если есть проблемы)
+# 2. Remove old virtual environment (if needed)
 # ===================================================================
 $venvPath = ".venv"
 
 if (Test-Path $venvPath) {
-    Write-InfoMessage "Обнаружено существующее виртуальное окружение..."
-    $response = Read-Host "Пересоздать окружение заново? (y/n) [рекомендуется при ошибках]"
+    Write-InfoMessage "Found existing virtual environment..."
+    $response = Read-Host "Recreate environment? (y/n) [recommended if you had errors]"
     
-    if ($response -eq "y" -or $response -eq "Y" -or $response -eq "д" -or $response -eq "Д") {
-        Write-InfoMessage "Удаление старого окружения..."
+    if ($response -eq "y" -or $response -eq "Y") {
+        Write-InfoMessage "Removing old environment..."
         Remove-Item -Path $venvPath -Recurse -Force -ErrorAction SilentlyContinue
-        Write-SuccessMessage "Старое окружение удалено"
+        Write-SuccessMessage "Old environment removed"
     }
 }
 
 Write-Host ""
 
 # ===================================================================
-# 3. Создание виртуального окружения
+# 3. Create virtual environment
 # ===================================================================
 if (-not (Test-Path $venvPath)) {
-    Write-InfoMessage "Создание виртуального окружения..."
+    Write-InfoMessage "Creating virtual environment..."
     
     try {
         python -m venv $venvPath
         if ($LASTEXITCODE -eq 0) {
-            Write-SuccessMessage "Виртуальное окружение создано"
+            Write-SuccessMessage "Virtual environment created"
         } else {
-            Write-ErrorMessage "Не удалось создать виртуальное окружение"
+            Write-ErrorMessage "Failed to create virtual environment"
             exit 1
         }
     } catch {
-        Write-ErrorMessage "Ошибка при создании окружения: $_"
+        Write-ErrorMessage "Error creating environment: $_"
         exit 1
     }
 } else {
-    Write-SuccessMessage "Используется существующее виртуальное окружение"
+    Write-SuccessMessage "Using existing virtual environment"
 }
 
 Write-Host ""
 
 # ===================================================================
-# 4. Активация виртуального окружения
+# 4. Activate virtual environment
 # ===================================================================
-Write-InfoMessage "Активация виртуального окружения..."
+Write-InfoMessage "Activating virtual environment..."
 
 $activateScript = Join-Path $venvPath "Scripts\Activate.ps1"
 
 if (-not (Test-Path $activateScript)) {
-    Write-ErrorMessage "Скрипт активации не найден: $activateScript"
+    Write-ErrorMessage "Activation script not found: $activateScript"
     exit 1
 }
 
-# Проверка политики выполнения скриптов
+# Check execution policy
 try {
     $executionPolicy = Get-ExecutionPolicy -Scope CurrentUser
     if ($executionPolicy -eq "Restricted" -or $executionPolicy -eq "AllSigned") {
-        Write-InfoMessage "Настройка политики выполнения скриптов..."
+        Write-InfoMessage "Setting execution policy..."
         Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
-        Write-SuccessMessage "Политика выполнения настроена"
+        Write-SuccessMessage "Execution policy configured"
     }
 } catch {
-    Write-ErrorMessage "Не удалось настроить политику выполнения: $_"
-    Write-InfoMessage "Попробуйте запустить PowerShell от имени администратора"
+    Write-ErrorMessage "Failed to set execution policy: $_"
+    Write-InfoMessage "Try running PowerShell as Administrator"
     exit 1
 }
 
 try {
     & $activateScript
-    Write-SuccessMessage "Виртуальное окружение активировано"
+    Write-SuccessMessage "Virtual environment activated"
 } catch {
-    Write-ErrorMessage "Не удалось активировать окружение: $_"
-    Write-InfoMessage "Попробуйте запустить: Set-ExecutionPolicy RemoteSigned -Scope CurrentUser"
+    Write-ErrorMessage "Failed to activate environment: $_"
+    Write-InfoMessage "Try running: Set-ExecutionPolicy RemoteSigned -Scope CurrentUser"
     exit 1
 }
 
 Write-Host ""
 
 # ===================================================================
-# 5. Обновление pip
+# 5. Update pip
 # ===================================================================
-Write-InfoMessage "Обновление pip..."
+Write-InfoMessage "Updating pip..."
 
 try {
     python -m pip install --upgrade pip
     if ($LASTEXITCODE -eq 0) {
-        Write-SuccessMessage "pip обновлён"
+        Write-SuccessMessage "pip updated"
     } else {
-        Write-ErrorMessage "Не удалось обновить pip (продолжаем...)"
+        Write-ErrorMessage "Failed to update pip (continuing...)"
     }
 } catch {
-    Write-ErrorMessage "Ошибка при обновлении pip: $_"
+    Write-ErrorMessage "Error updating pip: $_"
 }
 
 Write-Host ""
 
 # ===================================================================
-# 6. Установка зависимостей
+# 6. Install dependencies
 # ===================================================================
-Write-InfoMessage "Установка зависимостей из requirements.txt..."
-Write-InfoMessage "Это может занять несколько минут..."
+Write-InfoMessage "Installing dependencies from requirements.txt..."
+Write-InfoMessage "This may take several minutes..."
 
 if (-not (Test-Path "requirements.txt")) {
-    Write-ErrorMessage "Файл requirements.txt не найден!"
+    Write-ErrorMessage "requirements.txt not found!"
     exit 1
 }
 
 try {
     pip install -r requirements.txt
     if ($LASTEXITCODE -eq 0) {
-        Write-SuccessMessage "Все зависимости установлены успешно!"
+        Write-SuccessMessage "All dependencies installed successfully!"
     } else {
-        Write-ErrorMessage "Ошибка при установке зависимостей"
-        Write-InfoMessage "Попробуйте установить вручную: pip install -r requirements.txt"
+        Write-ErrorMessage "Error installing dependencies"
+        Write-InfoMessage "Try manually: pip install -r requirements.txt"
         exit 1
     }
 } catch {
-    Write-ErrorMessage "Ошибка при установке зависимостей: $_"
+    Write-ErrorMessage "Error installing dependencies: $_"
     exit 1
 }
 
 Write-Host ""
 
 # ===================================================================
-# 7. Проверка установки критических пакетов
+# 7. Check critical packages
 # ===================================================================
-Write-InfoMessage "Проверка установки критических пакетов..."
+Write-InfoMessage "Checking critical packages..."
 
 $criticalPackages = @(
     "MetaTrader5",
@@ -203,13 +201,13 @@ foreach ($package in $criticalPackages) {
     try {
         pip show $package | Out-Null
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "  ✓ $package" -ForegroundColor Green
+            Write-Host "  * $package" -ForegroundColor Green
         } else {
-            Write-Host "  ✗ $package" -ForegroundColor Red
+            Write-Host "  X $package" -ForegroundColor Red
             $allInstalled = $false
         }
     } catch {
-        Write-Host "  ✗ $package" -ForegroundColor Red
+        Write-Host "  X $package" -ForegroundColor Red
         $allInstalled = $false
     }
 }
@@ -217,15 +215,15 @@ foreach ($package in $criticalPackages) {
 Write-Host ""
 
 if (-not $allInstalled) {
-    Write-ErrorMessage "Не все критические пакеты установлены!"
-    Write-InfoMessage "Попробуйте переустановить: pip install -r requirements.txt --force-reinstall"
+    Write-ErrorMessage "Not all critical packages are installed!"
+    Write-InfoMessage "Try reinstalling: pip install -r requirements.txt --force-reinstall"
     exit 1
 }
 
 # ===================================================================
-# 8. Проверка конфигурационных файлов
+# 8. Check configuration files
 # ===================================================================
-Write-InfoMessage "Проверка конфигурационных файлов..."
+Write-InfoMessage "Checking configuration files..."
 
 $configFiles = @(
     @{Path="config/mt5.yaml.example"; Required=$false},
@@ -237,13 +235,13 @@ $configFiles = @(
 $missingRequired = $false
 foreach ($config in $configFiles) {
     if (Test-Path $config.Path) {
-        Write-Host "  ✓ $($config.Path)" -ForegroundColor Green
+        Write-Host "  * $($config.Path)" -ForegroundColor Green
     } else {
         if ($config.Required) {
-            Write-Host "  ✗ $($config.Path) [ОБЯЗАТЕЛЬНЫЙ]" -ForegroundColor Red
+            Write-Host "  X $($config.Path) [REQUIRED]" -ForegroundColor Red
             $missingRequired = $true
         } else {
-            Write-Host "  ⚠ $($config.Path) [не критично]" -ForegroundColor Yellow
+            Write-Host "  ! $($config.Path) [not critical]" -ForegroundColor Yellow
         }
     }
 }
@@ -251,9 +249,9 @@ foreach ($config in $configFiles) {
 Write-Host ""
 
 # ===================================================================
-# 9. Создание необходимых директорий
+# 9. Create necessary directories
 # ===================================================================
-Write-InfoMessage "Создание необходимых директорий..."
+Write-InfoMessage "Creating necessary directories..."
 
 $directories = @(
     "data",
@@ -268,37 +266,37 @@ $directories = @(
 foreach ($dir in $directories) {
     if (-not (Test-Path $dir)) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
-        Write-Host "  ✓ Создана директория: $dir" -ForegroundColor Green
+        Write-Host "  * Created directory: $dir" -ForegroundColor Green
     }
 }
 
 Write-Host ""
 
 # ===================================================================
-# Завершение
+# Completion
 # ===================================================================
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "УСТАНОВКА ЗАВЕРШЕНА!" -ForegroundColor Green
+Write-Host "INSTALLATION COMPLETE!" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
 if ($missingRequired) {
-    Write-ErrorMessage "Внимание! Отсутствуют обязательные конфигурационные файлы"
-    Write-InfoMessage "Настройте конфигурацию перед запуском бота"
+    Write-ErrorMessage "Warning! Required configuration files are missing"
+    Write-InfoMessage "Configure settings before running the bot"
     Write-Host ""
 }
 
-Write-Host "Следующие шаги:" -ForegroundColor Yellow
-Write-Host "  1. Настройте конфигурационные файлы в папке 'config/'"
-Write-Host "     - Скопируйте .example файлы и заполните своими данными"
-Write-Host "  2. Для запуска бота используйте: .\start_bot.ps1"
-Write-Host "  3. Или запустите напрямую: python main.py"
+Write-Host "Next steps:" -ForegroundColor Yellow
+Write-Host "  1. Configure files in 'config/' folder"
+Write-Host "     - Copy .example files and fill with your data"
+Write-Host "  2. To start the bot use: .\start_bot.ps1"
+Write-Host "  3. Or run directly: python main.py"
 Write-Host ""
 
-Write-Host "Полезные команды:" -ForegroundColor Yellow
-Write-Host "  - Активировать окружение: .\.venv\Scripts\Activate.ps1"
-Write-Host "  - Установить пакет: pip install <название>"
-Write-Host "  - Обновить зависимости: pip install -r requirements.txt --upgrade"
+Write-Host "Useful commands:" -ForegroundColor Yellow
+Write-Host "  - Activate environment: .\.venv\Scripts\Activate.ps1"
+Write-Host "  - Install package: pip install <name>"
+Write-Host "  - Update dependencies: pip install -r requirements.txt --upgrade"
 Write-Host ""
 
-Write-SuccessMessage "Готово к работе! 🚀"
+Write-SuccessMessage "Ready to work!"

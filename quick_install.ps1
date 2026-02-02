@@ -1,44 +1,44 @@
 # ===================================================================
-# BAZA Trading Bot - Быстрая установка (одной командой)
+# BAZA Trading Bot - Quick Install (one command)
 # ===================================================================
 
-Write-Host "Быстрая установка BAZA Trading Bot..." -ForegroundColor Cyan
+Write-Host "Quick Install BAZA Trading Bot..." -ForegroundColor Cyan
 
-# Проверка Python
+# Check Python
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-    Write-Host "ОШИБКА: Python не найден!" -ForegroundColor Red
-    Write-Host "Установите Python 3.9+ с https://www.python.org/downloads/" -ForegroundColor Yellow
+    Write-Host "ERROR: Python not found!" -ForegroundColor Red
+    Write-Host "Install Python 3.9+ from https://www.python.org/downloads/" -ForegroundColor Yellow
     exit 1
 }
 
-# Настройка политики выполнения
+# Set execution policy
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction SilentlyContinue
 
-# Удаление старого окружения при проблемах
+# Remove old environment if --clean
 if ($args -contains "--clean") {
-    Write-Host "Очистка старого окружения..." -ForegroundColor Yellow
+    Write-Host "Cleaning old environment..." -ForegroundColor Yellow
     Remove-Item -Path ".venv" -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# Создание venv
+# Create venv
 if (-not (Test-Path ".venv")) {
-    Write-Host "Создание виртуального окружения..." -ForegroundColor Yellow
+    Write-Host "Creating virtual environment..." -ForegroundColor Yellow
     python -m venv .venv
 }
 
-# Активация
-Write-Host "Активация окружения..." -ForegroundColor Yellow
+# Activate
+Write-Host "Activating environment..." -ForegroundColor Yellow
 & .\.venv\Scripts\Activate.ps1
 
-# Обновление pip
-Write-Host "Обновление pip..." -ForegroundColor Yellow
+# Update pip
+Write-Host "Updating pip..." -ForegroundColor Yellow
 python -m pip install --upgrade pip --quiet
 
-# Установка зависимостей
-Write-Host "Установка зависимостей (это займёт несколько минут)..." -ForegroundColor Yellow
+# Install dependencies
+Write-Host "Installing dependencies (this will take a few minutes)..." -ForegroundColor Yellow
 pip install -r requirements.txt --quiet
 
-# Создание директорий
+# Create directories
 $dirs = @("data", "data/ai_signals", "data/ai_analysis", "logs", "results")
 foreach ($dir in $dirs) {
     New-Item -ItemType Directory -Path $dir -Force -ErrorAction SilentlyContinue | Out-Null
@@ -46,8 +46,8 @@ foreach ($dir in $dirs) {
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
-Write-Host "УСТАНОВКА ЗАВЕРШЕНА!" -ForegroundColor Green
+Write-Host "INSTALLATION COMPLETE!" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "Запуск бота: .\start_bot.ps1" -ForegroundColor Yellow
-Write-Host "или: python main.py" -ForegroundColor Yellow
+Write-Host "Run bot: .\start_bot.ps1" -ForegroundColor Yellow
+Write-Host "or: python main.py" -ForegroundColor Yellow
