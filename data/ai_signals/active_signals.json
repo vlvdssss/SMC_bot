@@ -9,54 +9,6 @@
   "signal_history": [
     {
       "action": "filled",
-      "signal_id": "XAUUSD_20260130_024546",
-      "timestamp": "2026-01-30T02:45:47.141109",
-      "filled_price": 5413.82
-    },
-    {
-      "action": "triggered",
-      "signal_id": "XAUUSD_20260130_025233",
-      "timestamp": "2026-01-30T02:52:36.210313",
-      "price": 5407.175
-    },
-    {
-      "action": "filled",
-      "signal_id": "XAUUSD_20260130_025233",
-      "timestamp": "2026-01-30T02:52:36.323420",
-      "filled_price": 5406.0
-    },
-    {
-      "action": "triggered",
-      "signal_id": "XAUUSD_20260130_025830",
-      "timestamp": "2026-01-30T02:58:33.424624",
-      "price": 5406.275
-    },
-    {
-      "action": "filled",
-      "signal_id": "XAUUSD_20260130_025830",
-      "timestamp": "2026-01-30T02:58:33.535487",
-      "filled_price": 5406.72
-    },
-    {
-      "action": "triggered",
-      "signal_id": "XAUUSD_20260130_030518",
-      "timestamp": "2026-01-30T03:05:18.807386",
-      "price": 5388.745
-    },
-    {
-      "action": "filled",
-      "signal_id": "XAUUSD_20260130_030518",
-      "timestamp": "2026-01-30T03:05:18.915696",
-      "filled_price": 5388.0
-    },
-    {
-      "action": "triggered",
-      "signal_id": "XAUUSD_20260130_031153",
-      "timestamp": "2026-01-30T03:13:53.013197",
-      "price": 5329.875
-    },
-    {
-      "action": "filled",
       "signal_id": "XAUUSD_20260130_031153",
       "timestamp": "2026-01-30T03:13:53.128363",
       "filled_price": 5328.0
@@ -606,7 +558,55 @@
       "signal_id": "XAUUSD_20260202_020808",
       "symbol": "XAUUSD",
       "timestamp": "2026-02-02T02:15:30.484498"
+    },
+    {
+      "action": "triggered",
+      "signal_id": "XAUUSD_20260202_022053",
+      "timestamp": "2026-02-02T02:20:56.352836",
+      "price": 4860.51
+    },
+    {
+      "action": "filled",
+      "signal_id": "XAUUSD_20260202_022053",
+      "timestamp": "2026-02-02T02:20:56.467489",
+      "filled_price": 4859.71
+    },
+    {
+      "action": "triggered",
+      "signal_id": "XAUUSD_20260202_022508",
+      "timestamp": "2026-02-02T02:25:09.774836",
+      "price": 4856.530000000001
+    },
+    {
+      "action": "filled",
+      "signal_id": "XAUUSD_20260202_022508",
+      "timestamp": "2026-02-02T02:25:09.869730",
+      "filled_price": 4856.38
+    },
+    {
+      "action": "triggered",
+      "signal_id": "XAUUSD_20260202_025006",
+      "timestamp": "2026-02-02T02:50:07.505071",
+      "price": 4797.5650000000005
+    },
+    {
+      "action": "filled",
+      "signal_id": "XAUUSD_20260202_025006",
+      "timestamp": "2026-02-02T02:50:07.579715",
+      "filled_price": 4797.0
+    },
+    {
+      "action": "triggered",
+      "signal_id": "XAUUSD_20260202_025622",
+      "timestamp": "2026-02-02T02:56:22.689574",
+      "price": 4778.155000000001
+    },
+    {
+      "action": "filled",
+      "signal_id": "XAUUSD_20260202_025622",
+      "timestamp": "2026-02-02T02:56:22.773372",
+      "filled_price": 4779.0
     }
   ],
-  "updated_at": "2026-02-02T02:15:30.484498"
+  "updated_at": "2026-02-02T02:56:22.789117"
 }

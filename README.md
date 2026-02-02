@@ -32,12 +32,31 @@
 
 ##  Быстрый старт
 
-### Windows:
+⚡ **[QUICK_START.md](QUICK_START.md)** - Пошаговое руководство для начинающих (5 минут)
+
+### 1️⃣ Установка (для новых пользователей)
+
+**Автоматическая установка:**
+```powershell
+.\install.ps1
+```
+
+**Или быстрая установка одной командой:**
+```powershell
+.\quick_install.ps1
+```
+
+📖 **Подробные инструкции:** [INSTALL_GUIDE.md](INSTALL_GUIDE.md)  
+🔧 **Решение проблем:** [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+
+### 2️⃣ Запуск бота
+
+**Windows:**
 ```powershell
 .\run.ps1
 ```
 
-### Или напрямую:
+**Или напрямую:**
 ```bash
 python main.py
 ```
