@@ -78,10 +78,24 @@ class TelegramBotWithButtons:
             
             # Удаляем сигнал из SignalManager
             try:
-                from src.core.bot_manager import BotManager
-                bot_manager = BotManager()
+                # Используем self.bot_manager вместо создания нового экземпляра
+                if not self.bot_manager:
+                    logger.error("[Telegram] BotManager not available")
+                    await query.message.edit_text(
+                        "❌ Bot manager not initialized",
+                        parse_mode="HTML"
+                    )
+                    return
                 
-                if bot_manager.signal_manager.cancel_signal(signal_id):
+                if not hasattr(self.bot_manager, 'signal_manager') or not self.bot_manager.signal_manager:
+                    logger.error("[Telegram] SignalManager not available")
+                    await query.message.edit_text(
+                        "❌ Signal manager not initialized",
+                        parse_mode="HTML"
+                    )
+                    return
+                
+                if self.bot_manager.signal_manager.cancel_signal(signal_id):
                     logger.info(f"[Telegram] Signal {signal_id} cancelled from SignalManager")
                     
                     # Удаляем сообщение
@@ -94,9 +108,9 @@ class TelegramBotWithButtons:
                         parse_mode="HTML"
                     )
             except Exception as e:
-                logger.error(f"[Telegram] Failed to delete signal: {e}")
+                logger.error(f"[Telegram] Failed to delete signal: {e}", exc_info=True)
                 await query.message.edit_text(
-                    f"❌ Ошибка при удалении сигнала: {e}",
+                    f"❌ Ошибка при удалении сигнала: {str(e)}",
                     parse_mode="HTML"
                 )
     
