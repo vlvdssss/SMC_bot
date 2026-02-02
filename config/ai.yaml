@@ -23,7 +23,7 @@ market_analyst:
     max_monthly_cost: 50.0
     min_minutes_between_calls: 15
   schedule:
-    enabled: false
+    enabled: false  # Отключен регулярный интервал - анализ только при событиях (TTL, закрытие сделки)
     interval_minutes: 60
     mode: interval
     restrictions:

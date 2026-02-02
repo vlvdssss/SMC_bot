@@ -55,6 +55,7 @@ class AnalystScheduler:
         
         # Режим работы: interval (каждые N минут) или schedule (по расписанию)
         schedule_config = self.config.get('market_analyst', {}).get('schedule', {})
+        self.schedule_enabled = schedule_config.get('enabled', False)  # Включен ли автоматический анализ
         self.mode = schedule_config.get('mode', 'interval')  # 'interval' or 'schedule'
         self.interval_minutes = schedule_config.get('interval_minutes', 60)  # Default: 1 hour
         
@@ -75,9 +76,13 @@ class AnalystScheduler:
         self._analysis_lock = threading.Lock()
         self._last_analysis_time = {}  # symbol -> timestamp
         
-        if self.mode == 'interval':
-            logger.info(f"[AI-Scheduler] v2.0 initialized in INTERVAL mode: every {self.interval_minutes} minutes")
+        if self.schedule_enabled:
+            if self.mode == 'interval':
+                logger.info(f"[AI-Scheduler] v2.0 initialized in INTERVAL mode: every {self.interval_minutes} minutes")
+            else:
+                logger.info(f"[AI-Scheduler] v2.0 initialized in SCHEDULE mode: {config_times}")
         else:
+            logger.info(f"[AI-Scheduler] v2.0 initialized in EVENT-DRIVEN mode: analysis only on triggers (TTL, position close)")
             logger.info(f"[AI-Scheduler] v2.0 initialized in SCHEDULE mode: {config_times}")
     
     def _load_config(self) -> dict:
@@ -150,6 +155,12 @@ class AnalystScheduler:
                 # Check kill-switch first
                 if not self.is_ai_enabled():
                     logger.debug("[AI-Scheduler] AI disabled, skipping (kill-switch active)")
+                    time.sleep(60)
+                    continue
+                
+                # Если schedule отключен - только спим, анализ только по событиям
+                if not self.schedule_enabled:
+                    logger.debug("[AI-Scheduler] Schedule disabled, waiting for event triggers (TTL/position close)")
                     time.sleep(60)
                     continue
                 
