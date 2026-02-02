@@ -942,19 +942,28 @@ class AISignalManager:
             return [s.to_dict() for s in signals]
     
     def cancel_signal(self, signal_id: str) -> bool:
-        """Cancel specific signal."""
+        """Cancel specific signal and remove from active list."""
         with self._lock:
-            for signal in self.active_signals:
+            for i, signal in enumerate(self.active_signals):
                 if signal.id == signal_id:
                     signal.status = "cancelled"
+                    
+                    # Добавляем в историю
                     self.signal_history.append({
                         "action": "cancelled",
                         "signal_id": signal_id,
+                        "symbol": signal.symbol,
                         "timestamp": datetime.now().isoformat()
                     })
+                    
+                    # ВАЖНО: Удаляем сигнал из active_signals
+                    self.active_signals.pop(i)
+                    
                     self._save_state()
-                    logger.info(f"[AI-Signal] Cancelled: {signal_id}")
+                    logger.info(f"[AI-Signal] Cancelled and removed: {signal_id}")
                     return True
+        
+        logger.warning(f"[AI-Signal] Signal not found for cancellation: {signal_id}")
         return False
     
     def mark_signal_filled(self, signal_id: str, filled_price: float = None) -> bool:
