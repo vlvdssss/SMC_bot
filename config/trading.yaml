@@ -22,7 +22,7 @@ trading:
     auto_requery_on_close: true
     auto_requery_on_expire: true
     enabled: true
-    ttl_minutes: 60
+    ttl_minutes: 30
   smc:
     enabled: true
     fair_value_gaps: true

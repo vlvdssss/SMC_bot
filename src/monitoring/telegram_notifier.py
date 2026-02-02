@@ -7,6 +7,7 @@ VERSION 2.0: Разделение уведомлений по режимам т�
 """
 
 import requests
+import json
 from typing import Optional, Dict, Any
 from datetime import datetime
 from src.core.logger import logger
@@ -95,6 +96,91 @@ class TelegramNotifier:
             logger.error(f"[Telegram] 🔴 REASON: Unexpected error, check token/chat_id format")
             return False
     
+    def send_signal(self, symbol: str, direction: str, entry: float, 
+                    sl: float, tp: float, confidence: float, 
+                    quality: str = "NORMAL", accuracy: str = "HIGH", 
+                    lot_multiplier: float = 1.0, signal_id: str = None) -> bool:
+        """
+        Отправка сигнала с кнопкой удаления
+        
+        Args:
+            symbol: Инструмент (XAUUSD, EURUSD)
+            direction: BUY или SELL
+            entry: Цена входа
+            sl: Stop Loss
+            tp: Take Profit
+            confidence: Уверенность GPT (в процентах)
+            quality: Качество сигнала (NORMAL, HIGH, VERY_HIGH)
+            accuracy: Точность (LOW, MEDIUM, HIGH, VERY_HIGH)
+            lot_multiplier: Множитель лота
+            signal_id: ID сигнала для callback
+        
+        Returns:
+            True если успешно отправлено
+        """
+        if not self.enabled:
+            logger.warning("[Telegram] ❌ Disabled - cannot send signal")
+            return False
+        
+        try:
+            # Эмодзи для качества
+            quality_map = {
+                "LOW": "⚠️",
+                "NORMAL": "✅",
+                "HIGH": "🔥",
+                "VERY_HIGH": "💎"
+            }
+            quality_emoji = quality_map.get(quality.upper(), "✅")
+            
+            # Формируем текст сигнала
+            text = f"""
+🤖 <b>{direction.upper()} {symbol} {quality_emoji} {quality.upper()}</b>
+
+💵 <b>Entry:</b> <code>{entry:.5f}</code>
+🛑 <b>Stop Loss:</b> <code>{sl:.5f}</code>
+🎯 <b>Take Profit:</b> <code>{tp:.5f}</code>
+
+🧠 <b>Confidence:</b> {confidence:.1f}%
+📊 <b>GPT V3:</b> {accuracy.upper()} accuracy, {quality.upper()} quality, lot {lot_multiplier:.2f}x
+
+⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+"""
+            
+            # Создаем InlineKeyboard с кнопкой "Удалить"
+            keyboard = {
+                "inline_keyboard": [[
+                    {
+                        "text": "🗑️ Удалить",
+                        "callback_data": f"delete_signal_{signal_id or 'unknown'}"
+                    }
+                ]]
+            }
+            
+            url = f"https://api.telegram.org/bot{self.token}/sendMessage"
+            data = {
+                "chat_id": self.chat_id,
+                "text": text.strip(),
+                "parse_mode": "HTML",
+                "reply_markup": json.dumps(keyboard)
+            }
+            
+            logger.info(f"[Telegram] 📤 Sending signal: {direction} {symbol} @ {entry}")
+            
+            response = requests.post(url, json=data, timeout=10)
+            
+            if response.status_code == 200:
+                logger.info(f"[Telegram] ✅ Signal sent successfully")
+                return True
+            else:
+                error_data = response.json() if response.text else {}
+                error_desc = error_data.get('description', 'Unknown error')
+                logger.error(f"[Telegram] ❌ Failed to send signal: HTTP {response.status_code} - {error_desc}")
+                return False
+            
+        except Exception as e:
+            logger.error(f"[Telegram] ❌ Failed to send signal: {type(e).__name__} - {e}")
+            return False
+    
     def send_trade_opened(self, symbol: str, direction: str, lot: float, 
                           entry: float, sl: float, tp: float, 
                           mode: str = "strategy", reasoning: str = None,
@@ -147,16 +233,29 @@ class TelegramNotifier:
     
     def send_trade_closed(self, symbol: str, direction: str, profit: float, 
                           pips: float, duration: str, mode: str = "strategy",
-                          result_reason: str = None) -> bool:
+                          result_reason: str = None, next_analysis_time: str = None) -> bool:
         """
         Уведомление о закрытии сделки
         
         Args:
             mode: "strategy" или "pure_ai"
             result_reason: Причина закрытия (TP/SL/Manual)
+            next_analysis_time: Время следующего анализа
         """
         emoji = "✅" if profit > 0 else "❌"
         profit_emoji = "💰" if profit > 0 else "💸"
+        
+        # Get next analysis time from scheduler if not provided
+        if next_analysis_time is None:
+            try:
+                from src.ai.analyst_scheduler import get_scheduler
+                scheduler = get_scheduler()
+                if scheduler and hasattr(scheduler, 'get_next_analysis_time'):
+                    next_analysis_time = scheduler.get_next_analysis_time()
+            except:
+                next_analysis_time = None
+        
+        next_analysis_info = f"\n\n🔮 <b>Следующий анализ:</b> {next_analysis_time}" if next_analysis_time else ""
         
         if mode == "pure_ai":
             # Pure AI режим - детальное сообщение
@@ -171,7 +270,7 @@ class TelegramNotifier:
 🎯 Результат: <b>{result_reason or 'Закрыто'}</b>
 
 ⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-🔄 Режим: <b>Pure AI Trading</b>
+🔄 Режим: <b>Pure AI Trading</b>{next_analysis_info}
 """
         else:
             # Strategy + AI режим - стандартное сообщение
@@ -186,7 +285,7 @@ class TelegramNotifier:
 ⏱️ Длительность: <b>{duration}</b>
 
 ⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-🔄 Режим: <b>Strategy + AI</b>
+🔄 Режим: <b>Strategy + AI</b>{next_analysis_info}
 """
         return self.send_message(text.strip())
     
@@ -200,45 +299,35 @@ class TelegramNotifier:
         """
         if mode == "pure_ai":
             text = f"""
-📊 <b>Pure AI: Дневной отчет</b>
+📊 <b>Дневной отчет</b>
 
-🤖 <b>Автономная торговля GPT-4</b>
 ━━━━━━━━━━━━━━━━━━━━
 
-💰 Баланс: <b>${stats.get('balance', 0):.2f}</b>
+💰 Баланс на начало: <b>${stats.get('starting_balance', stats.get('balance', 0) - stats.get('profit', 0)):.2f}</b>
 📈 Профит: <b>${stats.get('profit', 0):.2f}</b>
+💵 Финальный баланс: <b>${stats.get('balance', 0):.2f}</b>
 
-📊 Сделок: <b>{stats.get('total_trades', 0)}</b>
-✅ Прибыльных: <b>{stats.get('winning_trades', 0)}</b>
+📊 Всего сделок: <b>{stats.get('total_trades', 0)}</b>
+✅ Успешных: <b>{stats.get('winning_trades', 0)}</b>
 ❌ Убыточных: <b>{stats.get('losing_trades', 0)}</b>
 
-🎯 Winrate: <b>{stats.get('winrate', 0):.1f}%</b>
-📈 ROI: <b>{stats.get('roi', 0):.2f}%</b>
-
-🔬 GPT анализов: <b>{stats.get('total_analyses', 0)}</b>
-📡 Сигналов: <b>{stats.get('total_signals', 0)}</b>
-💡 Средний конфиденс: <b>{stats.get('avg_confidence', 0):.1f}%</b>
-
-⏰ {datetime.now().strftime('%Y-%m-%d')}
+⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
         else:
             text = f"""
 📊 <b>Дневной отчет</b>
 
-📈 <b>Strategy + AI</b>
 ━━━━━━━━━━━━━━━━━━━━
 
-💰 Баланс: <b>${stats.get('balance', 0):.2f}</b>
+💰 Баланс на начало: <b>${stats.get('starting_balance', stats.get('balance', 0) - stats.get('profit', 0)):.2f}</b>
 📈 Профит: <b>${stats.get('profit', 0):.2f}</b>
+💵 Финальный баланс: <b>${stats.get('balance', 0):.2f}</b>
 
-📊 Сделок: <b>{stats.get('total_trades', 0)}</b>
-✅ Прибыльных: <b>{stats.get('winning_trades', 0)}</b>
+📊 Всего сделок: <b>{stats.get('total_trades', 0)}</b>
+✅ Успешных: <b>{stats.get('winning_trades', 0)}</b>
 ❌ Убыточных: <b>{stats.get('losing_trades', 0)}</b>
 
-🎯 Winrate: <b>{stats.get('winrate', 0):.1f}%</b>
-📈 ROI: <b>{stats.get('roi', 0):.2f}%</b>
-
-⏰ {datetime.now().strftime('%Y-%m-%d')}
+⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
         return self.send_message(text.strip())
     
@@ -323,22 +412,20 @@ class TelegramNotifier:
             stats: Статистика работы
         """
         if mode == "pure_ai":
-            text = "🛑 <b>BAZA BOT: Pure AI Trading остановлен</b>\n\n"
+            text = "🛑 <b>BAZA BOT остановлен</b>\n\n"
             
             if stats:
                 text += f"""
-🤖 <b>Итоговая статистика Pure AI:</b>
+📊 <b>Итоговая статистика:</b>
 ━━━━━━━━━━━━━━━━━━━━
 
-💰 Финальный баланс: <b>${stats.get('balance', 0):.2f}</b>
+💰 Баланс на начало: <b>${stats.get('starting_balance', stats.get('balance', 0) - stats.get('profit', 0)):.2f}</b>
 📈 Профит: <b>${stats.get('profit', 0):.2f}</b>
-📊 Сделок: <b>{stats.get('total_trades', 0)}</b>
+💵 Финальный баланс: <b>${stats.get('balance', 0):.2f}</b>
+
+📊 Всего сделок: <b>{stats.get('total_trades', 0)}</b>
 ✅ Успешных: <b>{stats.get('winning_trades', 0)}</b>
 ❌ Убыточных: <b>{stats.get('losing_trades', 0)}</b>
-🎯 Винрейт: <b>{stats.get('winrate', 0):.1f}%</b>
-
-🔬 GPT анализов: <b>{stats.get('total_analyses', 0)}</b>
-📡 Сигналов: <b>{stats.get('total_signals', 0)}</b>
 """
         else:
             text = "🛑 <b>BAZA BOT остановлен</b>\n\n"
@@ -348,9 +435,11 @@ class TelegramNotifier:
 📊 <b>Итоговая статистика:</b>
 ━━━━━━━━━━━━━━━━━━━━
 
-💰 Финальный баланс: <b>${stats.get('balance', 0):.2f}</b>
+💰 Баланс на начало: <b>${stats.get('starting_balance', stats.get('balance', 0) - stats.get('profit', 0)):.2f}</b>
 📈 Профит: <b>${stats.get('profit', 0):.2f}</b>
-📊 Сделок: <b>{stats.get('total_trades', 0)}</b>
+💵 Финальный баланс: <b>${stats.get('balance', 0):.2f}</b>
+
+📊 Всего сделок: <b>{stats.get('total_trades', 0)}</b>
 ✅ Успешных: <b>{stats.get('winning_trades', 0)}</b>
 ❌ Убыточных: <b>{stats.get('losing_trades', 0)}</b>
 """

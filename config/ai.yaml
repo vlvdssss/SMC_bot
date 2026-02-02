@@ -23,9 +23,9 @@ market_analyst:
     max_monthly_cost: 50.0
     min_minutes_between_calls: 15
   schedule:
-    enabled: true
-    mode: interval  # 'interval' - каждые N минут, 'schedule' - по расписанию
-    interval_minutes: 60  # Для interval mode: каждые 60 минут (1 час)
+    enabled: false
+    interval_minutes: 60
+    mode: interval
     restrictions:
       night_block:
         enabled: false
@@ -34,8 +34,8 @@ market_analyst:
       weekend_block:
         enabled: true
         friday_start: '22:00'
-        monday_end: '01:00'
-    times: []  # Для schedule mode: ['06:00', '18:00']
+        monday_end: 01:00
+    times: []
   screenshots:
     bars: 100
     cleanup_days: 7
@@ -50,7 +50,7 @@ market_analyst:
     auto_cleanup: true
     confidence_decay: true
     default_ttl_hours: 24
-    min_confidence: 70
+    min_confidence: 75  # Увеличено с 70 для уменьшения количества сделок
     min_rr: 1.5
     validity_minutes: 60
 news_filter:

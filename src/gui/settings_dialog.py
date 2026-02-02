@@ -107,16 +107,16 @@ class SettingsDialog:
         
         # Tabs
         self.instruments_tab = self._create_instruments_tab()
-        self.trading_tab = self._create_trading_tab()
-        self.ai_tab = self._create_ai_tab()
-        self.strategy_tab = self._create_strategy_tab()
+        self.trading_tab = self._create_trading_tab()  # Now includes AI settings
+        # self.ai_tab = self._create_ai_tab()  # MERGED into Trading tab
+        # self.strategy_tab = self._create_strategy_tab()  # REMOVED: Unused tab
         self.gpt_api_tab = self._create_gpt_api_tab()
         self.telegram_tab = self._create_telegram_tab()
         
         self.notebook.add(self.instruments_tab, text='📈 Instruments')
-        self.notebook.add(self.trading_tab, text='💰 Trading')
-        self.notebook.add(self.ai_tab, text='🤖 AI')
-        self.notebook.add(self.strategy_tab, text='📊 Strategy')
+        self.notebook.add(self.trading_tab, text='💰 Trading & AI')
+        # self.notebook.add(self.ai_tab, text='🤖 AI')  # MERGED into Trading
+        # self.notebook.add(self.strategy_tab, text='📊 Strategy')  # REMOVED
         self.notebook.add(self.gpt_api_tab, text='🔑 GPT API')
         self.notebook.add(self.telegram_tab, text='📱 Telegram')
         
@@ -787,6 +787,99 @@ class SettingsDialog:
         self.trade_end.insert(0, hours_config.get('end', '22:00'))
         self.trade_end.pack(side='right')
         self._bind_paste(self.trade_end)
+        
+        # === AI SETTINGS (merged from AI tab) ===
+        ai_config = self.configs.get('ai.yaml', {})
+        
+        # AI Enable
+        self._create_section(content, "AI Settings")
+        
+        enable_frame = self._create_setting_row(content, "Enable AI Analysis")
+        self.ai_enabled = tk.BooleanVar(value=ai_config.get('ai_enabled', True))
+        tk.Checkbutton(enable_frame, variable=self.ai_enabled,
+                      bg=Colors.BG_DARK, fg=Colors.TEXT_PRIMARY,
+                      selectcolor=Colors.BG_CARD).pack(side='right')
+        
+        # GPT Model
+        model_frame = self._create_setting_row(content, "GPT Model")
+        self.gpt_model = ttk.Combobox(model_frame, width=15, 
+                                     values=['gpt-4o', 'gpt-4-turbo', 'gpt-4'])
+        current_model = ai_config.get('market_analyst', {}).get('gpt', {}).get('model', 'gpt-4o')
+        self.gpt_model.set(current_model)
+        self.gpt_model.pack(side='right')
+        
+        # Temperature
+        temp_frame = self._create_setting_row(content, "Temperature")
+        self.temperature = tk.Entry(temp_frame, font=('Arial', 10), width=10)
+        current_temp = ai_config.get('market_analyst', {}).get('gpt', {}).get('temperature', 0.3)
+        self.temperature.insert(0, str(current_temp))
+        self.temperature.pack(side='right')
+        self._bind_paste(self.temperature)
+        
+        # Filters
+        self._create_section(content, "Signal Filters")
+        
+        signals_config = ai_config.get('market_analyst', {}).get('signals', {})
+        
+        conf_frame = self._create_setting_row(content, "Min confidence (%)")
+        self.min_confidence = tk.Entry(conf_frame, font=('Arial', 10), width=10)
+        self.min_confidence.insert(0, str(signals_config.get('min_confidence', 70)))
+        self.min_confidence.pack(side='right')
+        self._bind_paste(self.min_confidence)
+        
+        rr_frame = self._create_setting_row(content, "Min Risk/Reward ratio")
+        self.min_rr = tk.Entry(rr_frame, font=('Arial', 10), width=10)
+        self.min_rr.insert(0, str(signals_config.get('min_rr', 1.5)))
+        self.min_rr.pack(side='right')
+        self._bind_paste(self.min_rr)
+        
+        # TTL настройка
+        ttl_config = trading_config.get('trading', {}).get('signal_ttl', {})
+        
+        validity_frame = self._create_setting_row(content, "⏱ Signal TTL (minutes)")
+        self.signal_validity = tk.Entry(validity_frame, font=('Arial', 10), width=10)
+        self.signal_validity.insert(0, str(ttl_config.get('ttl_minutes', 60)))
+        self.signal_validity.pack(side='right')
+        self._bind_paste(self.signal_validity)
+        
+        # Auto-requery on expire
+        auto_requery_expire_frame = self._create_setting_row(content, "Auto-requery on TTL expire")
+        self.auto_requery_expire = tk.BooleanVar(value=ttl_config.get('auto_requery_on_expire', True))
+        tk.Checkbutton(auto_requery_expire_frame, variable=self.auto_requery_expire,
+                      bg=Colors.BG_DARK, fg=Colors.TEXT_PRIMARY,
+                      selectcolor=Colors.BG_CARD).pack(side='right')
+        
+        # Auto-requery on close
+        auto_requery_close_frame = self._create_setting_row(content, "Auto-requery on position close")
+        self.auto_requery_close = tk.BooleanVar(value=ttl_config.get('auto_requery_on_close', True))
+        tk.Checkbutton(auto_requery_close_frame, variable=self.auto_requery_close,
+                      bg=Colors.BG_DARK, fg=Colors.TEXT_PRIMARY,
+                      selectcolor=Colors.BG_CARD).pack(side='right')
+        
+        # Подсказка о TTL
+        ttl_hint = tk.Label(content, 
+                           text="💡 TTL: Время жизни сигнала. После истечения → auto-requery (если enabled). После закрытия позиции → auto-requery.",
+                           font=('Arial', 8, 'italic'),
+                           bg=Colors.BG_DARK,
+                           fg=Colors.TEXT_MUTED,
+                           wraplength=450,
+                           justify='left')
+        ttl_hint.pack(fill='x', pady=(2, 10), padx=20)
+        
+        # Time restrictions
+        self._create_section(content, "Time Restrictions")
+        
+        night_block_frame = self._create_setting_row(content, "Block night trading (22:00-02:00)")
+        self.night_block = tk.BooleanVar(value=ai_config.get('market_analyst', {}).get('schedule', {}).get('restrictions', {}).get('night_block', {}).get('enabled', True))
+        tk.Checkbutton(night_block_frame, variable=self.night_block,
+                      bg=Colors.BG_DARK, fg=Colors.TEXT_PRIMARY,
+                      selectcolor=Colors.BG_CARD).pack(side='right')
+        
+        weekend_block_frame = self._create_setting_row(content, "Block weekend trading")
+        self.weekend_block = tk.BooleanVar(value=ai_config.get('market_analyst', {}).get('schedule', {}).get('restrictions', {}).get('weekend_block', {}).get('enabled', True))
+        tk.Checkbutton(weekend_block_frame, variable=self.weekend_block,
+                      bg=Colors.BG_DARK, fg=Colors.TEXT_PRIMARY,
+                      selectcolor=Colors.BG_CARD).pack(side='right')
         
         content.update_idletasks()
         canvas.config(scrollregion=canvas.bbox('all'))
@@ -1489,38 +1582,8 @@ If you received this message, Telegram notifications are configured correctly! �
             trading_config['trading']['hours']['start'] = self.trade_start.get()
             trading_config['trading']['hours']['end'] = self.trade_end.get()
             
-            # Indicators
-            if 'indicators' not in trading_config['trading']:
-                trading_config['trading']['indicators'] = {}
-            
-            # Parse timeframes
-            tf_str = self.timeframes.get()
-            tf_list = [t.strip() for t in tf_str.split(',') if t.strip()]
-            trading_config['trading']['indicators']['timeframes'] = tf_list
-            
-            # Parse EMA periods
-            ema_str = self.ema_periods.get()
-            ema_list = [int(p.strip()) for p in ema_str.split(',') if p.strip()]
-            trading_config['trading']['indicators']['ema_periods'] = ema_list
-            
-            trading_config['trading']['indicators']['rsi_period'] = int(self.rsi_period.get())
-            trading_config['trading']['indicators']['atr_period'] = int(self.atr_period.get())
-            
-            # SMC settings
-            if 'smc' not in trading_config['trading']:
-                trading_config['trading']['smc'] = {}
-            
-            trading_config['trading']['smc']['enabled'] = self.smc_enabled.get()
-            trading_config['trading']['smc']['order_blocks'] = self.ob_enabled.get()
-            trading_config['trading']['smc']['fair_value_gaps'] = self.fvg_enabled.get()
-            
-            # Trend filter
-            if 'trend_filter' not in trading_config['trading']:
-                trading_config['trading']['trend_filter'] = {}
-            
-            trading_config['trading']['trend_filter']['enabled'] = self.trend_filter.get()
-            
-            # Обновить Telegram config
+            # Strategy tab removed
+
             telegram_config = {}
             telegram_path = Path('config') / 'telegram.yaml'
             if telegram_path.exists():
@@ -1731,38 +1794,8 @@ If you received this message, Telegram notifications are configured correctly! �
             trading_config['trading']['hours']['start'] = self.trade_start.get()
             trading_config['trading']['hours']['end'] = self.trade_end.get()
             
-            # Indicators
-            if 'indicators' not in trading_config['trading']:
-                trading_config['trading']['indicators'] = {}
-            
-            # Parse timeframes
-            tf_str = self.timeframes.get()
-            tf_list = [t.strip() for t in tf_str.split(',') if t.strip()]
-            trading_config['trading']['indicators']['timeframes'] = tf_list
-            
-            # Parse EMA periods
-            ema_str = self.ema_periods.get()
-            ema_list = [int(p.strip()) for p in ema_str.split(',') if p.strip()]
-            trading_config['trading']['indicators']['ema_periods'] = ema_list
-            
-            trading_config['trading']['indicators']['rsi_period'] = int(self.rsi_period.get())
-            trading_config['trading']['indicators']['atr_period'] = int(self.atr_period.get())
-            
-            # SMC settings
-            if 'smc' not in trading_config['trading']:
-                trading_config['trading']['smc'] = {}
-            
-            trading_config['trading']['smc']['enabled'] = self.smc_enabled.get()
-            trading_config['trading']['smc']['order_blocks'] = self.ob_enabled.get()
-            trading_config['trading']['smc']['fair_value_gaps'] = self.fvg_enabled.get()
-            
-            # Trend filter
-            if 'trend_filter' not in trading_config['trading']:
-                trading_config['trading']['trend_filter'] = {}
-            
-            trading_config['trading']['trend_filter']['enabled'] = self.trend_filter.get()
-            
-            # Обновить Telegram config
+            # Strategy tab removed
+
             telegram_config = {}
             telegram_path = Path('config') / 'telegram.yaml'
             if telegram_path.exists():
@@ -1910,6 +1943,17 @@ If you received this message, Telegram notifications are configured correctly! �
     
     def _generate_trail_example(self, activation: int, distance: int, step: int) -> str:
         """Генерирует живой пример работы trailing stop"""
+        try:
+            # Convert to int if strings from Entry widgets
+            activation = int(activation)
+            distance = int(distance)
+            step = int(step)
+        except (ValueError, TypeError):
+            # Fallback to defaults
+            activation = 15
+            distance = 15
+            step = 3
+        
         entry = 2650.0
         current = entry + (activation + 10) * 0.0001  # Цена в профите
         sl_initial = entry - 50 * 0.0001

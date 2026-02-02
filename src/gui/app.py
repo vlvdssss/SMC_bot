@@ -780,6 +780,72 @@ class AnalystPanel(tk.Frame):
                     fg=Colors.TEXT_SECONDARY,
                     wraplength=500,
                     justify='left').pack(anchor='w', pady=(5, 0))
+        
+        # Разделитель перед кнопкой
+        tk.Frame(card_content, bg=Colors.BORDER, height=1).pack(fill='x', pady=(10, 10))
+        
+        # Кнопка удаления сигнала
+        delete_btn = tk.Button(card_content,
+                              text="🗑️ Delete Signal",
+                              font=('Arial', 10, 'bold'),
+                              bg=Colors.ERROR,
+                              fg='white',
+                              activebackground='#c0392b',
+                              activeforeground='white',
+                              cursor='hand2',
+                              relief='flat',
+                              padx=15,
+                              pady=8,
+                              command=lambda sid=signal.id: self._delete_signal(sid))
+        delete_btn.pack(fill='x')
+        
+        # Hover эффект
+        def on_enter(e):
+            delete_btn.config(bg='#c0392b')
+        def on_leave(e):
+            delete_btn.config(bg=Colors.ERROR)
+        
+        delete_btn.bind('<Enter>', on_enter)
+        delete_btn.bind('<Leave>', on_leave)
+    
+    def _delete_signal(self, signal_id: str):
+        """Удалить сигнал из SignalManager"""
+        try:
+            # Получаем SignalManager из BotManager
+            signal_manager = self.bot_manager.signal_manager
+            
+            if signal_manager.cancel_signal(signal_id):
+                logger.info(f"[GUI] Signal {signal_id} cancelled successfully")
+                
+                # Показываем уведомление
+                self.bot_manager.telegram.send_message(
+                    f"🗑️ <b>Signal Deleted</b>\n\nSignal {signal_id} has been cancelled."
+                )
+                
+                # Обновляем GUI
+                self.refresh_summary()
+                
+                # Показываем локальный алерт (если возможно)
+                try:
+                    from tkinter import messagebox
+                    messagebox.showinfo("Signal Deleted", f"Signal {signal_id} has been cancelled.")
+                except:
+                    pass
+            else:
+                logger.warning(f"[GUI] Failed to cancel signal {signal_id}")
+                try:
+                    from tkinter import messagebox
+                    messagebox.showerror("Error", f"Failed to cancel signal {signal_id}")
+                except:
+                    pass
+                    
+        except Exception as e:
+            logger.error(f"[GUI] Error deleting signal: {e}")
+            try:
+                from tkinter import messagebox
+                messagebox.showerror("Error", f"Error deleting signal: {e}")
+            except:
+                pass
     
     def _create_history_section(self, signal_manager):
         """Создать секцию истории"""
@@ -1601,7 +1667,9 @@ class BazaApp:
         try:
             SettingsDialog(self.root, on_save_callback=self._on_settings_saved)
         except Exception as e:
+            import traceback
             app_logger.error(f"[SETTINGS] Error: {e}")
+            app_logger.error(f"[SETTINGS] Traceback: {traceback.format_exc()}")
             messagebox.showerror("Error", f"Failed to open settings: {e}")
     
     def _on_settings_saved(self, restart=False):

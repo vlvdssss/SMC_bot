@@ -254,6 +254,28 @@ def patch_signal_manager(signal_manager, news_fetcher=None):
                 f"| TTL: {ttl_minutes}min"
             )
             
+            # Отправляем уведомление в Telegram
+            try:
+                from src.core.bot_manager import BotManager
+                bot_manager = BotManager()
+                
+                if bot_manager.telegram and bot_manager.notify_config.get('ai_signal', True):
+                    bot_manager.telegram.send_signal(
+                        symbol=symbol,
+                        direction=signal.type,
+                        entry=signal.entry_price,
+                        sl=signal.stop_loss,
+                        tp=signal.take_profit,
+                        confidence=signal.confidence,
+                        quality=signal_decision.quality.key,
+                        accuracy=signal_decision.accuracy.key,
+                        lot_multiplier=signal_decision.lot_multiplier,
+                        signal_id=signal.id
+                    )
+                    logger.info(f"[Telegram] Signal notification sent for {symbol}")
+            except Exception as tg_error:
+                logger.error(f"[Telegram] Failed to send signal notification: {tg_error}")
+            
             # Сохраняем
             self._save_state()
             

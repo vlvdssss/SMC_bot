@@ -540,9 +540,13 @@ Analyze the M5 chart NOW and give your decision!
                             
                             logger.info(f"[AI] ✅ Entry validation OK: ${entry:.2f} (distance: ${entry_distance:.2f})")
                         
-                        # FIXED PARAMETERS (V4)
-                        FIXED_SL_DISTANCE = 5.0   # $5
+                        # FIXED PARAMETERS (V4) - Updated to enforce minimum $2 SL
+                        MIN_SL_DISTANCE = 2.0   # Minimum $2
+                        MAX_SL_DISTANCE = 5.0   # Maximum $5
                         FIXED_TP_DISTANCE = 10.0  # $10
+                        
+                        # Use default SL of $5, but clamp between $2-$5
+                        FIXED_SL_DISTANCE = max(MIN_SL_DISTANCE, min(MAX_SL_DISTANCE, 5.0))
                         
                         # Calculate fixed SL/TP based on direction
                         if action == "BUY":
@@ -555,13 +559,18 @@ Analyze the M5 chart NOW and give your decision!
                         # Override GPT values with fixed ones
                         analysis["trade"]["stop_loss"] = round(new_sl, 2)
                         analysis["trade"]["take_profit"] = round(new_tp, 2)
-                        analysis["trade"]["risk_reward"] = 2.0  # Always 2:1 (10/5)
+                        
+                        # Calculate actual R:R based on fixed distances
+                        actual_sl_distance = abs(entry - new_sl)
+                        actual_tp_distance = abs(entry - new_tp)
+                        actual_rr = actual_tp_distance / actual_sl_distance if actual_sl_distance > 0 else 2.0
+                        analysis["trade"]["risk_reward"] = round(actual_rr, 2)
                         
                         logger.info(f"[AI] ✅ V4 FIXED SL/TP Applied:")
                         logger.info(f"[AI]    Entry: ${entry:.2f}")
-                        logger.info(f"[AI]    SL: ${new_sl:.2f} (fixed $5)")
-                        logger.info(f"[AI]    TP: ${new_tp:.2f} (fixed $10)")
-                        logger.info(f"[AI]    R:R: 2:1")
+                        logger.info(f"[AI]    SL: ${new_sl:.2f} (fixed ${FIXED_SL_DISTANCE:.1f})")
+                        logger.info(f"[AI]    TP: ${new_tp:.2f} (fixed ${FIXED_TP_DISTANCE:.1f})")
+                        logger.info(f"[AI]    R:R: {actual_rr:.1f}:1")
             
             # Add metadata
             analysis["analyzed_at"] = datetime.now().isoformat()

@@ -11,7 +11,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from src.core.logger import logger
 
 
@@ -66,6 +66,39 @@ class TelegramBotWithButtons:
                 parse_mode="HTML",
                 reply_markup=self.reply_markup
             )
+    
+    async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка нажатия inline кнопок (callback query)"""
+        query = update.callback_query
+        await query.answer()  # Подтверждаем получение callback
+        
+        # Обработка кнопки "Удалить сигнал"
+        if query.data.startswith("delete_signal_"):
+            signal_id = query.data.replace("delete_signal_", "")
+            
+            # Удаляем сигнал из SignalManager
+            try:
+                from src.core.bot_manager import BotManager
+                bot_manager = BotManager()
+                
+                if bot_manager.signal_manager.cancel_signal(signal_id):
+                    logger.info(f"[Telegram] Signal {signal_id} cancelled from SignalManager")
+                    
+                    # Удаляем сообщение
+                    await query.message.delete()
+                    logger.info(f"[Telegram] Signal message deleted: {signal_id}")
+                else:
+                    logger.warning(f"[Telegram] Signal {signal_id} not found in SignalManager")
+                    await query.message.edit_text(
+                        "⚠️ Сигнал не найден или уже удалён",
+                        parse_mode="HTML"
+                    )
+            except Exception as e:
+                logger.error(f"[Telegram] Failed to delete signal: {e}")
+                await query.message.edit_text(
+                    f"❌ Ошибка при удалении сигнала: {e}",
+                    parse_mode="HTML"
+                )
     
     async def send_report(self, update: Update):
         """Отправка отчёта по статистике"""
@@ -182,6 +215,7 @@ class TelegramBotWithButtons:
             
             # Добавляем обработчики
             self.application.add_handler(CommandHandler("start", self.start_command))
+            self.application.add_handler(CallbackQueryHandler(self.handle_callback))  # Обработчик inline кнопок
             self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
             
             # Очищаем старые команды и устанавливаем новые (только /start)

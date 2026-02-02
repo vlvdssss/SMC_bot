@@ -38,7 +38,7 @@ class PureAITrader:
     # Конфигурация
     SYMBOLS = ["XAUUSD", "EURUSD"]
     ANALYSIS_INTERVAL = 3 * 60 * 60  # 3 часа в секундах
-    MIN_CONFIDENCE = 70  # Минимальная уверенность для входа
+    MIN_CONFIDENCE = 75  # Минимальная уверенность для входа (увеличено с 70%)
     MAX_TRADES_PER_DAY = 5  # Максимум сделок в день
     COOLDOWN_HOURS = 2  # Пауза между сделками одного символа
     

@@ -280,6 +280,19 @@ class AnalystScheduler:
                     "timestamp": datetime.now().isoformat()
                 }
         
+        # Check strict night ban 23:30-01:00 - BLOCK AI analysis
+        now = datetime.now()
+        hour = now.hour
+        minute = now.minute
+        if (hour == 23 and minute >= 30) or hour == 0:
+            logger.info("[AI-Scheduler] 🚫 Strict night ban (23:30-01:00) - BLOCKING AI analysis")
+            return {
+                "error": "strict_night_ban",
+                "reason": "Strict night ban 23:30-01:00 - AI analysis blocked",
+                "symbol": symbol,
+                "timestamp": datetime.now().isoformat()
+            }
+        
         # Check time restrictions
         time_allowed, time_reason = self.signal_manager._is_trading_time_allowed()
         if not time_allowed:
@@ -303,50 +316,54 @@ class AnalystScheduler:
             }
         
         # NOW acquire lock for actual analysis
-        with self._analysis_lock:
-            try:
+        try:
+            with self._analysis_lock:
                 logger.ai(f"Starting analysis for {symbol} ({vol_reason})")
-            
-            # Step 1: Run analysis with fallback on error
-            try:
-                analysis = self.analyst.analyze_market(symbol)
-            except ValueError as e:
-                # Configuration errors (invalid API key, missing config)
-                logger.error(f"[AI-Scheduler] ❌ CONFIGURATION ERROR: {e}")
-                logger.error("[AI-Scheduler] 💡 Исправь конфигурацию и перезапусти бота")
-                analysis = self._get_fallback_analysis(symbol, error=f"Config error: {e}")
-            except Exception as e:
-                # All other errors (API errors, network, etc.)
-                error_type = type(e).__name__
-                logger.error(f"[AI-Scheduler] ❌ ANALYSIS FAILED: {error_type}")
-                logger.error(f"[AI-Scheduler] Детали: {e}")
-                logger.error("[AI-Scheduler] 💡 Используется fallback анализ (безопасный режим)")
-                analysis = self._get_fallback_analysis(symbol, error=f"{error_type}: {e}")
-            
-            # Step 2: Process signals
-            if "error" not in analysis:
-                signal_summary = self.signal_manager.process_analysis(analysis)
-                analysis["signal_processing"] = signal_summary
                 
-                # Save history
-                self._save_analysis_history(analysis)
-                self.last_analysis = analysis
-            
-            # Step 3: Callback
-            if self.callback:
+                # Step 1: Run analysis with fallback on error
                 try:
-                    self.callback(analysis)
+                    analysis = self.analyst.analyze_market(symbol)
+                except ValueError as e:
+                    # Configuration errors (invalid API key, missing config)
+                    logger.error(f"[AI-Scheduler] ❌ CONFIGURATION ERROR: {e}")
+                    logger.error("[AI-Scheduler] 💡 Исправь конфигурацию и перезапусти бота")
+                    analysis = self._get_fallback_analysis(symbol, error=f"Config error: {e}")
                 except Exception as e:
-                    logger.error(f"[AI-Scheduler] Callback failed: {e}")
-            
-            # Log summary
-            self._log_analysis_summary(analysis)
-            
-            return analysis
-            
-            except Exception as e:
-                logger.error(f"[AI-Scheduler] Analysis failed: {e}")
-                return {"error": str(e), "timestamp": datetime.now().isoformat()}
+                    # All other errors (API errors, network, etc.)
+                    error_type = type(e).__name__
+                    logger.error(f"[AI-Scheduler] ❌ ANALYSIS FAILED: {error_type}")
+                    logger.error(f"[AI-Scheduler] Детали: {e}")
+                    logger.error("[AI-Scheduler] 💡 Используется fallback анализ (безопасный режим)")
+                    analysis = self._get_fallback_analysis(symbol, error=f"{error_type}: {e}")
+                
+                # Step 2: Process signals
+                if "error" not in analysis:
+                    signal_summary = self.signal_manager.process_analysis(analysis)
+                    analysis["signal_processing"] = signal_summary
+                    
+                    # Save history
+                    self._save_analysis_history(analysis)
+                    self.last_analysis = analysis
+                
+                # Step 3: Callback
+                if self.callback:
+                    try:
+                        self.callback(analysis)
+                    except Exception as e:
+                        logger.error(f"[AI-Scheduler] Callback failed: {e}")
+                
+                # Log summary
+                self._log_analysis_summary(analysis)
+                
+                # ВАЖНО: Обновляем время последнего анализа для защиты от дублирования
+                symbol = analysis.get("symbol", "XAUUSD")
+                self._last_analysis_time[symbol] = datetime.now()
+                
+                return analysis
+        
+        except Exception as e:
+            logger.error(f"[AI-Scheduler] Analysis failed: {e}")
+            return {"error": str(e), "timestamp": datetime.now().isoformat()}
     
     def _log_analysis_summary(self, analysis: dict):
         """Log human-readable summary."""
@@ -442,6 +459,44 @@ class AnalystScheduler:
             "next_run": self._get_next_run_time()
         }
     
+    def get_next_analysis_time(self) -> Optional[str]:
+        """Get human-readable next analysis time for telegram messages."""
+        try:
+            if self.mode == 'interval':
+                # Interval mode - calculate based on last_run
+                if self.last_run:
+                    from datetime import timedelta
+                    next_time = self.last_run + timedelta(minutes=self.interval_minutes)
+                    now = datetime.now()
+                    
+                    if next_time > now:
+                        # Future time
+                        delta_minutes = int((next_time - now).total_seconds() / 60)
+                        if delta_minutes < 60:
+                            return f"через {delta_minutes} мин"
+                        else:
+                            hours = delta_minutes // 60
+                            minutes = delta_minutes % 60
+                            return f"через {hours}ч {minutes}мин"
+                    else:
+                        return "сейчас"
+                else:
+                    return f"каждые {self.interval_minutes} мин"
+            
+            elif self.mode == 'schedule':
+                # Schedule mode - find next scheduled time
+                next_run = self._get_next_run_time()
+                if next_run:
+                    next_dt = datetime.fromisoformat(next_run)
+                    return next_dt.strftime('%H:%M')
+                return "не запланирован"
+            
+            return "не определено"
+            
+        except Exception as e:
+            logger.error(f"[AI-Scheduler] Failed to get next analysis time: {e}")
+            return "не определено"
+    
     def _get_next_run_time(self) -> Optional[str]:
         """Calculate next scheduled run time."""
         try:
@@ -468,19 +523,43 @@ class AnalystScheduler:
             logger.error(f"[AI-Scheduler] Failed to calc next run: {e}")
             return None
     
-    def trigger_immediate_analysis(self, symbol: str = "XAUUSD", reason: str = "manual"):
+    def trigger_immediate_analysis(self, symbol: str = "XAUUSD", reason: str = "manual", cooldown_minutes: int = 0):
         """
         Trigger immediate analysis (for position close or TTL expiration).
         
         Args:
             symbol: Trading symbol
             reason: Reason for trigger (position_closed, ttl_expired, manual)
+            cooldown_minutes: Wait N minutes before analysis (0 = immediate)
         """
-        logger.info(f"[AI-Scheduler] Immediate analysis triggered: {reason}")
+        # ЗАЩИТА ОТ ДУБЛИРОВАНИЯ: проверяем что анализ не запускался в последние 60 секунд
+        now = datetime.now()
+        last_time = self._last_analysis_time.get(symbol)
+        
+        if last_time:
+            time_since_last = (now - last_time).total_seconds()
+            MIN_INTERVAL_SECONDS = 60  # Минимум 60 секунд между анализами
+            
+            if time_since_last < MIN_INTERVAL_SECONDS:
+                logger.warning(
+                    f"[AI-Scheduler] ⏸️ Analysis skipped (duplicate): last analysis was "
+                    f"{time_since_last:.1f}s ago (min interval: {MIN_INTERVAL_SECONDS}s)"
+                )
+                return
+        
+        if cooldown_minutes > 0:
+            logger.info(f"[AI-Scheduler] Analysis scheduled in {cooldown_minutes} minutes: {reason}")
+        else:
+            logger.info(f"[AI-Scheduler] Immediate analysis triggered: {reason}")
         
         # Run async to not block
         def _async_run():
-            time.sleep(1)  # Small cooldown
+            if cooldown_minutes > 0:
+                logger.info(f"[AI-Scheduler] ⏳ Waiting {cooldown_minutes} minutes before analysis...")
+                time.sleep(cooldown_minutes * 60)  # Convert to seconds
+                logger.info(f"[AI-Scheduler] ⏰ Cooldown finished - starting analysis")
+            else:
+                time.sleep(1)  # Small cooldown for immediate
             self._run_analysis(symbol)
         
         thread = threading.Thread(target=_async_run, daemon=True)

@@ -79,6 +79,15 @@ class BotManager:
         # MT5 Manager (устанавливается извне)
         self.mt5_manager = None
         
+        # Signal Manager для управления AI сигналами
+        self.signal_manager = None
+        try:
+            from src.ai.signal_manager import AISignalManager
+            self.signal_manager = AISignalManager()
+            logger.info("[BotManager] Signal Manager initialized")
+        except Exception as e:
+            logger.warning(f"[BotManager] Failed to init Signal Manager: {e}")
+        
         # Логи для веб-интерфейса
         self.logs: list = []
         self.max_logs = 100
@@ -449,11 +458,25 @@ class BotManager:
             
             self.log(f"LiveTrader initialized (trading={'ON' if enable_trading else 'OFF'})")
             
+            # Счётчик для проверки времени торговли каждые 5 минут
+            time_check_counter = 0
+            time_check_interval = 20  # 20 циклов * 15 секунд = 5 минут
+            
             while not self.stop_event.is_set():
                 # Проверяем паузу
                 if self.pause_event.is_set():
                     self.stop_event.wait(1)
                     continue
+                
+                # Проверка времени торговли каждые 5 минут
+                time_check_counter += 1
+                if time_check_counter >= time_check_interval:
+                    time_check_counter = 0
+                    trading_allowed = trader._check_trading_hours()
+                    if trading_allowed:
+                        self.log("Trading hours check: ✅ Trading allowed")
+                    else:
+                        self.log("Trading hours check: ⛔ Trading blocked - waiting for allowed time")
                 
                 # Один цикл проверки сигналов
                 try:
@@ -614,6 +637,14 @@ class BotManager:
                 saved_stats = json.load(f)
                 # Обновим базовые значения из сохранённого файла
                 self.stats.update(saved_stats)
+                
+                # Проверяем наличие starting_balance
+                if 'starting_balance' not in self.stats:
+                    # Если нет starting_balance, вычисляем его
+                    current_balance = self.stats.get('balance', 0)
+                    total_pnl = self.stats.get('total_pnl', 0)
+                    self.stats['starting_balance'] = current_balance - total_pnl
+                    logger.info(f"[Stats] Calculated starting_balance: ${self.stats['starting_balance']:.2f}")
 
         # Попробуем загрузить историю сделок и пересчитать агрегаты (если файл есть)
         
@@ -639,6 +670,8 @@ class BotManager:
             self.stats['trades'] = total_trades
             self.stats['wins'] = wins
             self.stats['losses'] = losses
+            self.stats['winning_trades'] = wins
+            self.stats['losing_trades'] = losses
             
             # Сохраняем обновленную статистику в файл
             self.save_stats()
