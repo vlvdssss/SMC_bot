@@ -174,8 +174,13 @@ class AnalystScheduler:
                         # Анализируем инструменты
                         analysis_ran = False
                         if self._is_instrument_analysis_enabled("XAUUSD"):
-                            self._run_analysis("XAUUSD")
-                            analysis_ran = True
+                            result = self._run_analysis("XAUUSD")
+                            # Проверяем что анализ прошел успешно (не был заблокирован)
+                            if result and "error" not in result:
+                                analysis_ran = True
+                            else:
+                                error_type = result.get("error", "unknown") if result else "unknown"
+                                logger.debug(f"[AI-Scheduler] Analysis returned error: {error_type}")
                         else:
                             logger.info("[AI-Scheduler] XAUUSD analysis disabled in config")
                         
@@ -184,6 +189,8 @@ class AnalystScheduler:
                         if analysis_ran:
                             self.last_run = now
                             logger.info(f"[AI-Scheduler] ✅ Analysis completed, next run in {self.interval_minutes} minutes")
+                        else:
+                            logger.debug(f"[AI-Scheduler] Analysis did not run, will retry in 60s")
                 
                 # SCHEDULE MODE: по фиксированному расписанию
                 elif self.mode == 'schedule' and self.schedule_times:
@@ -263,31 +270,32 @@ class AnalystScheduler:
         7. Execute callback
         8. Return results
         """
-        # ЗАЩИТА ОТ ДУБЛИРОВАНИЯ: проверяем что анализ не запускался в последние 60 секунд
-        now = datetime.now()
-        last_time = self._last_analysis_time.get(symbol)
-        
-        if last_time:
-            time_since_last = (now - last_time).total_seconds()
-            MIN_INTERVAL_SECONDS = 60  # Минимум 60 секунд между анализами
+        # ЗАЩИТА ОТ ДУБЛИРОВАНИЯ с использованием lock
+        with self._analysis_lock:
+            now = datetime.now()
+            last_time = self._last_analysis_time.get(symbol)
             
-            if time_since_last < MIN_INTERVAL_SECONDS:
-                logger.warning(
-                    f"[AI-Scheduler] ⏸️ Duplicate analysis blocked: last run was "
-                    f"{time_since_last:.1f}s ago (min interval: {MIN_INTERVAL_SECONDS}s)"
-                )
-                return {
-                    "error": "duplicate_blocked",
-                    "reason": f"Analysis ran {time_since_last:.1f}s ago (< {MIN_INTERVAL_SECONDS}s)",
-                    "symbol": symbol,
-                    "timestamp": now.isoformat()
-                }
+            if last_time:
+                time_since_last = (now - last_time).total_seconds()
+                MIN_INTERVAL_SECONDS = 60  # Минимум 60 секунд между анализами
+                
+                if time_since_last < MIN_INTERVAL_SECONDS:
+                    logger.warning(
+                        f"[AI-Scheduler] ⏸️ Duplicate analysis blocked: last run was "
+                        f"{time_since_last:.1f}s ago (min interval: {MIN_INTERVAL_SECONDS}s)"
+                    )
+                    return {
+                        "error": "duplicate_blocked",
+                        "reason": f"Analysis ran {time_since_last:.1f}s ago (< {MIN_INTERVAL_SECONDS}s)",
+                        "symbol": symbol,
+                        "timestamp": now.isoformat()
+                    }
+            
+            # Обновляем время ВНУТРИ lock - защита от race condition
+            self._last_analysis_time[symbol] = now
+            logger.debug(f"[AI-Scheduler] Analysis timestamp set for {symbol}: {now.isoformat()}")
         
-        # ВАЖНО: Обновляем время СРАЗУ, чтобы заблокировать параллельные запуски
-        self._last_analysis_time[symbol] = now
-        logger.debug(f"[AI-Scheduler] Analysis timestamp set for {symbol}: {now.isoformat()}")
-        
-        # Quick checks BEFORE acquiring lock
+        # Quick checks BEFORE acquiring lock for actual analysis
         # Check kill-switch
         if not self.is_ai_enabled():
             logger.warning("[AI-Scheduler] AI disabled, using fallback")
