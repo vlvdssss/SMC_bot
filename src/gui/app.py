@@ -1453,9 +1453,18 @@ class BazaApp:
                     app_logger.debug("[LOOP] Running pure AI mode")
                     trader.check_signals()
                     
-                    # Проверить TTL истечение сигналов (для авто-запроса нового анализа)
+                    # Проверить TTL истечение сигналов (ТОЛЬКО если нет открытых позиций)
                     if trader.ai_signal_manager:
-                        trader.ai_signal_manager._cleanup_expired_signals()
+                        # Блокировка: если позиция открыта - НЕ проверять TTL
+                        has_positions = False
+                        if self.app_state.mt5_manager and self.app_state.mt5_manager.is_connected():
+                            positions = self.app_state.mt5_manager.get_open_positions()
+                            has_positions = len(positions) > 0
+                        
+                        if not has_positions:
+                            trader.ai_signal_manager._cleanup_expired_signals()
+                        else:
+                            app_logger.debug("[LOOP] Position open - TTL check blocked")
                     
                     # Проверить trailing stop для открытых позиций
                     trader.check_trailing_stop()
