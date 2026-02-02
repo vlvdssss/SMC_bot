@@ -332,8 +332,9 @@ class CurrentSettingsPanel(tk.Frame):
 class AnalystPanel(tk.Frame):
     """Панель AI Analyst"""
     
-    def __init__(self, parent):
+    def __init__(self, parent, bot_manager=None):
         super().__init__(parent, bg=Colors.BG_DARK)
+        self.bot_manager = bot_manager
         
         # Заголовок
         header = tk.Frame(self, bg=Colors.BG_DARK)
@@ -811,41 +812,45 @@ class AnalystPanel(tk.Frame):
     def _delete_signal(self, signal_id: str):
         """Удалить сигнал из SignalManager"""
         try:
+            # Проверяем наличие bot_manager
+            if not self.bot_manager:
+                app_logger.error("[GUI] BotManager not available")
+                messagebox.showerror("Error", "Bot manager not initialized")
+                return
+            
+            # Проверяем наличие signal_manager
+            if not hasattr(self.bot_manager, 'signal_manager') or not self.bot_manager.signal_manager:
+                app_logger.error("[GUI] SignalManager not available")
+                messagebox.showerror("Error", "Signal manager not initialized")
+                return
+            
             # Получаем SignalManager из BotManager
             signal_manager = self.bot_manager.signal_manager
             
             if signal_manager.cancel_signal(signal_id):
-                logger.info(f"[GUI] Signal {signal_id} cancelled successfully")
+                app_logger.info(f"[GUI] Signal {signal_id} cancelled successfully")
                 
-                # Показываем уведомление
-                self.bot_manager.telegram.send_message(
-                    f"🗑️ <b>Signal Deleted</b>\n\nSignal {signal_id} has been cancelled."
-                )
+                # Показываем уведомление в Telegram (если доступен)
+                if self.bot_manager.telegram:
+                    try:
+                        self.bot_manager.telegram.send_message(
+                            f"🗑️ <b>Signal Deleted</b>\n\nSignal {signal_id} has been cancelled."
+                        )
+                    except Exception as tg_error:
+                        app_logger.warning(f"[GUI] Telegram notification failed: {tg_error}")
                 
                 # Обновляем GUI
-                self.refresh_summary()
+                self.refresh_analysis()
                 
-                # Показываем локальный алерт (если возможно)
-                try:
-                    from tkinter import messagebox
-                    messagebox.showinfo("Signal Deleted", f"Signal {signal_id} has been cancelled.")
-                except:
-                    pass
+                # Показываем локальный алерт
+                messagebox.showinfo("Signal Deleted", f"Signal {signal_id} has been cancelled.")
             else:
-                logger.warning(f"[GUI] Failed to cancel signal {signal_id}")
-                try:
-                    from tkinter import messagebox
-                    messagebox.showerror("Error", f"Failed to cancel signal {signal_id}")
-                except:
-                    pass
+                app_logger.warning(f"[GUI] Failed to cancel signal {signal_id}")
+                messagebox.showerror("Error", f"Signal {signal_id} not found")
                     
         except Exception as e:
-            logger.error(f"[GUI] Error deleting signal: {e}")
-            try:
-                from tkinter import messagebox
-                messagebox.showerror("Error", f"Error deleting signal: {e}")
-            except:
-                pass
+            app_logger.error(f"[GUI] Error deleting signal: {e}", exc_info=True)
+            messagebox.showerror("Error", f"Error deleting signal: {str(e)}")
     
     def _create_history_section(self, signal_manager):
         """Создать секцию истории"""
@@ -1274,8 +1279,8 @@ class BazaApp:
                  cursor='hand2',
                  command=self.test_gpt_connection).pack(fill='x')
         
-        # Right Panel (AI Analyst)
-        self.analyst_panel = AnalystPanel(main_container)
+        # Right Panel (AI Analyst) - передаем bot_manager
+        self.analyst_panel = AnalystPanel(main_container, bot_manager=self.bot_manager)
         self.analyst_panel.pack(side='right', fill='both', expand=True)
     
     def _start_bot(self):
