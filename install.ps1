@@ -287,10 +287,15 @@ if ($missingRequired) {
 }
 
 Write-Host "Next steps:" -ForegroundColor Yellow
-Write-Host "  1. Configure files in 'config/' folder"
-Write-Host "     - Copy .example files and fill with your data"
-Write-Host "  2. To start the bot use: .\start_bot.ps1"
-Write-Host "  3. Or run directly: python main.py"
+Write-Host "  1. Setup config files: .\setup_config.ps1" -ForegroundColor White
+Write-Host "  2. Edit config files with your data" -ForegroundColor White
+Write-Host "  3. Find MT5 path: .\find_mt5.ps1" -ForegroundColor White
+Write-Host "  4. Check installation: .\check_install.ps1" -ForegroundColor White
+Write-Host "  5. Start bot: .\start_bot.ps1" -ForegroundColor White
+Write-Host ""
+
+Write-Host "Quick setup (recommended):" -ForegroundColor Yellow
+Write-Host "  .\setup_config.ps1" -ForegroundColor Cyan
 Write-Host ""
 
 Write-Host "Useful commands:" -ForegroundColor Yellow
