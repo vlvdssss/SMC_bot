@@ -5,20 +5,27 @@
   "risk_multiplier": 1.0,
   "latest_analysis_time": "2026-01-23T21:06:10.024869",
   "latest_analysis_version": "2.0",
-  "active_signals": [],
+  "active_signals": [
+    {
+      "id": "XAUUSD_20260202_200036",
+      "symbol": "XAUUSD",
+      "type": "SELL",
+      "entry_price": 4667.0,
+      "stop_loss": 4672.0,
+      "take_profit": 4657.0,
+      "trigger_time": "immediate",
+      "reasoning": "GPT V3: VERY_HIGH accuracy, NORMAL quality, lot 1.00x",
+      "confidence": 80.0,
+      "risk_reward": 2.0,
+      "created_at": "2026-02-02T20:00:36.612031",
+      "expires_at": "2026-02-03T20:00:36.612031",
+      "analysis_version": "4.0",
+      "status": "pending",
+      "triggered_at": null,
+      "priority": 8
+    }
+  ],
   "signal_history": [
-    {
-      "action": "filled",
-      "signal_id": "XAUUSD_20260130_031153",
-      "timestamp": "2026-01-30T03:13:53.128363",
-      "filled_price": 5328.0
-    },
-    {
-      "action": "triggered",
-      "signal_id": "XAUUSD_20260130_031828",
-      "timestamp": "2026-01-30T03:18:28.866800",
-      "price": 5324.225
-    },
     {
       "action": "filled",
       "signal_id": "XAUUSD_20260130_031828",
@@ -606,7 +613,19 @@
       "signal_id": "XAUUSD_20260202_025622",
       "timestamp": "2026-02-02T02:56:22.773372",
       "filled_price": 4779.0
+    },
+    {
+      "action": "triggered",
+      "signal_id": "XAUUSD_20260202_195355",
+      "timestamp": "2026-02-02T19:53:56.400564",
+      "price": 4683.030000000001
+    },
+    {
+      "action": "filled",
+      "signal_id": "XAUUSD_20260202_195355",
+      "timestamp": "2026-02-02T19:53:56.577416",
+      "filled_price": 4682.0
     }
   ],
-  "updated_at": "2026-02-02T02:56:22.789117"
+  "updated_at": "2026-02-02T20:00:37.426981"
 }

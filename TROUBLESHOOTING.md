@@ -174,14 +174,52 @@ print("OK!")
 
 ---
 
-## Проблема: MT5 не подключается
+## Проблема: MT5 не подключается / Ошибка -10003
 
-### Проверь:
-1. MetaTrader 5 запущен
-2. Логин/пароль/сервер правильные в `config/mt5.yaml`
-3. Разрешена автоматическая торговля (Инструменты → Настройки → Алготрейдинг)
+### Ошибка: "MetaTrader initialization failed: Process create failed"
 
-### Тест подключения:
+**Причина:** Бот не может найти MetaTrader 5 на компьютере.
+
+### Решение 1: Найти путь к MT5 автоматически
+```powershell
+.\find_mt5.ps1
+```
+
+Скрипт найдёт MetaTrader 5 и покажет правильный путь.
+
+### Решение 2: Проверить вручную
+
+1. **Найди terminal64.exe:**
+   - Обычно в `C:\Program Files\MetaTrader 5\`
+   - Или `C:\Program Files (x86)\MetaTrader 5\`
+   - Или через поиск Windows
+
+2. **Добавь путь в config/mt5.yaml:**
+   ```yaml
+   mt5:
+     connection:
+       path: "C:/Program Files/MetaTrader 5/terminal64.exe"
+   ```
+   
+   ⚠️ Используй `/` (слэш), а не `\` (бэкслэш)!
+
+3. **Или запусти MT5 вручную перед ботом:**
+   - Открой MetaTrader 5
+   - Войди в аккаунт
+   - Запусти бота
+
+### Решение 3: Переустановить MT5
+
+Если MT5 не установлен:
+```
+https://www.metatrader5.com/en/download
+```
+
+После установки:
+1. Запусти `.\find_mt5.ps1`
+2. Скопируй путь в `config/mt5.yaml`
+
+### Проверка подключения:
 ```python
 import MetaTrader5 as mt5
 import yaml
@@ -189,13 +227,31 @@ import yaml
 with open('config/mt5.yaml') as f:
     config = yaml.safe_load(f)
 
-if not mt5.initialize():
-    print("MT5 не инициализирован")
-    mt5.shutdown()
+path = config['mt5']['connection'].get('path')
+if path:
+    if not mt5.initialize(path=path):
+        print(f"Failed to initialize with path: {path}")
+        print(f"Error code: {mt5.last_error()}")
+    else:
+        print("MT5 connected:", mt5.account_info())
+        mt5.shutdown()
 else:
-    print("MT5 подключен:", mt5.account_info())
-    mt5.shutdown()
+    if not mt5.initialize():
+        print("Failed to initialize MT5")
+        print(f"Error code: {mt5.last_error()}")
+    else:
+        print("MT5 connected:", mt5.account_info())
+        mt5.shutdown()
 ```
+
+---
+
+## Проблема: MT5 запускается, но не подключается к аккаунту
+
+### Проверь:
+1. MetaTrader 5 запущен
+2. Логин/пароль/сервер правильные в `config/mt5.yaml`
+3. Разрешена автоматическая торговля (Инструменты → Настройки → Алготрейдинг)
 
 ---
 
