@@ -1058,11 +1058,11 @@ class LiveTrader:
                     
                     # AUTO-REQUERY: Trigger immediate GPT analysis ONCE after position close (moved outside if/else)
                     if hasattr(self, 'analyst_scheduler') and self.analyst_scheduler:
-                        logger.info("[LiveTrader] 🔄 Position closed - triggering GPT analysis in 5 minutes")
+                        logger.info("[LiveTrader] 🔄 Position closed - triggering immediate GPT analysis")
                         self.analyst_scheduler.trigger_immediate_analysis(
                             symbol=pos_info['symbol'],
                             reason="position_closed",
-                            cooldown_minutes=5  # Wait 5 minutes before next analysis
+                            cooldown_minutes=0  # Immediate analysis after position close
                         )
         
         except Exception as e:
