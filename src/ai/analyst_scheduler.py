@@ -283,6 +283,10 @@ class AnalystScheduler:
                     "timestamp": now.isoformat()
                 }
         
+        # ВАЖНО: Обновляем время СРАЗУ, чтобы заблокировать параллельные запуски
+        self._last_analysis_time[symbol] = now
+        logger.debug(f"[AI-Scheduler] Analysis timestamp set for {symbol}: {now.isoformat()}")
+        
         # Quick checks BEFORE acquiring lock
         # Check kill-switch
         if not self.is_ai_enabled():
@@ -374,10 +378,6 @@ class AnalystScheduler:
                 
                 # Log summary
                 self._log_analysis_summary(analysis)
-                
-                # ВАЖНО: Обновляем время последнего анализа для защиты от дублирования
-                symbol = analysis.get("symbol", "XAUUSD")
-                self._last_analysis_time[symbol] = datetime.now()
                 
                 return analysis
         
