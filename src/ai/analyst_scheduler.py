@@ -571,21 +571,6 @@ class AnalystScheduler:
             reason: Reason for trigger (position_closed, ttl_expired, manual)
             cooldown_minutes: Wait N minutes before analysis (0 = immediate)
         """
-        # ЗАЩИТА ОТ ДУБЛИРОВАНИЯ: проверяем что анализ не запускался в последние 60 секунд
-        now = datetime.now()
-        last_time = self._last_analysis_time.get(symbol)
-        
-        if last_time:
-            time_since_last = (now - last_time).total_seconds()
-            MIN_INTERVAL_SECONDS = 60  # Минимум 60 секунд между анализами
-            
-            if time_since_last < MIN_INTERVAL_SECONDS:
-                logger.warning(
-                    f"[AI-Scheduler] ⏸️ Analysis skipped (duplicate): last analysis was "
-                    f"{time_since_last:.1f}s ago (min interval: {MIN_INTERVAL_SECONDS}s)"
-                )
-                return
-        
         if cooldown_minutes > 0:
             logger.info(f"[AI-Scheduler] Analysis scheduled in {cooldown_minutes} minutes: {reason}")
         else:
@@ -593,10 +578,26 @@ class AnalystScheduler:
         
         # Run async to not block
         def _async_run():
+            # Wait cooldown period if specified
             if cooldown_minutes > 0:
                 logger.info(f"[AI-Scheduler] ⏳ Waiting {cooldown_minutes} minutes before analysis...")
                 time.sleep(cooldown_minutes * 60)  # Convert to seconds
                 logger.info(f"[AI-Scheduler] ⏰ Cooldown finished - starting analysis")
+            
+            # ЗАЩИТА ОТ ДУБЛИРОВАНИЯ: проверяем ПОСЛЕ cooldown
+            now = datetime.now()
+            last_time = self._last_analysis_time.get(symbol)
+            
+            if last_time:
+                time_since_last = (now - last_time).total_seconds()
+                MIN_INTERVAL_SECONDS = 60  # Минимум 60 секунд между анализами
+                
+                if time_since_last < MIN_INTERVAL_SECONDS:
+                    logger.warning(
+                        f"[AI-Scheduler] ⏸️ Analysis skipped (duplicate): last analysis was "
+                        f"{time_since_last:.1f}s ago (min interval: {MIN_INTERVAL_SECONDS}s)"
+                    )
+                    return
             else:
                 time.sleep(1)  # Small cooldown for immediate
             self._run_analysis(symbol)
