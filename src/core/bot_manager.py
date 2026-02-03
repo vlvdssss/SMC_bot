@@ -439,7 +439,14 @@ class BotManager:
         return True
     
     def _run_bot(self, mode: str):
-        """Основной цикл бота."""
+        """
+        Инициализация LiveTrader (БЕЗ собственного цикла).
+        
+        ВАЖНО: Основной trading loop работает в app.py (_run_trading_loop).
+        BotManager только создаёт и хранит LiveTrader для использования GUI.
+        
+        Собственный цикл ОТКЛЮЧЁН для предотвращения race conditions.
+        """
         try:
             # Импортируем необходимые компоненты
             from src.live.live_trader import LiveTrader
@@ -450,57 +457,21 @@ class BotManager:
             # Инициализация LiveTrader
             # LiveTrader сам загружает конфиги, подключается к MT5, 
             # инициализирует стратегии и создает executor
-            trader = LiveTrader(
+            self.live_trader = LiveTrader(
                 config_dir='config',
                 enable_trading=enable_trading,
                 enable_gpt=True  # GPT фильтр включен
             )
             
             self.log(f"LiveTrader initialized (trading={'ON' if enable_trading else 'OFF'})")
+            self.log("BotManager: LiveTrader ready - GUI loop will handle trading")
             
-            # Счётчик для проверки времени торговли каждые 5 минут
-            time_check_counter = 0
-            time_check_interval = 20  # 20 циклов * 15 секунд = 5 минут
-            
+            # ЦИКЛ ОТКЛЮЧЁН - app.py делает всю работу
+            # Просто ждём команды остановки
             while not self.stop_event.is_set():
-                # Проверяем паузу
-                if self.pause_event.is_set():
-                    self.stop_event.wait(1)
-                    continue
-                
-                # Проверка времени торговли каждые 5 минут
-                time_check_counter += 1
-                if time_check_counter >= time_check_interval:
-                    time_check_counter = 0
-                    trading_allowed = trader._check_trading_hours()
-                    if trading_allowed:
-                        self.log("Trading hours check: ✅ Trading allowed")
-                    else:
-                        self.log("Trading hours check: ⛔ Trading blocked - waiting for allowed time")
-                
-                # Один цикл проверки сигналов
-                try:
-                    signals = trader.check_signals()
-                    if signals:
-                        for signal_msg in signals:
-                            self.log(f"Signal: {signal_msg}")
-                except Exception as e:
-                    self.log(f"Error checking signals: {e}")
-                
-                # Проверка trailing stop loss (60% -> 50%)
-                try:
-                    trader.check_trailing_stop()
-                except Exception as e:
-                    self.log(f"Error checking trailing stop: {e}")
-                
-                # Проверка закрытых позиций для Telegram уведомлений
-                try:
-                    trader.check_closed_positions()
-                except Exception as e:
-                    self.log(f"Error checking closed positions: {e}")
-                
-                # Ждём перед следующей проверкой (сокращено с 60 до 15 секунд для быстрой реакции на AI сигналы)
-                self.stop_event.wait(15)  # 15 секунд
+                self.stop_event.wait(5)  # Просто спим, проверяя stop_event
+            
+            self.log("BotManager: Stop signal received")
                 
         except Exception as e:
             self.log(f"Error: {str(e)}")

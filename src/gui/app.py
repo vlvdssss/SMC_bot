@@ -1395,18 +1395,19 @@ class BazaApp:
                 self._stop_bot()
                 return
             
-            # Создать LiveTrader с существующим MT5Manager
-            trader = LiveTrader(
-                config_dir='config',
-                enable_trading=True,
-                enable_gpt=(self.bot_manager.trading_mode == 'pure_ai')
-            )
+            # Получить LiveTrader из BotManager (уже инициализирован)
+            trader = self.bot_manager.live_trader
+            if not trader:
+                app_logger.error("[LOOP] LiveTrader not initialized in BotManager!")
+                self.root.after(0, lambda: messagebox.showerror("Error", "LiveTrader initialization failed"))
+                self._stop_bot()
+                return
             
-            # Передать MT5Manager в LiveTrader
+            # Передать MT5Manager в LiveTrader (на случай если не был передан)
             trader.mt5 = self.app_state.mt5_manager.mt5
             trader.mt5_manager = self.app_state.mt5_manager
             
-            app_logger.info("[LOOP] LiveTrader initialized with connected MT5")
+            app_logger.info("[LOOP] Using LiveTrader from BotManager (no duplicate creation)")
             
             # Запустить AI Scheduler для Pure AI режима
             if AI_ANALYSIS_AVAILABLE:
