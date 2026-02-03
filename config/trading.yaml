@@ -29,6 +29,8 @@ trading:
     order_blocks: true
   trailing_stop:
     activation_profit_pips: 20
+    activation_profit_percent: 30  # % от расстояния до TP (GUI setting)
+    stop_distance_percent: 50      # % от расстояния до TP для размещения SL
     breakeven:
       activation_profit_pips: 25
       enabled: true

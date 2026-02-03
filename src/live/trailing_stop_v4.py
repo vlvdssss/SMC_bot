@@ -1,37 +1,69 @@
 #!/usr/bin/env python3
 """
-V4 Trailing Stop Module - Fixed parameters for M5 scalping
+V4 Trailing Stop Module - Configurable parameters from trading.yaml
 
 LOGIC:
-- Activation: 60% of TP ($6 profit for $10 TP)
-- Stop placement: 50% of TP ($5 profit = breakeven+)
+- Activation: configurable % of TP distance (from config)
+- Stop placement: configurable % of TP distance (from config)
 - Triggers ONLY ONCE per trade
 """
 
 from src.core.logger import logger
+import yaml
+from pathlib import Path
 
 
 class TrailingStopV4:
     """
     V4 Trailing Stop Handler.
     
-    Fixed parameters for consistent risk management:
-    - TP: $10
-    - SL: $5
-    - Trailing activation: 60% of TP ($6)
-    - Trailing stop: 50% of TP ($5)
+    Reads parameters from config/trading.yaml:
+    - activation_profit_percent: % of TP distance to activate
+    - stop_distance_percent: % of TP distance for SL placement
     """
-    
-    # V4 FIXED PARAMETERS
-    FIXED_TP_DISTANCE = 10.0  # $10
-    TRAILING_ACTIVATION_PERCENT = 0.3  # 30% от TP (GUI setting)
-    TRAILING_STOP_PERCENT = 0.5  # 50% от TP
     
     def __init__(self, mt5_connector, telegram_notifier=None):
         """Initialize V4 trailing stop handler."""
         self.mt5 = mt5_connector
         self.telegram = telegram_notifier  # Может быть None, установим позже
-        logger.info("[V4-Trailing] Initialized (Activation: 30% TP, Stop: 50% TP)")
+        
+        # Load config
+        self._load_config()
+        
+        logger.info(f"[V4-Trailing] Initialized (Activation: {self.activation_percent}% TP, Stop: {self.stop_percent}% TP)")
+    
+    def _load_config(self):
+        """Load trailing stop parameters from trading.yaml"""
+        try:
+            config_path = Path('config/trading.yaml')
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f)
+                    trailing_config = config.get('trading', {}).get('trailing_stop', {})
+                    
+                    # Read percentages from config (default to 30% and 50%)
+                    self.activation_percent = trailing_config.get('activation_profit_percent', 30)
+                    self.stop_percent = trailing_config.get('stop_distance_percent', 50)
+                    
+                    # Convert to decimal (30 -> 0.3)
+                    self.TRAILING_ACTIVATION_PERCENT = self.activation_percent / 100.0
+                    self.TRAILING_STOP_PERCENT = self.stop_percent / 100.0
+                    
+                    logger.info(f"[V4-Trailing] Loaded from config: activation={self.activation_percent}%, stop={self.stop_percent}%")
+            else:
+                # Fallback to defaults
+                self.activation_percent = 30
+                self.stop_percent = 50
+                self.TRAILING_ACTIVATION_PERCENT = 0.3
+                self.TRAILING_STOP_PERCENT = 0.5
+                logger.warning("[V4-Trailing] Config not found, using defaults: 30%/50%")
+        except Exception as e:
+            logger.error(f"[V4-Trailing] Failed to load config: {e}")
+            # Fallback
+            self.activation_percent = 30
+            self.stop_percent = 50
+            self.TRAILING_ACTIVATION_PERCENT = 0.3
+            self.TRAILING_STOP_PERCENT = 0.5
     
     def check_and_apply(self, tracked_positions: dict) -> None:
         """
