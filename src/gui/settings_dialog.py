@@ -1775,6 +1775,8 @@ If you received this message, Telegram notifications are configured correctly! �
                 trading_config['trading']['trailing_stop'] = {}
             
             trading_config['trading']['trailing_stop']['enabled'] = self.trail_enabled.get()
+            trading_config['trading']['trailing_stop']['activation_mode'] = self.trail_mode.get()  # 'pips' or 'percent'
+            trading_config['trading']['trailing_stop']['activation_profit_percent'] = int(self.trail_activation_percent.get())  # Процент от TP для активации
             trading_config['trading']['trailing_stop']['activation_profit_pips'] = int(self.trail_activation.get())
             trading_config['trading']['trailing_stop']['distance_pips'] = int(self.trail_distance.get())
             trading_config['trading']['trailing_stop']['step_pips'] = int(self.trail_step.get())
@@ -1784,6 +1786,8 @@ If you received this message, Telegram notifications are configured correctly! �
                 trading_config['trading']['trailing_stop']['breakeven'] = {}
             
             trading_config['trading']['trailing_stop']['breakeven']['enabled'] = self.breakeven_enabled.get()
+            trading_config['trading']['trailing_stop']['breakeven']['activation_mode'] = self.be_mode.get()  # NEW
+            trading_config['trading']['trailing_stop']['breakeven']['activation_percent'] = int(self.be_activation_percent.get())  # NEW
             trading_config['trading']['trailing_stop']['breakeven']['activation_profit_pips'] = int(self.be_activation.get())
             trading_config['trading']['trailing_stop']['breakeven']['offset_pips'] = int(self.be_offset.get())
             
