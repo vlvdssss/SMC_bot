@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 import MetaTrader5 as mt5
 import pandas as pd
+import threading
 from openai import OpenAI, APIError, RateLimitError, APIConnectionError, Timeout
 
 from src.core.logger import logger
@@ -37,6 +38,13 @@ class MarketAnalystService:
     def __init__(self, api_key: str = None):
         """Initialize Market Analyst Service v2.0."""
         self.api_key = api_key or os.getenv('OPENAI_API_KEY')
+        
+        # GPT Connection Recovery State
+        self.gpt_available = True  # Trading enabled/disabled flag
+        self.gpt_failed_attempts = 0  # Fast retry counter
+        self.gpt_last_failure_time = None  # Track when trading was disabled
+        self.gpt_recovery_thread = None  # Background recovery thread
+        self._recovery_lock = threading.Lock()
         
         # Детальная проверка API ключа
         if not self.api_key:
@@ -93,6 +101,10 @@ class MarketAnalystService:
         self.news_fetcher = RealTimeNewsFetcher()
         
         logger.info(f"[AI] MarketAnalystService v{self.ANALYSIS_VERSION} initialized")
+    
+    def is_gpt_available(self) -> bool:
+        """Check if GPT is available for trading."""
+        return self.gpt_available
     
     def analyze_market(self, symbol: str = "XAUUSD") -> Dict[str, Any]:
         """
@@ -353,6 +365,12 @@ Analyze the M5 chart NOW and give your decision!
                 })
                 logger.info(f"[AI] Added {timeframe} screenshot to request")
             
+            # Check if GPT is disabled (after previous failures)
+            if not self.gpt_available:
+                logger.warning("[AI] ⛔ GPT currently DISABLED - trading blocked")
+                logger.warning("[AI] Recovery attempt in progress...")
+                raise APIConnectionError("GPT temporarily disabled after connection failures")
+            
             # Call API with retry logic
             logger.info("[AI] Calling OpenAI API...")
             
@@ -369,6 +387,8 @@ Analyze the M5 chart NOW and give your decision!
                     )
                     
                     logger.info("[AI] ✅ Received response from OpenAI")
+                    # Reset failure counter on success
+                    self._on_gpt_success()
                     break  # Success - exit retry loop
                     
                 except RateLimitError as e:
@@ -442,18 +462,21 @@ Analyze the M5 chart NOW and give your decision!
             logger.error(f"[AI] ❌ ОКОНЧАТЕЛЬНАЯ ОШИБКА: Rate Limit")
             logger.error("[AI] 🚫 Все попытки исчерпаны - превышен лимит API")
             logger.error("[AI] 💡 Проверь квоту: https://platform.openai.com/account/usage")
+            self._on_gpt_failure()
             raise
         
         except APIConnectionError as e:
             logger.error(f"[AI] ❌ ОКОНЧАТЕЛЬНАЯ ОШИБКА: Connection Failed")
             logger.error("[AI] 🚫 Не удалось подключиться к OpenAI API")
             logger.error("[AI] 💡 Проверь интернет, firewall, proxy настройки")
+            self._on_gpt_failure()
             raise
         
         except APIError as e:
             logger.error(f"[AI] ❌ ОКОНЧАТЕЛЬНАЯ ОШИБКА: API Error")
             logger.error(f"[AI] Код: {e.code if hasattr(e, 'code') else 'N/A'}")
             logger.error(f"[AI] Детали: {e}")
+            self._on_gpt_failure()
             raise
         
         except json.JSONDecodeError as e:
@@ -465,6 +488,7 @@ Analyze the M5 chart NOW and give your decision!
         except Exception as e:
             logger.error(f"[AI] ❌ НЕИЗВЕСТНАЯ ОШИБКА: {type(e).__name__}")
             logger.error(f"[AI] Детали: {e}")
+            self._on_gpt_failure()
             raise
     
     def _validate_analysis(self, analysis: Dict[str, Any], metrics: Dict[str, Any]) -> Dict[str, Any]:
@@ -603,6 +627,79 @@ Analyze the M5 chart NOW and give your decision!
             "analyzed_at": datetime.now().isoformat(),
             "analysis_version": "2.0"
         }
+    
+    def _on_gpt_success(self):
+        """Reset failure counter on successful GPT call."""
+        with self._recovery_lock:
+            if self.gpt_failed_attempts > 0:
+                logger.info(f"[AI-Recovery] ✅ GPT connection restored (was {self.gpt_failed_attempts} failures)")
+            self.gpt_failed_attempts = 0
+            if not self.gpt_available:
+                logger.info("[AI-Recovery] ✅ Trading RE-ENABLED after recovery")
+                self.gpt_available = True
+    
+    def _on_gpt_failure(self):
+        """
+        Handle GPT connection failure.
+        After 3 failures: disable trading, start 30-min recovery loop.
+        """
+        with self._recovery_lock:
+            self.gpt_failed_attempts += 1
+            logger.warning(f"[AI-Recovery] ⚠️ GPT failure #{self.gpt_failed_attempts}/3")
+            
+            if self.gpt_failed_attempts >= 3:
+                logger.error("[AI-Recovery] 🚫 3 FAILURES REACHED - DISABLING TRADING")
+                self.gpt_available = False
+                self.gpt_last_failure_time = time.time()
+                
+                # Start recovery thread if not already running
+                if self.gpt_recovery_thread is None or not self.gpt_recovery_thread.is_alive():
+                    logger.info("[AI-Recovery] 🔄 Starting 30-min recovery loop...")
+                    self.gpt_recovery_thread = threading.Thread(
+                        target=self._recovery_loop,
+                        daemon=True,
+                        name="GPT-Recovery"
+                    )
+                    self.gpt_recovery_thread.start()
+    
+    def _recovery_loop(self):
+        """
+        Recovery loop: Try to reconnect every 30 minutes.
+        Runs in background until connection restored.
+        """
+        logger.info("[AI-Recovery] 🔄 Recovery thread started")
+        
+        while True:
+            # Wait 30 minutes
+            logger.info("[AI-Recovery] ⏳ Waiting 30 minutes before next recovery attempt...")
+            time.sleep(30 * 60)  # 30 minutes
+            
+            # Check if GPT is still disabled
+            with self._recovery_lock:
+                if self.gpt_available:
+                    logger.info("[AI-Recovery] ✅ GPT already recovered - stopping recovery thread")
+                    break
+            
+            # Try to reconnect
+            logger.info("[AI-Recovery] 🔄 Attempting GPT connection recovery...")
+            try:
+                # Simple test request
+                test_response = self.client.models.list()
+                logger.info("[AI-Recovery] ✅ Connection test SUCCESSFUL")
+                
+                with self._recovery_lock:
+                    self.gpt_available = True
+                    self.gpt_failed_attempts = 0
+                    logger.info("[AI-Recovery] ✅ Trading RE-ENABLED")
+                break  # Exit loop on success
+                
+            except Exception as e:
+                logger.error(f"[AI-Recovery] ❌ Recovery attempt failed: {type(e).__name__}")
+                logger.error(f"[AI-Recovery] Details: {e}")
+                logger.info("[AI-Recovery] Will retry in 30 minutes...")
+                # Continue loop
+        
+        logger.info("[AI-Recovery] 🏁 Recovery thread finished")
     
     def get_latest_analysis(self) -> Optional[Dict[str, Any]]:
         """Get the latest saved analysis."""

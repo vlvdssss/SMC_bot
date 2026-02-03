@@ -518,6 +518,14 @@ class LiveTrader:
                     logger.warning("[LiveTrader] Position already open - AI signals saved but NOT executed yet")
                     return signals  # Сигналы сохранены, исполним после закрытия позиции
                 
+                # КРИТИЧНО: Проверяем доступность GPT перед торговлей
+                if hasattr(self, 'analyst_scheduler') and self.analyst_scheduler:
+                    analyst = getattr(self.analyst_scheduler, 'analyst', None)
+                    if analyst and not analyst.is_gpt_available():
+                        logger.error("[LiveTrader] 🚫 GPT connection DISABLED - AI trading blocked")
+                        logger.warning("[LiveTrader] Recovery in progress... waiting for GPT reconnection")
+                        return signals  # Не торгуем пока GPT недоступен
+                
                 # Исполняем AI сигналы (только один раз здесь)
                 if self.enable_trading:
                     for ai_signal in ai_signals:
@@ -673,6 +681,14 @@ class LiveTrader:
     def execute_trade(self, symbol: str, signal: dict):
         """Исполнение сделки."""
         try:
+            # Safety: Check GPT availability before trading
+            if hasattr(self, 'analyst_scheduler') and self.analyst_scheduler:
+                analyst = getattr(self.analyst_scheduler, 'analyst', None)
+                if analyst and not analyst.is_gpt_available():
+                    logger.error(f"[TRADE] 🚫 Cannot execute {symbol} trade - GPT connection disabled")
+                    logger.warning("[TRADE] Trading blocked until GPT recovery completes")
+                    return None
+            
             # КРИТИЧНО: Проверяем нет ли уже открытой позиции
             if self.executor.has_position():
                 logger.warning(f"[TRADE] Position already open - ignoring new signal for {symbol}")

@@ -112,6 +112,8 @@ class AISignalManager:
         
         # Track if state already loaded globally
         self._state_loaded = False
+        # Track last requery scheduling per symbol for invalidation
+        self._last_invalidation_requery = {}
         
         self._lock = threading.Lock()
         self._load_state(verbose=True)  # Log on init
@@ -700,6 +702,7 @@ class AISignalManager:
         """Check if any signals should trigger with TTL and price validation."""
         triggered_signals = []
         expired_signals = []  # Сигналы для удаления
+        price_invalidated = False
         
         # Note: State is loaded at init and when signals are added.
         # No need to reload every check - reduces log spam.
@@ -733,6 +736,7 @@ class AISignalManager:
                     signal.status = "price_invalidated"
                     expired_signals.append(signal)
                     logger.info(f"[AI-Signal] Signal {signal.id} invalidated (price moved {price_diff:.1f} pips from entry)")
+                    price_invalidated = True
                     continue
                 
                 # Entry distance check: if price already too far from entry (missed opportunity)
@@ -742,11 +746,13 @@ class AISignalManager:
                     signal.status = "price_invalidated"
                     expired_signals.append(signal)
                     logger.info(f"[AI-Signal] BUY signal {signal.id} invalidated (price already ran up {price_diff:.1f} pips above entry)")
+                    price_invalidated = True
                     continue
                 elif signal.type == "SELL" and (signal.entry_price - current_price) * pip_multiplier > 20:
                     signal.status = "price_invalidated"
                     expired_signals.append(signal)
                     logger.info(f"[AI-Signal] SELL signal {signal.id} invalidated (price already ran down {price_diff:.1f} pips below entry)")
+                    price_invalidated = True
                     continue
                 
                 # Check time trigger
@@ -789,6 +795,9 @@ class AISignalManager:
             
             if triggered_signals or expired_signals:
                 self._save_state()
+        
+        if price_invalidated:
+            self._schedule_invalidation_requery(symbol)
         
         return triggered_signals
     
@@ -854,6 +863,37 @@ class AISignalManager:
             if auto_requery and hasattr(self, 'scheduler') and self.scheduler:
                 logger.info("[AI-Signal] 🔄 Triggering auto-requery (TTL expired)")
                 self.scheduler.trigger_immediate_analysis(reason="ttl_expired")
+
+    def _schedule_invalidation_requery(self, symbol: str):
+        """Schedule AI requery after price invalidation with cooldown guard."""
+        auto_requery = self.config.get('trading', {}).get('signal_ttl', {}).get('auto_requery_on_invalidate', True)
+        if not auto_requery:
+            return
+        if not hasattr(self, 'scheduler') or not self.scheduler:
+            logger.warning("[AI-Signal] No scheduler reference - cannot schedule invalidation requery")
+            return
+
+        cooldown_minutes = self.config.get('trading', {}).get('signal_ttl', {}).get(
+            'auto_requery_invalidate_cooldown_minutes', 5
+        )
+        now = datetime.now()
+        last_time = self._last_invalidation_requery.get(symbol)
+        if last_time and (now - last_time).total_seconds() < cooldown_minutes * 60:
+            logger.info(
+                f"[AI-Signal] ⏳ Invalidation requery already scheduled for {symbol} "
+                f"({cooldown_minutes}min cooldown)"
+            )
+            return
+
+        self._last_invalidation_requery[symbol] = now
+        logger.info(
+            f"[AI-Signal] 🔄 Signal invalidated - scheduling requery in {cooldown_minutes} minutes for {symbol}"
+        )
+        self.scheduler.trigger_immediate_analysis(
+            symbol=symbol,
+            reason=f"price_invalidated_{symbol}",
+            cooldown_minutes=cooldown_minutes
+        )
     
     def set_scheduler(self, scheduler):
         """Set reference to analyst_scheduler for auto-requery."""

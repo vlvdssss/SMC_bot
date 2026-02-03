@@ -19,8 +19,10 @@ trading:
     default_tp_pips: 100
     max_lot_size: 1.0
   signal_ttl:
+    auto_requery_invalidate_cooldown_minutes: 5
     auto_requery_on_close: true
     auto_requery_on_expire: true
+    auto_requery_on_invalidate: true
     enabled: true
     ttl_minutes: 30
   smc:
@@ -28,15 +30,19 @@ trading:
     fair_value_gaps: true
     order_blocks: true
   trailing_stop:
+    activation_mode: percent
+    activation_percent: 30
+    activation_profit_percent: 40
     activation_profit_pips: 20
-    activation_profit_percent: 30  # % от расстояния до TP (GUI setting)
-    stop_distance_percent: 50      # % от расстояния до TP для размещения SL
     breakeven:
+      activation_mode: percent
+      activation_percent: 30
       activation_profit_pips: 25
       enabled: true
       offset_pips: 5
     distance_pips: 15
     enabled: true
     step_pips: 3
+    stop_distance_percent: 50
   trend_filter:
     enabled: true
