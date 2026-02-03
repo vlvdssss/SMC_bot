@@ -102,10 +102,18 @@ class LiveTrader:
         logger.info("[LiveTrader] RiskManager ready")
         
         # Инициализация V4 Trailing Stop Handler
-        logger.info("[LiveTrader] Initializing V4 Trailing Stop (60%/50% fixed)...")
-        from src.live.trailing_stop_v4 import TrailingStopV4
-        self.trailing_v4 = TrailingStopV4(mt5_connector=self.mt5_connector)
-        logger.info("[LiveTrader] V4 Trailing Stop ready (Telegram will be set after monitoring init)")
+        trailing_config = self.config.get('trading', {}).get('trailing_stop', {})
+        trailing_enabled = trailing_config.get('enabled', False)
+        
+        if trailing_enabled:
+            logger.info("[LiveTrader] Initializing V4 Trailing Stop...")
+            from src.live.trailing_stop_v4 import TrailingStopV4
+            self.trailing_v4 = TrailingStopV4(mt5_connector=self.mt5_connector)
+            logger.info("[V4-Trailing] ✅ ENABLED (30% activation, 50% stop distance)")
+        else:
+            logger.info("[V4-Trailing] ⛔ DISABLED in settings")
+            from src.live.trailing_stop_v4 import TrailingStopV4
+            self.trailing_v4 = TrailingStopV4(mt5_connector=self.mt5_connector)
         
         # Инициализация NewsFetcher (для V3)
         self.news_fetcher = None
