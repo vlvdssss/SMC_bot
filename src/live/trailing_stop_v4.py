@@ -98,12 +98,13 @@ class TrailingStopV4:
             symbol = current_position.symbol
             
             # 🔥 DYNAMIC: Calculate TP distance from tracked position
-            tp = pos_info.get('tp', entry + self.FIXED_TP_DISTANCE if direction == 'BUY' else entry - self.FIXED_TP_DISTANCE)
+            # Fallback: if no TP in tracked position, use 10.0 default
+            tp = pos_info.get('tp', entry + 10.0 if direction == 'BUY' else entry - 10.0)
             tp_distance = abs(tp - entry)
             
             # 🔥 DYNAMIC activation based on actual TP
-            activation_profit = tp_distance * self.TRAILING_ACTIVATION_PERCENT  # 60% of actual TP
-            trailing_stop_profit = tp_distance * self.TRAILING_STOP_PERCENT     # 50% of actual TP
+            activation_profit = tp_distance * self.TRAILING_ACTIVATION_PERCENT
+            trailing_stop_profit = tp_distance * self.TRAILING_STOP_PERCENT
             
             # Calculate current profit in dollars
             if direction == 'BUY':
