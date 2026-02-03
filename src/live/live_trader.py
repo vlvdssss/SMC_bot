@@ -761,6 +761,11 @@ class LiveTrader:
         
         Uses TrailingStopV4 module with fixed activation/stop levels.
         """
+        # Check if trailing stop enabled in config
+        trailing_config = self.config.get('trading', {}).get('trailing_stop', {})
+        if not trailing_config.get('enabled', False):
+            return
+        
         if not self.tracked_positions:
             return
         
