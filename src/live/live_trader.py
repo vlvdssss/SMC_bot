@@ -764,7 +764,16 @@ class LiveTrader:
         # Check if trailing stop enabled in config
         trailing_config = self.config.get('trading', {}).get('trailing_stop', {})
         if not trailing_config.get('enabled', False):
+            # Log once that trailing is disabled (avoid spam)
+            if not hasattr(self, '_trailing_disabled_logged'):
+                logger.info("[V4-Trailing] ⛔ Trailing stop DISABLED in settings")
+                self._trailing_disabled_logged = True
             return
+        
+        # Reset flag when enabled (for next disable)
+        if hasattr(self, '_trailing_disabled_logged'):
+            logger.info("[V4-Trailing] ✅ Trailing stop ENABLED (30% activation, 50% stop)")
+            delattr(self, '_trailing_disabled_logged')
         
         if not self.tracked_positions:
             return
