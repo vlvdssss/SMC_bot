@@ -24,14 +24,14 @@ class TrailingStopV4:
     
     # V4 FIXED PARAMETERS
     FIXED_TP_DISTANCE = 10.0  # $10
-    TRAILING_ACTIVATION_PERCENT = 0.6  # 60% от TP
+    TRAILING_ACTIVATION_PERCENT = 0.3  # 30% от TP (GUI setting)
     TRAILING_STOP_PERCENT = 0.5  # 50% от TP
     
     def __init__(self, mt5_connector, telegram_notifier=None):
         """Initialize V4 trailing stop handler."""
         self.mt5 = mt5_connector
         self.telegram = telegram_notifier  # Может быть None, установим позже
-        logger.info("[V4-Trailing] Initialized (Activation: 60% TP, Stop: 50% TP)")
+        logger.info("[V4-Trailing] Initialized (Activation: 30% TP, Stop: 50% TP)")
     
     def check_and_apply(self, tracked_positions: dict) -> None:
         """
@@ -39,7 +39,7 @@ class TrailingStopV4:
         
         DYNAMIC TP-BASED ACTIVATION:
         - Uses actual TP distance from tracked position
-        - Activation: 60% of actual TP distance
+        - Activation: 30% of actual TP distance
         - Stop placement: 50% of actual TP distance
         
         Args:
@@ -90,7 +90,7 @@ class TrailingStopV4:
                             pos_info['current_sl'] = new_sl
                             pos_info['v4_trailing_activated'] = True
                             logger.info(f"[V4-Trailing] ✅ BUY #{ticket} {symbol} - SL modified successfully")
-                            logger.info(f"[V4-Trailing]    TP Distance: ${tp_distance:.2f}, Activation: ${activation_profit:.2f} (60%)")
+                            logger.info(f"[V4-Trailing]    TP Distance: ${tp_distance:.2f}, Activation: ${activation_profit:.2f} (30%)")
                             logger.info(f"[V4-Trailing]    Current Profit: ${current_profit:.2f} >= ${activation_profit:.2f} ✓")
                             logger.info(f"[V4-Trailing]    SL: ${current_sl:.2f} → ${new_sl:.2f} (BE + ${trailing_stop_profit:.2f})")
                             
@@ -103,7 +103,7 @@ class TrailingStopV4:
                                     f"Ticket: #{ticket}\n\n"
                                     f"💰 Profit: <b>${current_profit:.2f}</b>\n"
                                     f"🎯 TP Distance: ${tp_distance:.2f}\n"
-                                    f"📊 Activation: ${activation_profit:.2f} (60%)\n\n"
+                                    f"📊 Activation: ${activation_profit:.2f} (30%)\n\n"
                                     f"SL moved: ${current_sl:.2f} → ${new_sl:.2f}"
                                 )
                                 self.telegram.send_message(message)
@@ -128,7 +128,7 @@ class TrailingStopV4:
                             pos_info['current_sl'] = new_sl
                             pos_info['v4_trailing_activated'] = True
                             logger.info(f"[V4-Trailing] ✅ SELL #{ticket} {symbol} - SL modified successfully")
-                            logger.info(f"[V4-Trailing]    TP Distance: ${tp_distance:.2f}, Activation: ${activation_profit:.2f} (60%)")
+                            logger.info(f"[V4-Trailing]    TP Distance: ${tp_distance:.2f}, Activation: ${activation_profit:.2f} (30%)")
                             logger.info(f"[V4-Trailing]    Current Profit: ${current_profit:.2f} >= ${activation_profit:.2f} ✓")
                             logger.info(f"[V4-Trailing]    SL: ${current_sl:.2f} → ${new_sl:.2f} (BE - ${trailing_stop_profit:.2f})")
                             
@@ -141,7 +141,7 @@ class TrailingStopV4:
                                     f"Ticket: #{ticket}\n\n"
                                     f"💰 Profit: <b>${current_profit:.2f}</b>\n"
                                     f"🎯 TP Distance: ${tp_distance:.2f}\n"
-                                    f"📊 Activation: ${activation_profit:.2f} (60%)\n\n"
+                                    f"📊 Activation: ${activation_profit:.2f} (30%)\n\n"
                                     f"SL moved: ${current_sl:.2f} → ${new_sl:.2f}"
                                 )
                                 self.telegram.send_message(message)
