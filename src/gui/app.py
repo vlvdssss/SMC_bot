@@ -7,6 +7,7 @@ BAZA Trading Bot - Modern Trading Terminal UI
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
+import time
 import json
 from datetime import datetime
 from pathlib import Path
@@ -1395,11 +1396,18 @@ class BazaApp:
                 self._stop_bot()
                 return
             
-            # Получить LiveTrader из BotManager (уже инициализирован)
-            trader = self.bot_manager.live_trader
+            # Получить LiveTrader из BotManager (ждём пока инициализируется)
+            trader = None
+            max_wait = 10  # Максимум 10 секунд ожидания
+            for i in range(max_wait * 10):  # Проверяем каждые 100мс
+                if hasattr(self.bot_manager, 'live_trader') and self.bot_manager.live_trader:
+                    trader = self.bot_manager.live_trader
+                    break
+                time.sleep(0.1)
+            
             if not trader:
-                app_logger.error("[LOOP] LiveTrader not initialized in BotManager!")
-                self.root.after(0, lambda: messagebox.showerror("Error", "LiveTrader initialization failed"))
+                app_logger.error("[LOOP] LiveTrader not initialized in BotManager after 10s!")
+                self.root.after(0, lambda: messagebox.showerror("Error", "LiveTrader initialization failed - timeout"))
                 self._stop_bot()
                 return
             
