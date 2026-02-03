@@ -281,6 +281,19 @@ class BotManager:
                     validity = ai_config.get('market_analyst', {}).get('signals', {}).get('validity_minutes', 60)
                     logger.info(f"[BotManager] ✅ AI Analysis: {'Включён' if enabled else 'Отключён'} (model: {model}, validity: {validity}min)")
             
+            # Перезагрузка Trailing Stop настроек
+            trading_path = Path('config/trading.yaml')
+            if trading_path.exists():
+                with open(trading_path, 'r', encoding='utf-8') as f:
+                    trading_config = yaml.safe_load(f)
+                    trailing_enabled = trading_config.get('trading', {}).get('trailing_stop', {}).get('enabled', False)
+                    if trailing_enabled:
+                        activation = trading_config.get('trading', {}).get('trailing_stop', {}).get('activation_profit_percent', 30)
+                        stop_dist = trading_config.get('trading', {}).get('trailing_stop', {}).get('stop_distance_percent', 50)
+                        logger.info(f"[BotManager] 🔒 Trailing Stop: ✅ ВКЛЮЧЁН (активация: {activation}%, стоп: {stop_dist}%)")
+                    else:
+                        logger.info("[BotManager] 🔒 Trailing Stop: ⛔ ОТКЛЮЧЁН")
+            
             # Другие настройки (strategy, etc.) применяются автоматически
             # при следующей проверке сигналов
             
