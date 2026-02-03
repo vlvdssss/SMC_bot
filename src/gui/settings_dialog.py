@@ -421,7 +421,7 @@ class SettingsDialog:
                                                  bg=Colors.BG_CARD,
                                                  fg=Colors.SUCCESS,
                                                  insertbackground=Colors.TEXT_PRIMARY)
-        self.trail_activation_percent.insert(0, str(trailing_config.get('activation_percent', 30)))
+        self.trail_activation_percent.insert(0, str(trailing_config.get('activation_profit_percent', 30)))
         self.trail_activation_percent.pack(side='left', padx=5)
         self._bind_paste(self.trail_activation_percent)
         
@@ -1560,7 +1560,7 @@ If you received this message, Telegram notifications are configured correctly! �
             
             trading_config['trading']['trailing_stop']['enabled'] = self.trail_enabled.get()
             trading_config['trading']['trailing_stop']['activation_mode'] = self.trail_mode.get()  # 'pips' or 'percent'
-            trading_config['trading']['trailing_stop']['activation_percent'] = int(self.trail_activation_percent.get())  # NEW
+            trading_config['trading']['trailing_stop']['activation_profit_percent'] = int(self.trail_activation_percent.get())  # Процент от TP для активации
             trading_config['trading']['trailing_stop']['activation_profit_pips'] = int(self.trail_activation.get())
             trading_config['trading']['trailing_stop']['distance_pips'] = int(self.trail_distance.get())
             trading_config['trading']['trailing_stop']['step_pips'] = int(self.trail_step.get())
