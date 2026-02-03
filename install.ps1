@@ -273,6 +273,93 @@ foreach ($dir in $directories) {
 Write-Host ""
 
 # ===================================================================
+# 10. Setup .gitignore for personal configs
+# ===================================================================
+Write-InfoMessage "Checking .gitignore..."
+
+if (-not (Test-Path ".gitignore")) {
+    Write-InfoMessage "Creating .gitignore file..."
+    
+    $gitignoreContent = @"
+# Python
+__pycache__/
+*.py[cod]
+*`$py.class
+*.so
+.Python
+*.egg-info/
+dist-info/
+*.egg
+.venv/
+venv/
+ENV/
+env/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Logs
+logs/
+*.log
+
+# Data files
+data/ai_analysis/
+data/screenshots/
+data/backtest/
+data/*.json
+
+# Sensitive config (личные настройки НЕ пушатся в git)
+config/*.enc
+config/mt5.yaml
+config/telegram.yaml
+config/trading.yaml
+config/ai.yaml
+config/portfolio.yaml
+config/monitoring.yaml
+config/.env
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary
+*.tmp
+*.bak
+booom.txt
+
+# Results
+results/
+
+# Models
+models/*.pkl
+models/*.h5
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+"@
+    
+    Set-Content -Path ".gitignore" -Value $gitignoreContent -Encoding UTF8
+    Write-SuccessMessage ".gitignore created (personal configs will not be pushed to git)"
+} else {
+    Write-SuccessMessage ".gitignore already exists"
+}
+
+Write-Host ""
+
+# ===================================================================
 # Completion
 # ===================================================================
 Write-Host "========================================" -ForegroundColor Cyan
