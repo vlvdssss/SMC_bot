@@ -15,8 +15,8 @@ console:
     - ERROR     # Ошибки
 
 file:
-  # Уровень логов в файле (DEBUG = всё)
-  level: DEBUG
+  # Уровень логов в файле (INFO = без DEBUG сообщений)
+  level: INFO
   
   # Максимальный размер файла (MB)
   max_size_mb: 10
