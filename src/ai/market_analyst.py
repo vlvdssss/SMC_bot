@@ -585,13 +585,13 @@ Analyze the M5 chart NOW and give your decision!
                             
                             logger.info(f"[AI] ✅ Entry validation OK: ${entry:.2f} (distance: ${entry_distance:.2f})")
                         
-                        # FIXED PARAMETERS (V4) - Updated to enforce minimum $2 SL
+                        # FIXED PARAMETERS (V4) - Updated SL/TP for better R:R
                         MIN_SL_DISTANCE = 2.0   # Minimum $2
-                        MAX_SL_DISTANCE = 5.0   # Maximum $5
-                        FIXED_TP_DISTANCE = 10.0  # $10
+                        MAX_SL_DISTANCE = 8.0   # Maximum $8
+                        FIXED_TP_DISTANCE = 15.0  # $15
                         
-                        # Use default SL of $5, but clamp between $2-$5
-                        FIXED_SL_DISTANCE = max(MIN_SL_DISTANCE, min(MAX_SL_DISTANCE, 5.0))
+                        # Use default SL of $8, but clamp between $2-$8
+                        FIXED_SL_DISTANCE = max(MIN_SL_DISTANCE, min(MAX_SL_DISTANCE, 8.0))
                         
                         # Calculate fixed SL/TP based on direction
                         if action == "BUY":
