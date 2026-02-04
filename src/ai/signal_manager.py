@@ -823,15 +823,26 @@ class AISignalManager:
             return True
     
     def _is_price_triggered(self, signal: AISignal, current_price: float) -> bool:
-        """Check if price is close to entry level (within tolerance)."""
-        tolerance = 2.0  # $2 tolerance for entry
+        """
+        Check if price REACHED entry level (touched or passed through).
+        
+        КРИТИЧНО: Цена должна ДОСТИЧЬ entry, а не просто быть "рядом"!
+        
+        BUY: цена опустилась ДО или НИЖЕ entry
+        SELL: цена поднялась ДО или ВЫШЕ entry
+        
+        Tolerance $0.50 учитывает спред и микроколебания.
+        """
+        tolerance = 0.50  # $0.50 tolerance for spread/slippage
         
         if signal.type == "BUY":
-            # BUY: trigger when price is within ±$2 of entry
-            return abs(current_price - signal.entry_price) <= tolerance
+            # BUY trigger: цена достигла entry или НИЖЕ
+            # Entry 4930.68: trigger if price <= 4931.18
+            return current_price <= (signal.entry_price + tolerance)
         elif signal.type == "SELL":
-            # SELL: trigger when price is within ±$2 of entry
-            return abs(current_price - signal.entry_price) <= tolerance
+            # SELL trigger: цена достигла entry или ВЫШЕ
+            # Entry 2050.00: trigger if price >= 2049.50
+            return current_price >= (signal.entry_price - tolerance)
         return False
     
     def _cleanup_expired_signals(self):
