@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 """
-V4 Trailing Stop Module - Dynamic trailing with configurable activation
+V4 Trailing Stop Module - Dynamic 10% step trailing
 
-ЛОГИКА:
+НОВАЯ ЛОГИКА:
 - Активация: настраиваемая % от TP (из config, например 30%)
-- Расстояние стопа: настраиваемая % от текущей цены (из config)
-- Стоп ДВИГАЕТСЯ за ценой постоянно (не один раз!)
-- Минимальный шаг перемещения: 5% для избежания частых модификаций
+- Первый стоп: активация - 10% (30% → 20%)
+- Дальше: каждые 10% профита → стоп +10%
+- Расстояние: фиксированное 10% от TP
+
+ПРИМЕРЫ:
+1. Activation 30%:
+   - Цена +$4.5 (30%) → SL на $3.0 (20%)
+   - Цена +$6.0 (40%) → SL на $4.5 (30%)
+   - Цена +$7.5 (50%) → SL на $6.0 (40%)
+
+2. Activation 60%:
+   - Цена +$9.0 (60%) → SL на $7.5 (50%)
+   - Цена +$10.5 (70%) → SL на $9.0 (60%)
 """
 
 from src.core.logger import logger
@@ -19,13 +29,12 @@ class TrailingStopV4:
     V4 Dynamic Trailing Stop Handler.
     
     ЧИТАЕТ ИЗ config/trading.yaml:
-    - activation_profit_percent: % от TP для активации (30% = $4.5)
-    - stop_distance_percent: % от TP для расстояния стопа (50% = $7.5)
+    - activation_profit_percent: % от TP для активации (30%)
     
-    ДИНАМИЧЕСКОЕ ДВИЖЕНИЕ:
-    - После активации стоп следует за ценой
-    - Каждые 5% минимум ($0.75) - обновление
-    - Только в сторону профита (BUY вверх, SELL вниз)
+    ФИКСИРОВАННЫЕ ПАРАМЕТРЫ:
+    - Первый стоп: activation - 10%
+    - Шаг движения: 10% от TP
+    - Дистанция стопа: 10% от TP
     """
     
     def __init__(self, mt5_connector, telegram_notifier=None):
@@ -36,9 +45,10 @@ class TrailingStopV4:
         # Load config
         self._load_config()
         
-        logger.info(f"[V4-Trailing] Initialized DYNAMIC MODE")
+        logger.info(f"[V4-Trailing] Initialized DYNAMIC 10% STEP MODE")
         logger.info(f"[V4-Trailing]    Activation: {self.activation_percent}% of TP")
-        logger.info(f"[V4-Trailing]    Stop Distance: {self.stop_percent}% of TP")
+        logger.info(f"[V4-Trailing]    First Stop: {self.first_stop_percent}% (activation - 10%)")
+        logger.info(f"[V4-Trailing]    Trailing Step: 10% every 10% profit")
     
     def _load_config(self):
         """Load trailing stop parameters from trading.yaml"""
@@ -49,52 +59,59 @@ class TrailingStopV4:
                     config = yaml.safe_load(f)
                     trailing_config = config.get('trading', {}).get('trailing_stop', {})
                     
-                    # Read percentages from config (default to 30% and 50%)
+                    # Read activation from config (default 30%)
                     self.activation_percent = trailing_config.get('activation_profit_percent', 30)
-                    self.stop_percent = trailing_config.get('stop_distance_percent', 50)
                     
-                    # Convert to decimal (30 -> 0.3)
+                    # Первый стоп: activation - 10%
+                    self.first_stop_percent = max(0, self.activation_percent - 10)
+                    
+                    # Convert to decimal
                     self.ACTIVATION_PERCENT = self.activation_percent / 100.0
-                    self.STOP_DISTANCE = self.stop_percent / 100.0
+                    self.FIRST_STOP_PERCENT = self.first_stop_percent / 100.0
                     
-                    # Минимальный шаг перемещения (5% от TP)
-                    self.MIN_MOVE_PERCENT = 0.05
+                    # ФИКСИРОВАННЫЕ параметры: 10% шаг
+                    self.TRAILING_STEP_PERCENT = 0.10  # 10% шаг
+                    self.STOP_DISTANCE_PERCENT = 0.10  # 10% от цены
                     
-                    logger.info(f"[V4-Trailing] Loaded from config: activation={self.activation_percent}%, stop={self.stop_percent}%")
+                    logger.info(f"[V4-Trailing] Config loaded: activation={self.activation_percent}%, first_stop={self.first_stop_percent}%")
             else:
                 # Fallback to defaults
                 self.activation_percent = 30
-                self.stop_percent = 50
+                self.first_stop_percent = 20
                 self.ACTIVATION_PERCENT = 0.3
-                self.STOP_DISTANCE = 0.5
-                self.MIN_MOVE_PERCENT = 0.05
-                logger.warning("[V4-Trailing] Config not found, using defaults: 30%/50%")
+                self.FIRST_STOP_PERCENT = 0.2
+                self.TRAILING_STEP_PERCENT = 0.10
+                self.STOP_DISTANCE_PERCENT = 0.10
+                logger.warning("[V4-Trailing] Config not found, using defaults: 30% activation, 20% first stop")
         except Exception as e:
             logger.error(f"[V4-Trailing] Failed to load config: {e}")
             # Fallback
             self.activation_percent = 30
-            self.stop_percent = 50
+            self.first_stop_percent = 20
             self.ACTIVATION_PERCENT = 0.3
-            self.STOP_DISTANCE = 0.5
-            self.MIN_MOVE_PERCENT = 0.05
+            self.FIRST_STOP_PERCENT = 0.2
+            self.TRAILING_STEP_PERCENT = 0.10
+            self.STOP_DISTANCE_PERCENT = 0.10
     
     def check_and_apply(self, tracked_positions: dict) -> None:
         """
-        ДИНАМИЧЕСКИЙ TRAILING STOP с настраиваемой активацией.
+        ДИНАМИЧЕСКИЙ TRAILING STOP - шаг 10% каждые 10% профита.
         
-        ЛОГИКА (пример для 30% активация, 50% расстояние):
-        - TP = $15 от entry
-        - Активация: цена прошла $4.5 (30% от $15)
-        - Стоп ставится: на расстоянии $7.5 от entry (50% от $15)
-        - При росте цены: стоп ДВИГАЕТСЯ сохраняя $7.5 от текущей цены
+        ЛОГИКА (для activation 30%, TP $15):
+        - Активация: цена +$4.5 (30%) → SL на entry + $3.0 (20%)
+        - Цена +$6.0 (40%) → SL на entry + $4.5 (30%)
+        - Цена +$7.5 (50%) → SL на entry + $6.0 (40%)
+        - Каждые +$1.5 (10%) → стоп +$1.5 (10%)
         
-        ПРИМЕР (entry 5000, TP 5015, activation 30%, distance 50%):
-        - Цена 5004.5 → SL 5000.0 (активация! entry + 0%)
-        - Цена 5006.0 → SL 5001.5 (двигается! держит $7.5 от 5006)
-        - Цена 5008.0 → SL 5003.5 (двигается! держит $7.5 от 5008)
-        - Цена 5010.0 → SL 5005.5 (двигается!)
+        ПРИМЕРЫ:
+        1. Entry 5000, TP 5015 (activation 30%):
+           - Цена 5004.5 → SL 5003.0 (первый стоп 20%)
+           - Цена 5006.0 → SL 5004.5 (стоп 30%)
+           - Цена 5007.5 → SL 5006.0 (стоп 40%)
         
-        Минимальный шаг: 5% от TP ($0.75) - избегаем частых модификаций
+        2. Entry 5000, TP 5015 (activation 60%):
+           - Цена 5009.0 → SL 5007.5 (первый стоп 50%)
+           - Цена 5010.5 → SL 5009.0 (стоп 60%)
         
         Args:
             tracked_positions: Dict of {ticket: position_info}
@@ -119,111 +136,111 @@ class TrailingStopV4:
             tp = pos_info.get('tp', entry + 15.0 if direction == 'BUY' else entry - 15.0)
             tp_distance = abs(tp - entry)
             
-            # Calculate thresholds based on config percentages
-            activation_threshold = tp_distance * self.ACTIVATION_PERCENT  # 30% = $4.5
-            stop_distance = tp_distance * self.STOP_DISTANCE              # 50% = $7.5
-            min_move = tp_distance * self.MIN_MOVE_PERCENT                # 5% = $0.75
+            # Calculate thresholds
+            activation_threshold = tp_distance * self.ACTIVATION_PERCENT      # 30% = $4.5
+            first_stop_distance = tp_distance * self.FIRST_STOP_PERCENT       # 20% = $3.0
+            trailing_step = tp_distance * self.TRAILING_STEP_PERCENT          # 10% = $1.5
             
             if direction == 'BUY':
                 current_profit = current_price - entry
                 
-                # Проверка активации: профит >= activation_threshold
+                # Проверка активации
                 if current_profit >= activation_threshold:
-                    # ДИНАМИЧЕСКИЙ РАСЧЁТ: стоп на расстоянии stop_distance от ТЕКУЩЕЙ ЦЕНЫ
-                    # Но при первой активации - от entry
-                    if not pos_info.get('v4_trailing_activated', False):
-                        # Первая активация: SL = entry + 0 (breakeven)
-                        new_sl = entry
-                    else:
-                        # Уже активирован: SL следует за ценой
-                        new_sl = current_price - stop_distance
+                    # Вычисляем новый SL на основе текущего профита
+                    # Профит $4.5 → SL на $3.0 (первый стоп 20%)
+                    # Профит $6.0 → SL на $4.5 (стоп 30%)
+                    # Профит $7.5 → SL на $6.0 (стоп 40%)
                     
-                    # Двигаем ТОЛЬКО ВВЕРХ (защита от возврата назад)
+                    # Сколько "шагов" по 10% прошла цена после активации?
+                    profit_above_activation = current_profit - activation_threshold
+                    steps = int(profit_above_activation / trailing_step)
+                    
+                    # Новый SL = entry + первый_стоп + (шаги * 10%)
+                    new_sl = entry + first_stop_distance + (steps * trailing_step)
+                    
+                    # Двигаем ТОЛЬКО ВВЕРХ
                     if new_sl > current_sl:
-                        # Проверка минимального шага (избегаем частых модификаций)
-                        sl_improvement = new_sl - current_sl
+                        profit_percent = (current_profit / tp_distance) * 100
+                        sl_percent = ((new_sl - entry) / tp_distance) * 100
                         
-                        if sl_improvement >= min_move or not pos_info.get('v4_trailing_activated', False):
-                            logger.info(f"[V4-Trailing] 📈 BUY #{ticket} - Moving SL")
-                            logger.info(f"[V4-Trailing]    Current: Price ${current_price:.2f}, SL ${current_sl:.2f}")
-                            logger.info(f"[V4-Trailing]    Profit: ${current_profit:.2f} (entry ${entry:.2f})")
-                            logger.info(f"[V4-Trailing]    New SL: ${new_sl:.2f} (price - ${stop_distance:.2f})")
+                        logger.info(f"[V4-Trailing] 📈 BUY #{ticket} - Moving SL")
+                        logger.info(f"[V4-Trailing]    Price: ${current_price:.2f} (profit: ${current_profit:.2f} = {profit_percent:.0f}%)")
+                        logger.info(f"[V4-Trailing]    New SL: ${new_sl:.2f} (${new_sl - entry:.2f} = {sl_percent:.0f}% from entry)")
+                        logger.info(f"[V4-Trailing]    Steps: {steps} x 10% after activation")
+                        
+                        if self._modify_sl(ticket, new_sl, symbol):
+                            pos_info['current_sl'] = new_sl
                             
-                            if self._modify_sl(ticket, new_sl, symbol):
-                                pos_info['current_sl'] = new_sl
-                                
-                                # Первая активация?
-                                first_activation = not pos_info.get('v4_trailing_activated', False)
-                                pos_info['v4_trailing_activated'] = True
-                                
-                                logger.info(f"[V4-Trailing] ✅ SL Updated: ${current_sl:.2f} → ${new_sl:.2f}")
-                                
-                                # Уведомление в Telegram
-                                if self.telegram:
-                                    emoji = "🎯" if first_activation else "📈"
-                                    status = "ACTIVATED" if first_activation else "UPDATED"
-                                    message = (
-                                        f"{emoji} <b>Trailing Stop {status}</b>\n\n"
-                                        f"Symbol: <b>{symbol}</b> BUY\n"
-                                        f"Ticket: #{ticket}\n\n"
-                                        f"💰 Profit: <b>${current_profit:.2f}</b>\n"
-                                        f"📊 Price: ${current_price:.2f}\n"
-                                        f"🔒 SL: ${current_sl:.2f} → ${new_sl:.2f}\n"
-                                        f"📏 Distance: ${stop_distance:.2f} ({self.stop_percent}%)"
-                                    )
-                                    self.telegram.send_message(message)
-                            else:
-                                logger.error(f"[V4-Trailing] ❌ Failed to modify SL")
+                            # Первая активация?
+                            first_activation = not pos_info.get('v4_trailing_activated', False)
+                            pos_info['v4_trailing_activated'] = True
+                            
+                            logger.info(f"[V4-Trailing] ✅ SL Updated: ${current_sl:.2f} → ${new_sl:.2f}")
+                            
+                            # Уведомление в Telegram
+                            if self.telegram:
+                                emoji = "🎯" if first_activation else "📈"
+                                status = "ACTIVATED" if first_activation else "UPDATED"
+                                message = (
+                                    f"{emoji} <b>Trailing Stop {status}</b>\n\n"
+                                    f"Symbol: <b>{symbol}</b> BUY\n"
+                                    f"Ticket: #{ticket}\n\n"
+                                    f"💰 Profit: <b>${current_profit:.2f}</b> ({profit_percent:.0f}%)\n"
+                                    f"📊 Price: ${current_price:.2f}\n"
+                                    f"🔒 SL: ${current_sl:.2f} → ${new_sl:.2f}\n"
+                                    f"📏 SL Position: {sl_percent:.0f}% from entry"
+                                )
+                                self.telegram.send_message(message)
+                        else:
+                            logger.error(f"[V4-Trailing] ❌ Failed to modify SL")
             
             elif direction == 'SELL':
                 current_profit = entry - current_price
                 
-                # Проверка активации: профит >= activation_threshold
+                # Проверка активации
                 if current_profit >= activation_threshold:
-                    # ДИНАМИЧЕСКИЙ РАСЧЁТ: стоп на расстоянии stop_distance от ТЕКУЩЕЙ ЦЕНЫ
-                    if not pos_info.get('v4_trailing_activated', False):
-                        # Первая активация: SL = entry (breakeven)
-                        new_sl = entry
-                    else:
-                        # Уже активирован: SL следует за ценой
-                        new_sl = current_price + stop_distance
+                    # Аналогично для SELL
+                    profit_above_activation = current_profit - activation_threshold
+                    steps = int(profit_above_activation / trailing_step)
                     
-                    # Двигаем ТОЛЬКО ВНИЗ (защита от возврата назад)
+                    # Новый SL = entry - первый_стоп - (шаги * 10%)
+                    new_sl = entry - first_stop_distance - (steps * trailing_step)
+                    
+                    # Двигаем ТОЛЬКО ВНИЗ
                     if new_sl < current_sl:
-                        # Проверка минимального шага
-                        sl_improvement = current_sl - new_sl
+                        profit_percent = (current_profit / tp_distance) * 100
+                        sl_percent = ((entry - new_sl) / tp_distance) * 100
                         
-                        if sl_improvement >= min_move or not pos_info.get('v4_trailing_activated', False):
-                            logger.info(f"[V4-Trailing] 📉 SELL #{ticket} - Moving SL")
-                            logger.info(f"[V4-Trailing]    Current: Price ${current_price:.2f}, SL ${current_sl:.2f}")
-                            logger.info(f"[V4-Trailing]    Profit: ${current_profit:.2f} (entry ${entry:.2f})")
-                            logger.info(f"[V4-Trailing]    New SL: ${new_sl:.2f} (price + ${stop_distance:.2f})")
+                        logger.info(f"[V4-Trailing] 📉 SELL #{ticket} - Moving SL")
+                        logger.info(f"[V4-Trailing]    Price: ${current_price:.2f} (profit: ${current_profit:.2f} = {profit_percent:.0f}%)")
+                        logger.info(f"[V4-Trailing]    New SL: ${new_sl:.2f} (${entry - new_sl:.2f} = {sl_percent:.0f}% from entry)")
+                        logger.info(f"[V4-Trailing]    Steps: {steps} x 10% after activation")
+                        
+                        if self._modify_sl(ticket, new_sl, symbol):
+                            pos_info['current_sl'] = new_sl
                             
-                            if self._modify_sl(ticket, new_sl, symbol):
-                                pos_info['current_sl'] = new_sl
-                                
-                                # Первая активация?
-                                first_activation = not pos_info.get('v4_trailing_activated', False)
-                                pos_info['v4_trailing_activated'] = True
-                                
-                                logger.info(f"[V4-Trailing] ✅ SL Updated: ${current_sl:.2f} → ${new_sl:.2f}")
-                                
-                                # Уведомление в Telegram
-                                if self.telegram:
-                                    emoji = "🎯" if first_activation else "📉"
-                                    status = "ACTIVATED" if first_activation else "UPDATED"
-                                    message = (
-                                        f"{emoji} <b>Trailing Stop {status}</b>\n\n"
-                                        f"Symbol: <b>{symbol}</b> SELL\n"
-                                        f"Ticket: #{ticket}\n\n"
-                                        f"💰 Profit: <b>${current_profit:.2f}</b>\n"
-                                        f"📊 Price: ${current_price:.2f}\n"
-                                        f"🔒 SL: ${current_sl:.2f} → ${new_sl:.2f}\n"
-                                        f"📏 Distance: ${stop_distance:.2f} ({self.stop_percent}%)"
-                                    )
-                                    self.telegram.send_message(message)
-                            else:
-                                logger.error(f"[V4-Trailing] ❌ Failed to modify SL")
+                            # Первая активация?
+                            first_activation = not pos_info.get('v4_trailing_activated', False)
+                            pos_info['v4_trailing_activated'] = True
+                            
+                            logger.info(f"[V4-Trailing] ✅ SL Updated: ${current_sl:.2f} → ${new_sl:.2f}")
+                            
+                            # Уведомление в Telegram
+                            if self.telegram:
+                                emoji = "🎯" if first_activation else "📉"
+                                status = "ACTIVATED" if first_activation else "UPDATED"
+                                message = (
+                                    f"{emoji} <b>Trailing Stop {status}</b>\n\n"
+                                    f"Symbol: <b>{symbol}</b> SELL\n"
+                                    f"Ticket: #{ticket}\n\n"
+                                    f"💰 Profit: <b>${current_profit:.2f}</b> ({profit_percent:.0f}%)\n"
+                                    f"📊 Price: ${current_price:.2f}\n"
+                                    f"🔒 SL: ${current_sl:.2f} → ${new_sl:.2f}\n"
+                                    f"📏 SL Position: {sl_percent:.0f}% from entry"
+                                )
+                                self.telegram.send_message(message)
+                        else:
+                            logger.error(f"[V4-Trailing] ❌ Failed to modify SL")
     
     def _modify_sl(self, ticket: int, new_sl: float, symbol: str) -> bool:
         """
