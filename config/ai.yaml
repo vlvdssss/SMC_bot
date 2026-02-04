@@ -14,9 +14,9 @@ market_analyst:
     on_error: warning
     use_stale_analysis: true
   gpt:
-    max_tokens: 2000
+    max_tokens: 4000
     model: gpt-4o
-    temperature: 0.3
+    temperature: 0.4
   prompt_version: 2026-01
   safety:
     max_daily_calls: 50

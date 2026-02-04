@@ -100,7 +100,22 @@ class MarketAnalystService:
         self.screenshot_service = ChartScreenshotService()
         self.news_fetcher = RealTimeNewsFetcher()
         
+        # Load config for GPT settings
+        self.config = self._load_config()
+        
         logger.info(f"[AI] MarketAnalystService v{self.ANALYSIS_VERSION} initialized")
+    
+    def _load_config(self) -> dict:
+        """Load AI config from ai.yaml."""
+        try:
+            import yaml
+            config_path = Path("config/ai.yaml")
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    return yaml.safe_load(f) or {}
+        except Exception as e:
+            logger.warning(f"[AI] Failed to load config: {e}")
+        return {}
     
     def is_gpt_available(self) -> bool:
         """Check if GPT is available for trading."""
@@ -379,11 +394,17 @@ Analyze the M5 chart NOW and give your decision!
             
             for attempt in range(1, max_retries + 1):
                 try:
+                    # Load from config or use defaults
+                    gpt_config = self.config.get('market_analyst', {}).get('gpt', {})
+                    max_tokens = gpt_config.get('max_tokens', 4000)
+                    temperature = gpt_config.get('temperature', 0.4)
+                    model = gpt_config.get('model', 'gpt-4o')
+                    
                     response = self.client.chat.completions.create(
-                        model="gpt-4o",  # or "gpt-4-vision-preview"
+                        model=model,
                         messages=messages,
-                        max_tokens=2000,
-                        temperature=0.3  # Lower temperature for more consistent analysis
+                        max_tokens=max_tokens,
+                        temperature=temperature
                     )
                     
                     logger.info("[AI] ✅ Received response from OpenAI")
