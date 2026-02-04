@@ -42,7 +42,7 @@ class PureAITrader:
     MAX_TRADES_PER_DAY = 5  # Максимум сделок в день
     COOLDOWN_HOURS = 2  # Пауза между сделками одного символа
     
-    def __init__(self, api_key: str = None, executor=None, analysis_interval_hours: int = None):
+    def __init__(self, api_key: str = None, executor=None, analysis_interval_hours: int = None, telegram_notifier=None):
         """
         Initialize Pure AI Trader.
         
@@ -50,6 +50,7 @@ class PureAITrader:
             api_key: OpenAI API key
             executor: Executor instance for trade execution
             analysis_interval_hours: Интервал анализа в часах (по умолчанию 5)
+            telegram_notifier: TelegramNotifier для уведомлений о price invalidation
         """
         self.api_key = api_key
         self.executor = executor
@@ -60,7 +61,7 @@ class PureAITrader:
         
         # Инициализация сервисов
         self.analyst = MarketAnalystService(api_key=api_key)
-        self.signal_manager = AISignalManager()
+        self.signal_manager = AISignalManager(telegram_notifier=telegram_notifier)
         
         # Состояние
         self.running = False

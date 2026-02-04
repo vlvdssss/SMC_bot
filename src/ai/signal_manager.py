@@ -89,13 +89,16 @@ class AISignalManager:
     Manages signals, blocks, and risk multipliers based on AI analysis.
     """
     
-    def __init__(self):
+    def __init__(self, telegram_notifier=None):
         """Initialize Signal Manager v2.0."""
         self.signals_dir = Path("data/ai_signals")
         self.signals_dir.mkdir(parents=True, exist_ok=True)
         
         # Load AI config
         self.config = self._load_config()
+        
+        # Telegram notifier for price invalidation alerts
+        self.telegram = telegram_notifier
         
         self.active_signals: List[AISignal] = []
         self.signal_history: List[Dict] = []
@@ -743,7 +746,26 @@ class AISignalManager:
                 if price_diff > 30:  # 30 pips
                     signal.status = "price_invalidated"
                     expired_signals.append(signal)
-                    logger.info(f"[AI-Signal] Signal {signal.id} invalidated (price moved {price_diff:.1f} pips from entry)")
+                    logger.warning(f"[AI-Signal] ❌ Signal {signal.id} INVALIDATED: Price moved {price_diff:.1f} pips from entry (limit: 30)")
+                    logger.warning(f"[AI-Signal] Entry: ${signal.entry_price:.2f}, Current: ${current_price:.2f}, Diff: ${abs(current_price - signal.entry_price):.2f}")
+                    
+                    # Send Telegram notification
+                    if self.telegram:
+                        msg = (
+                            f"⚠️ СИГНАЛ ОТМЕНЁН\n\n"
+                            f"Причина: Цена ушла слишком далеко от входа\n\n"
+                            f"Сигнал: {signal.type} {symbol}\n"
+                            f"Entry: ${signal.entry_price:.2f}\n"
+                            f"Текущая цена: ${current_price:.2f}\n"
+                            f"Расстояние: ${abs(current_price - signal.entry_price):.2f} ({price_diff:.1f} pips)\n"
+                            f"Лимит: 30 pips\n\n"
+                            f"Через 5 минут будет новый анализ."
+                        )
+                        try:
+                            self.telegram.send_message(msg)
+                        except Exception as e:
+                            logger.error(f"Failed to send Telegram notification: {e}")
+                    
                     price_invalidated = True
                     continue
                 
@@ -753,13 +775,53 @@ class AISignalManager:
                 if signal.type == "BUY" and (current_price - signal.entry_price) * pip_multiplier > 20:
                     signal.status = "price_invalidated"
                     expired_signals.append(signal)
-                    logger.info(f"[AI-Signal] BUY signal {signal.id} invalidated (price already ran up {price_diff:.1f} pips above entry)")
+                    pips_above = (current_price - signal.entry_price) * pip_multiplier
+                    logger.warning(f"[AI-Signal] ❌ BUY signal {signal.id} INVALIDATED: Price ran up {pips_above:.1f} pips above entry (limit: 20)")
+                    logger.warning(f"[AI-Signal] Entry: ${signal.entry_price:.2f}, Current: ${current_price:.2f} → Упущена возможность входа")
+                    
+                    # Send Telegram notification
+                    if self.telegram:
+                        msg = (
+                            f"⚠️ BUY СИГНАЛ ОТМЕНЁН\n\n"
+                            f"Причина: Цена убежала вверх от entry\n\n"
+                            f"Entry: ${signal.entry_price:.2f}\n"
+                            f"Текущая цена: ${current_price:.2f}\n"
+                            f"Цена выше на: ${current_price - signal.entry_price:.2f} ({pips_above:.1f} pips)\n"
+                            f"Лимит: 20 pips\n\n"
+                            f"Упущена возможность входа.\n"
+                            f"Через 5 минут будет новый анализ."
+                        )
+                        try:
+                            self.telegram.send_message(msg)
+                        except Exception as e:
+                            logger.error(f"Failed to send Telegram notification: {e}")
+                    
                     price_invalidated = True
                     continue
                 elif signal.type == "SELL" and (signal.entry_price - current_price) * pip_multiplier > 20:
                     signal.status = "price_invalidated"
                     expired_signals.append(signal)
-                    logger.info(f"[AI-Signal] SELL signal {signal.id} invalidated (price already ran down {price_diff:.1f} pips below entry)")
+                    pips_below = (signal.entry_price - current_price) * pip_multiplier
+                    logger.warning(f"[AI-Signal] ❌ SELL signal {signal.id} INVALIDATED: Price ran down {pips_below:.1f} pips below entry (limit: 20)")
+                    logger.warning(f"[AI-Signal] Entry: ${signal.entry_price:.2f}, Current: ${current_price:.2f} → Упущена возможность входа")
+                    
+                    # Send Telegram notification
+                    if self.telegram:
+                        msg = (
+                            f"⚠️ SELL СИГНАЛ ОТМЕНЁН\n\n"
+                            f"Причина: Цена убежала вниз от entry\n\n"
+                            f"Entry: ${signal.entry_price:.2f}\n"
+                            f"Текущая цена: ${current_price:.2f}\n"
+                            f"Цена ниже на: ${signal.entry_price - current_price:.2f} ({pips_below:.1f} pips)\n"
+                            f"Лимит: 20 pips\n\n"
+                            f"Упущена возможность входа.\n"
+                            f"Через 5 минут будет новый анализ."
+                        )
+                        try:
+                            self.telegram.send_message(msg)
+                        except Exception as e:
+                            logger.error(f"Failed to send Telegram notification: {e}")
+                    
                     price_invalidated = True
                     continue
                 

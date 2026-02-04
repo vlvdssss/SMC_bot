@@ -81,12 +81,6 @@ class BotManager:
         
         # Signal Manager для управления AI сигналами
         self.signal_manager = None
-        try:
-            from src.ai.signal_manager import AISignalManager
-            self.signal_manager = AISignalManager()
-            logger.info("[BotManager] Signal Manager initialized")
-        except Exception as e:
-            logger.warning(f"[BotManager] Failed to init Signal Manager: {e}")
         
         # Логи для веб-интерфейса
         self.logs: list = []
@@ -187,6 +181,15 @@ class BotManager:
                 
                 # Инициализация AlertManager
                 self.alert_manager = AlertManager()
+                
+                # Инициализируем Signal Manager с Telegram
+                if not self.signal_manager:
+                    try:
+                        from src.ai.signal_manager import AISignalManager
+                        self.signal_manager = AISignalManager(telegram_notifier=self.telegram)
+                        logger.info("[BotManager] Signal Manager initialized with Telegram notifications")
+                    except Exception as e:
+                        logger.warning(f"[BotManager] Failed to init Signal Manager: {e}")
                 
                 # Связываем AlertManager с Telegram
                 def telegram_alert_handler(alert):

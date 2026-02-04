@@ -129,7 +129,9 @@ class LiveTrader:
         if AI_SIGNAL_MANAGER_AVAILABLE:
             try:
                 logger.info("[LiveTrader] Initializing AI Signal Manager...")
-                self.ai_signal_manager = AISignalManager()
+                # Передаем telegram_notifier если он уже инициализирован
+                telegram_for_signals = getattr(self, 'telegram', None)
+                self.ai_signal_manager = AISignalManager(telegram_notifier=telegram_for_signals)
                 # Set executor reference for position checks
                 self.ai_signal_manager.set_executor(self.executor)
                 
@@ -389,6 +391,11 @@ class LiveTrader:
             
             # AlertManager
             self.alert_manager = AlertManager()
+            
+            # Обновляем telegram в AI Signal Manager если он был создан ранее
+            if self.ai_signal_manager and self.telegram:
+                self.ai_signal_manager.telegram = self.telegram
+                logger.info("[LiveTrader] Telegram notifier set to AI Signal Manager")
             
             # Связываем с Telegram
             def telegram_alert_handler(alert):
