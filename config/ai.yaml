@@ -23,7 +23,7 @@ market_analyst:
     max_monthly_cost: 50.0
     min_minutes_between_calls: 15
   schedule:
-    enabled: false  # Отключен регулярный интервал - анализ только при событиях (TTL, закрытие сделки)
+    enabled: false
     interval_minutes: 60
     mode: interval
     restrictions:
@@ -50,7 +50,7 @@ market_analyst:
     auto_cleanup: true
     confidence_decay: true
     default_ttl_hours: 24
-    min_confidence: 75  # Увеличено с 70 для уменьшения количества сделок
+    min_confidence: 75
     min_rr: 1.5
     validity_minutes: 60
 news_filter:
