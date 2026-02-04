@@ -826,24 +826,21 @@ class AISignalManager:
         """
         Check if price REACHED entry level (touched or passed through).
         
-        КРИТИЧНО: Цена должна ДОСТИЧЬ entry, а не просто быть "рядом"!
+        КРИТИЧНО: Entry - это ЦЕЛЕВАЯ ЦЕНА для входа.
+        Цена должна ПРИЙТИ к entry, независимо от направления.
         
-        BUY: цена опустилась ДО или НИЖЕ entry
-        SELL: цена поднялась ДО или ВЫШЕ entry
+        BUY @ 4930: если price сейчас 4935 → ждем опустится к 4930 → trigger when <= 4930.50
+        SELL @ 4926: если price сейчас 4927 → ждем опустится к 4926 → trigger when <= 4926.50
         
-        Tolerance $0.50 учитывает спред и микроколебания.
+        ДЛЯ ОБОИХ: цена должна достичь entry (price <= entry + tolerance)
         """
         tolerance = 0.50  # $0.50 tolerance for spread/slippage
         
-        if signal.type == "BUY":
-            # BUY trigger: цена достигла entry или НИЖЕ
-            # Entry 4930.68: trigger if price <= 4931.18
-            return current_price <= (signal.entry_price + tolerance)
-        elif signal.type == "SELL":
-            # SELL trigger: цена достигла entry или ВЫШЕ
-            # Entry 2050.00: trigger if price >= 2049.50
-            return current_price >= (signal.entry_price - tolerance)
-        return False
+        # Для ОБОИХ направлений: цена должна прийти к entry
+        # Entry - это ЦЕЛЕВАЯ ЦЕНА входа
+        triggered = current_price <= (signal.entry_price + tolerance)
+        
+        return triggered
     
     def _cleanup_expired_signals(self):
         """Remove expired signals and trigger auto-requery if configured."""

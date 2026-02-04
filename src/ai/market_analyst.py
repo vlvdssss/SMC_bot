@@ -334,7 +334,7 @@ Look at the LAST 20-30 M5 candles. Find quick scalping setups based on:
 **CRITICAL (V4 REQUIREMENTS):**
 1. **SL/TP are FIXED** - system will calculate automatically as entry ± $5/$10
 2. Entry must be close to current price (within $1)
-3. If confidence <70% → action = NONE (V4: higher threshold for M5)
+3. **ALWAYS return BUY or SELL** - even with low confidence, pick the most likely direction
 4. Focus on LAST 20-30 candles only (not full chart history)
 5. Look for quick reversals and momentum - this is scalping!
 6. Return ONLY valid JSON, no extra text

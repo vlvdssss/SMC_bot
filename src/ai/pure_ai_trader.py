@@ -248,10 +248,8 @@ class PureAITrader:
                 logger.warning(f"[PureAI] Invalid prices: Entry={entry_price}, SL={stop_loss}, TP={take_profit}")
                 return
             
-            # Проверяем минимальную уверенность
-            if confidence < self.MIN_CONFIDENCE:
-                logger.info(f"[PureAI] {symbol} signal confidence too low: {confidence}% < {self.MIN_CONFIDENCE}%")
-                return
+            # Confidence filtering removed - accept all valid signals
+            logger.info(f"[PureAI] {symbol} signal confidence: {confidence}% (filtering disabled)")
             
             # Проверяем дубликаты через signal manager
             if self.signal_manager.is_duplicate_signal(
