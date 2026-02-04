@@ -681,6 +681,24 @@ class LiveTrader:
     def execute_trade(self, symbol: str, signal: dict):
         """Исполнение сделки."""
         try:
+            # КРИТИЧНО: Проверяем статус сигнала - prevent duplicate trades
+            signal_id = signal.get('ai_signal_id')
+            if signal_id and self.ai_signal_manager:
+                # Проверяем что сигнал еще pending (не filled/triggered)
+                active_signals = self.ai_signal_manager.get_active_signals(symbol=symbol)
+                signal_found = False
+                for s in active_signals:
+                    if s.get('id') == signal_id:
+                        if s.get('status') != 'pending':
+                            logger.warning(f"[TRADE] Signal {signal_id} already {s.get('status')} - ignoring")
+                            return None
+                        signal_found = True
+                        break
+                
+                if not signal_found:
+                    logger.warning(f"[TRADE] Signal {signal_id} not found in active signals - ignoring")
+                    return None
+            
             # Safety: Check GPT availability before trading
             if hasattr(self, 'analyst_scheduler') and self.analyst_scheduler:
                 analyst = getattr(self.analyst_scheduler, 'analyst', None)

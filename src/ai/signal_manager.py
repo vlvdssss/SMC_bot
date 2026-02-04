@@ -598,15 +598,18 @@ class AISignalManager:
             if not self._validate_signal(signal_data):
                 return None
             
-            # Проверяем дубликаты
-            if self.is_duplicate_signal(
-                symbol=symbol,
-                signal_type=signal_data["type"],
-                entry_price=signal_data["entry_price"]
-            ):
-                # Проверяем, может обновить существующий если уверенность выше
-                self._try_update_signal(symbol, signal_data)
-                return None
+            # КРИТИЧНО: Удаляем ВСЕ старые сигналы для этого символа
+            # Гарантия: только ОДИН активный сигнал на символ
+            with self._lock:
+                removed_count = 0
+                for existing in list(self.active_signals):
+                    if existing.symbol == symbol:
+                        self.active_signals.remove(existing)
+                        removed_count += 1
+                        logger.info(f"[AI-Signal] Removed old signal {existing.id} for {symbol}")
+                
+                if removed_count > 0:
+                    logger.info(f"[AI-Signal] Cleared {removed_count} old signals for {symbol}")
             
             # Создаем новый сигнал
             version = analysis.get("analysis_version", "2.0")
@@ -614,6 +617,11 @@ class AISignalManager:
             
             with self._lock:
                 self.active_signals.append(signal)
+                
+                # ПРОВЕРКА: только 1 сигнал для символа
+                symbol_signals = [s for s in self.active_signals if s.symbol == symbol]
+                if len(symbol_signals) > 1:
+                    logger.error(f"[AI-Signal] CRITICAL: Multiple signals for {symbol}! Count: {len(symbol_signals)}")
                 
                 # Log to history
                 self.signal_history.append({
