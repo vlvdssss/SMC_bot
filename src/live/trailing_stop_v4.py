@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-V4 Trailing Stop Module - Dynamic trailing every 10% profit
+V4 Trailing Stop Module - Dynamic trailing with configurable activation
 
-НОВАЯ ЛОГИКА:
-- TP $15 = 100% профита
-- При достижении 10% ($1.5) - активация trailing stop
-- Дальше каждые 10% ($1.5) - стоп двигается за ценой
-- Стоп всегда на расстоянии 10% ($1.5) ОТ ТЕКУЩЕЙ ЦЕНЫ
+ЛОГИКА:
+- Активация: настраиваемая % от TP (из config, например 30%)
+- Расстояние стопа: настраиваемая % от текущей цены (из config)
+- Стоп ДВИГАЕТСЯ за ценой постоянно (не один раз!)
+- Минимальный шаг перемещения: 5% для избежания частых модификаций
 """
 
 from src.core.logger import logger
@@ -18,10 +18,14 @@ class TrailingStopV4:
     """
     V4 Dynamic Trailing Stop Handler.
     
-    ЛОГИКА:
-    - Активация: 10% от TP ($1.5 из $15)
-    - Шаг перемещения: каждые 10% ($1.5)
-    - Расстояние стопа: 10% от текущей цены
+    ЧИТАЕТ ИЗ config/trading.yaml:
+    - activation_profit_percent: % от TP для активации (30% = $4.5)
+    - stop_distance_percent: % от TP для расстояния стопа (50% = $7.5)
+    
+    ДИНАМИЧЕСКОЕ ДВИЖЕНИЕ:
+    - После активации стоп следует за ценой
+    - Каждые 5% минимум ($0.75) - обновление
+    - Только в сторону профита (BUY вверх, SELL вниз)
     """
     
     def __init__(self, mt5_connector, telegram_notifier=None):
@@ -29,32 +33,68 @@ class TrailingStopV4:
         self.mt5 = mt5_connector
         self.telegram = telegram_notifier
         
-        # Fixed parameters for $15 TP
-        self.ACTIVATION_PERCENT = 0.10   # 10% - активация ($1.5)
-        self.TRAILING_STEP = 0.10        # 10% - шаг перемещения ($1.5)
-        self.STOP_DISTANCE = 0.10        # 10% - расстояние стопа от цены
+        # Load config
+        self._load_config()
         
-        logger.info(f"[V4-Trailing] Initialized DYNAMIC MODE (10% activation, 10% trailing step)")
+        logger.info(f"[V4-Trailing] Initialized DYNAMIC MODE")
+        logger.info(f"[V4-Trailing]    Activation: {self.activation_percent}% of TP")
+        logger.info(f"[V4-Trailing]    Stop Distance: {self.stop_percent}% of TP")
     
     def _load_config(self):
-        """Config loading not used - fixed 10% parameters"""
-        pass
+        """Load trailing stop parameters from trading.yaml"""
+        try:
+            config_path = Path('config/trading.yaml')
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f)
+                    trailing_config = config.get('trading', {}).get('trailing_stop', {})
+                    
+                    # Read percentages from config (default to 30% and 50%)
+                    self.activation_percent = trailing_config.get('activation_profit_percent', 30)
+                    self.stop_percent = trailing_config.get('stop_distance_percent', 50)
+                    
+                    # Convert to decimal (30 -> 0.3)
+                    self.ACTIVATION_PERCENT = self.activation_percent / 100.0
+                    self.STOP_DISTANCE = self.stop_percent / 100.0
+                    
+                    # Минимальный шаг перемещения (5% от TP)
+                    self.MIN_MOVE_PERCENT = 0.05
+                    
+                    logger.info(f"[V4-Trailing] Loaded from config: activation={self.activation_percent}%, stop={self.stop_percent}%")
+            else:
+                # Fallback to defaults
+                self.activation_percent = 30
+                self.stop_percent = 50
+                self.ACTIVATION_PERCENT = 0.3
+                self.STOP_DISTANCE = 0.5
+                self.MIN_MOVE_PERCENT = 0.05
+                logger.warning("[V4-Trailing] Config not found, using defaults: 30%/50%")
+        except Exception as e:
+            logger.error(f"[V4-Trailing] Failed to load config: {e}")
+            # Fallback
+            self.activation_percent = 30
+            self.stop_percent = 50
+            self.ACTIVATION_PERCENT = 0.3
+            self.STOP_DISTANCE = 0.5
+            self.MIN_MOVE_PERCENT = 0.05
     
     def check_and_apply(self, tracked_positions: dict) -> None:
         """
-        ДИНАМИЧЕСКИЙ TRAILING STOP - двигается каждые 10%.
+        ДИНАМИЧЕСКИЙ TRAILING STOP с настраиваемой активацией.
         
-        ЛОГИКА ДЛЯ BUY:
+        ЛОГИКА (пример для 30% активация, 50% расстояние):
         - TP = $15 от entry
-        - Активация: цена прошла $1.5 (10%)
-        - Стоп ставится на: текущая_цена - $1.5
-        - При росте цены на +$1.5 - стоп поднимается
+        - Активация: цена прошла $4.5 (30% от $15)
+        - Стоп ставится: на расстоянии $7.5 от entry (50% от $15)
+        - При росте цены: стоп ДВИГАЕТСЯ сохраняя $7.5 от текущей цены
         
-        ПРИМЕР (entry 5000, TP 5015):
-        - Цена 5001.5 → SL 5000.0 (активация)
-        - Цена 5003.0 → SL 5001.5 (поднимается)
-        - Цена 5004.5 → SL 5003.0 (поднимается)
-        - и так далее каждые $1.5
+        ПРИМЕР (entry 5000, TP 5015, activation 30%, distance 50%):
+        - Цена 5004.5 → SL 5000.0 (активация! entry + 0%)
+        - Цена 5006.0 → SL 5001.5 (двигается! держит $7.5 от 5006)
+        - Цена 5008.0 → SL 5003.5 (двигается! держит $7.5 от 5008)
+        - Цена 5010.0 → SL 5005.5 (двигается!)
+        
+        Минимальный шаг: 5% от TP ($0.75) - избегаем частых модификаций
         
         Args:
             tracked_positions: Dict of {ticket: position_info}
@@ -79,22 +119,28 @@ class TrailingStopV4:
             tp = pos_info.get('tp', entry + 15.0 if direction == 'BUY' else entry - 15.0)
             tp_distance = abs(tp - entry)
             
-            # Calculate thresholds based on TP distance
-            activation_threshold = tp_distance * self.ACTIVATION_PERCENT  # $1.5
-            stop_distance = tp_distance * self.STOP_DISTANCE              # $1.5
+            # Calculate thresholds based on config percentages
+            activation_threshold = tp_distance * self.ACTIVATION_PERCENT  # 30% = $4.5
+            stop_distance = tp_distance * self.STOP_DISTANCE              # 50% = $7.5
+            min_move = tp_distance * self.MIN_MOVE_PERCENT                # 5% = $0.75
             
             if direction == 'BUY':
                 current_profit = current_price - entry
                 
-                # Проверка активации: профит >= 10% ($1.5)
+                # Проверка активации: профит >= activation_threshold
                 if current_profit >= activation_threshold:
-                    # Новый SL на расстоянии $1.5 от текущей цены
-                    new_sl = current_price - stop_distance
+                    # ДИНАМИЧЕСКИЙ РАСЧЁТ: стоп на расстоянии stop_distance от ТЕКУЩЕЙ ЦЕНЫ
+                    # Но при первой активации - от entry
+                    if not pos_info.get('v4_trailing_activated', False):
+                        # Первая активация: SL = entry + 0 (breakeven)
+                        new_sl = entry
+                    else:
+                        # Уже активирован: SL следует за ценой
+                        new_sl = current_price - stop_distance
                     
                     # Двигаем ТОЛЬКО ВВЕРХ (защита от возврата назад)
                     if new_sl > current_sl:
                         # Проверка минимального шага (избегаем частых модификаций)
-                        min_move = tp_distance * 0.05  # 5% минимум ($0.75)
                         sl_improvement = new_sl - current_sl
                         
                         if sl_improvement >= min_move or not pos_info.get('v4_trailing_activated', False):
@@ -123,7 +169,7 @@ class TrailingStopV4:
                                         f"💰 Profit: <b>${current_profit:.2f}</b>\n"
                                         f"📊 Price: ${current_price:.2f}\n"
                                         f"🔒 SL: ${current_sl:.2f} → ${new_sl:.2f}\n"
-                                        f"📏 Distance: ${stop_distance:.2f} (10%)"
+                                        f"📏 Distance: ${stop_distance:.2f} ({self.stop_percent}%)"
                                     )
                                     self.telegram.send_message(message)
                             else:
@@ -132,15 +178,19 @@ class TrailingStopV4:
             elif direction == 'SELL':
                 current_profit = entry - current_price
                 
-                # Проверка активации: профит >= 10% ($1.5)
+                # Проверка активации: профит >= activation_threshold
                 if current_profit >= activation_threshold:
-                    # Новый SL на расстоянии $1.5 от текущей цены
-                    new_sl = current_price + stop_distance
+                    # ДИНАМИЧЕСКИЙ РАСЧЁТ: стоп на расстоянии stop_distance от ТЕКУЩЕЙ ЦЕНЫ
+                    if not pos_info.get('v4_trailing_activated', False):
+                        # Первая активация: SL = entry (breakeven)
+                        new_sl = entry
+                    else:
+                        # Уже активирован: SL следует за ценой
+                        new_sl = current_price + stop_distance
                     
                     # Двигаем ТОЛЬКО ВНИЗ (защита от возврата назад)
                     if new_sl < current_sl:
                         # Проверка минимального шага
-                        min_move = tp_distance * 0.05  # 5% минимум ($0.75)
                         sl_improvement = current_sl - new_sl
                         
                         if sl_improvement >= min_move or not pos_info.get('v4_trailing_activated', False):
@@ -169,7 +219,7 @@ class TrailingStopV4:
                                         f"💰 Profit: <b>${current_profit:.2f}</b>\n"
                                         f"📊 Price: ${current_price:.2f}\n"
                                         f"🔒 SL: ${current_sl:.2f} → ${new_sl:.2f}\n"
-                                        f"📏 Distance: ${stop_distance:.2f} (10%)"
+                                        f"📏 Distance: ${stop_distance:.2f} ({self.stop_percent}%)"
                                     )
                                     self.telegram.send_message(message)
                             else:
