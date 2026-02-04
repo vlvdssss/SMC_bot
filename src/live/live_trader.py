@@ -684,13 +684,19 @@ class LiveTrader:
             # КРИТИЧНО: Проверяем статус сигнала - prevent duplicate trades
             signal_id = signal.get('ai_signal_id')
             if signal_id and self.ai_signal_manager:
-                # Проверяем что сигнал еще pending (не filled/triggered)
+                # Проверяем что сигнал ready для исполнения (pending или triggered)
+                # 'pending' = ждет триггера, 'triggered' = цена достигла entry
+                # 'filled' = уже исполнен (БЛОКИРУЕМ)
                 active_signals = self.ai_signal_manager.get_active_signals(symbol=symbol)
                 signal_found = False
                 for s in active_signals:
                     if s.get('id') == signal_id:
-                        if s.get('status') != 'pending':
-                            logger.warning(f"[TRADE] Signal {signal_id} already {s.get('status')} - ignoring")
+                        status = s.get('status')
+                        if status == 'filled':
+                            logger.warning(f"[TRADE] Signal {signal_id} already filled - ignoring")
+                            return None
+                        if status not in ['pending', 'triggered']:
+                            logger.warning(f"[TRADE] Signal {signal_id} has status {status} - ignoring")
                             return None
                         signal_found = True
                         break
