@@ -1102,6 +1102,35 @@ class LiveTrader:
                             reason="position_closed",
                             cooldown_minutes=5  # Wait 5 minutes before next analysis
                         )
+            
+            # FALLBACK: Если нет tracked позиций, но есть закрытые сделки в MT5
+            # Проверяем последние сделки и запускаем анализ если нужно
+            if not self.tracked_positions:
+                # Нет отслеживаемых позиций - проверяем MT5 напрямую
+                current_positions = self.mt5_connector.positions_get()
+                if not current_positions or len(current_positions) == 0:
+                    # Нет открытых позиций в MT5
+                    # Проверяем есть ли активные сигналы
+                    has_active_signals = False
+                    if self.ai_signal_manager:
+                        active_signals = self.ai_signal_manager.get_active_signals()
+                        has_active_signals = len(active_signals) > 0
+                    
+                    # Если нет позиций и нет сигналов - запускаем анализ через 5 минут
+                    if not has_active_signals:
+                        if hasattr(self, 'analyst_scheduler') and self.analyst_scheduler:
+                            # Проверяем когда был последний анализ
+                            last_analysis_time = getattr(self, '_last_fallback_analysis_time', None)
+                            current_time = datetime.now()
+                            
+                            if last_analysis_time is None or (current_time - last_analysis_time).total_seconds() > 300:  # 5 минут
+                                logger.info("[LiveTrader] 🔄 FALLBACK: No positions and no signals - triggering analysis")
+                                self.analyst_scheduler.trigger_immediate_analysis(
+                                    symbol='XAUUSD',
+                                    reason="fallback_no_positions",
+                                    cooldown_minutes=5
+                                )
+                                self._last_fallback_analysis_time = current_time
         
         except Exception as e:
             logger.error(f"[Telegram] Failed to check closed positions: {e}")
