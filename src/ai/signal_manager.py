@@ -521,8 +521,8 @@ class AISignalManager:
         
         rr_ratio = reward / risk
         
-        # V4: Fixed 2:1 ratio expected (TP=$10, SL=$5)
-        min_rr_threshold = 2.0  # Fixed for V4
+        # V4: Updated for SL=$8 / TP=$15 (1.875 ratio)
+        min_rr_threshold = 1.8  # Accept 1.8+ for wider SL
 
         if rr_ratio < min_rr_threshold:
             logger.info(f"[AI-Signal] Rejected poor RR ratio: {rr_ratio:.2f} < {min_rr_threshold} (risk: ${risk:.2f}, reward: ${reward:.2f})")
