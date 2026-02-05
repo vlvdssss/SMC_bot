@@ -31,8 +31,8 @@ trading:
     order_blocks: true
   trailing_stop:
     activation_mode: percent
-    activation_percent: 50
-    activation_profit_percent: 60
+    activation_percent: 40
+    activation_profit_percent: 40
     activation_profit_pips: 30
     breakeven:
       activation_mode: percent
