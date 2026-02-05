@@ -1077,45 +1077,15 @@ class LiveTrader:
                             )
                             logger.info(f"[Telegram] Trade closed notification sent for #{ticket} (estimated data)")
                         
-                        # Сохраняем сделку в историю для статистики
+                        # NOTE: Trade history is now managed by bot_manager._sync_with_mt5()
+                        # This prevents duplicate entries in trades_history.json
+                        # The sync happens periodically and pulls accurate data from MT5
+                        
                         try:
-                            from pathlib import Path
-                            import json
-                            from datetime import datetime
-                            
-                            trades_file = Path('data/trades_history.json')
-                            trades = []
-                            if trades_file.exists():
-                                with open(trades_file, 'r', encoding='utf-8') as f:
-                                    trades = json.load(f)
-                            
-                            trade_record = {
-                                'ticket': ticket,
-                                'symbol': pos_info['symbol'],
-                                'type': pos_info['direction'],
-                                'volume': pos_info.get('volume', 0.01),
-                                'entry': pos_info.get('entry_price', 0),
-                                'pnl': estimated_profit,
-                                'pips': estimated_pips,
-                                'duration': duration_str,
-                                'date': datetime.now().strftime('%Y-%m-%d'),
-                                'time': datetime.now().strftime('%H:%M:%S'),
-                                'result': 'Trailing Stop',
-                                'mode': 'pure_ai'
-                            }
-                            
-                            trades.append(trade_record)
-                            
-                            trades_file.parent.mkdir(exist_ok=True)
-                            with open(trades_file, 'w', encoding='utf-8') as f:
-                                json.dump(trades, f, indent=2, ensure_ascii=False)
-                            
-                            logger.info(f"[History] Trade #{ticket} saved to history: ${estimated_profit:.2f}")
-                            
-                            # Обновляем статистику в bot_manager
+                            # Just update bot_manager stats (no manual file write)
                             from src.core.bot_manager import BotManager
                             bot_manager = BotManager()
-                            bot_manager.load_stats()  # Перечитываем из файла
+                            bot_manager.load_stats()  # Reload from file
                             
                         except Exception as e:
                             logger.error(f"[History] Failed to save trade: {e}")
@@ -1168,22 +1138,13 @@ class LiveTrader:
             logger.error(f"[Telegram] Failed to check closed positions: {e}")
     
     def save_trade(self, trade: dict):
-        """Сохраняет сделку в историю."""
-        import json
-        from pathlib import Path
-        
-        trades_file = get_data_path('trades_history.json')
-        trades_file.parent.mkdir(exist_ok=True)
-        
-        trades = []
-        if trades_file.exists():
-            with open(trades_file, 'r') as f:
-                trades = json.load(f)
-        
-        trades.append(trade)
-        
-        with open(trades_file, 'w') as f:
-            json.dump(trades, f, indent=2)
+        """
+        DEPRECATED: Trade saving is now handled by bot_manager._sync_with_mt5()
+        This function is kept for backwards compatibility but does nothing.
+        All trades are synced from MT5 automatically to prevent duplicates.
+        """
+        logger.debug(f"[save_trade] DEPRECATED - trades are synced from MT5 automatically")
+        pass
     
     # ========== AI Integration Methods ==========
     
