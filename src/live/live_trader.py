@@ -896,6 +896,10 @@ class LiveTrader:
         if not self.telegram:
             return
         
+        # Import datetime at function start to avoid UnboundLocalError
+        from datetime import datetime, timedelta
+        import time
+        
         try:
             # Проходим по отслеживаемым позициям (если они есть)
             for ticket in list(self.tracked_positions.keys()):
@@ -911,9 +915,6 @@ class LiveTrader:
                 if not position or len(position) == 0:
                     # Позиция закрыта - проверяем историю
                     logger.info(f"[Closed] Position #{ticket} CLOSED - fetching history...")
-                    
-                    from datetime import datetime, timedelta
-                    import time
                     
                     # Даём MT5 время записать в историю (500ms)
                     time.sleep(0.5)

@@ -1459,6 +1459,10 @@ class BazaApp:
                     self._update_stats_from_mt5()
                     
                     # Pure AI mode - проверить сигналы
+                    # Check stop before signal generation
+                    if self.stop_event.is_set():
+                        break
+                    
                     app_logger.debug("[LOOP] Running pure AI mode")
                     trader.check_signals()
                     
