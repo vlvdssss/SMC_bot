@@ -319,9 +319,10 @@ Look at the LAST 20-30 M5 candles. Find quick scalping setups based on:
 **CRITICAL IMPROVEMENTS:**
 1. **M5 MOMENTUM FOCUS**: Only trade when last 5-10 candles show clear direction
 2. **AVOID CHOPPY MARKETS**: Skip if candles overlap/indecisive
-3. **STRUCTURE MATTERS**: Look for higher lows (BUY) or lower highs (SELL)
-4. **PATIENCE**: Better to miss trade than force entry in unclear market
-5. Entry quality MUST be "optimal" - skip "fair" or "good" setups
+3. **VOLATILITY CHECK**: Skip if ATR too high (>$7) - volatile spikes can hit stop then reverse
+4. **STRUCTURE MATTERS**: Look for higher lows (BUY) or lower highs (SELL)
+5. **PATIENCE**: Better to miss trade than force entry in unclear market
+6. Entry quality MUST be "optimal" - skip "fair" or "good" setups
 
 **RESPONSE FORMAT (JSON ONLY):**
 
@@ -609,13 +610,28 @@ Analyze the M5 chart NOW and give your decision!
                             
                             logger.info(f"[AI] ✅ Entry validation OK: ${entry:.2f} (distance: ${entry_distance:.2f})")
                         
-                        # FIXED PARAMETERS (V4) - Optimized for better profitability
-                        MIN_SL_DISTANCE = 3.0   # Minimum $3 (tighter risk)
-                        MAX_SL_DISTANCE = 5.0   # Maximum $5 (prevent wide stops)
+                        # DYNAMIC SL BASED ON VOLATILITY (V4) - Adapts to gold volatility
+                        # Use ATR to adjust SL - tighter when calm, wider when volatile
+                        MIN_SL_DISTANCE = 3.0   # Minimum $3 (low volatility)
+                        MAX_SL_DISTANCE = 7.0   # Maximum $7 (high volatility - prevent stop hunting)
+                        BASE_SL = 4.0           # Base SL for normal conditions
                         FIXED_TP_DISTANCE = 15.0  # $15 (keep target ambitious)
                         
-                        # Use default SL of $4, but clamp between $3-$5
-                        FIXED_SL_DISTANCE = 4.0  # Fixed at $4 for consistent risk
+                        # Get ATR from analysis if available (measure of volatility)
+                        atr_value = analysis.get('analysis', {}).get('atr', 5.0)  # Default $5 ATR
+                        
+                        # Adjust SL based on ATR:
+                        # ATR < $3 (calm) → SL $3-4
+                        # ATR $3-7 (normal) → SL $4-5
+                        # ATR > $7 (volatile) → SL $5-7 (wider to avoid stop hunting)
+                        if atr_value < 3.0:
+                            FIXED_SL_DISTANCE = 3.5  # Tight SL when calm
+                        elif atr_value > 7.0:
+                            # High volatility - use wider SL to avoid stop hunting
+                            FIXED_SL_DISTANCE = min(MAX_SL_DISTANCE, BASE_SL + (atr_value - 7.0) * 0.3)
+                            logger.info(f"[AI] ⚠️ High volatility detected (ATR ${atr_value:.2f}) - using wider SL ${FIXED_SL_DISTANCE:.2f}")
+                        else:
+                            FIXED_SL_DISTANCE = BASE_SL  # Normal $4 SL
                         
                         # Calculate fixed SL/TP based on direction
                         if action == "BUY":
