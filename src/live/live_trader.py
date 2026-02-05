@@ -896,11 +896,8 @@ class LiveTrader:
         if not self.telegram:
             return
         
-        if not self.tracked_positions:
-            return
-        
         try:
-            # Проходим по отслеживаемым позициям
+            # Проходим по отслеживаемым позициям (если они есть)
             for ticket in list(self.tracked_positions.keys()):
                 pos_info = self.tracked_positions[ticket]
                 

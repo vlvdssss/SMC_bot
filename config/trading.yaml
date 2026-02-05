@@ -32,7 +32,7 @@ trading:
   trailing_stop:
     activation_mode: percent
     activation_percent: 30
-    activation_profit_percent: 30
+    activation_profit_percent: 60
     activation_profit_pips: 20
     breakeven:
       activation_mode: percent
