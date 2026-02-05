@@ -300,21 +300,28 @@ Look at the LAST 20-30 M5 candles. Find quick scalping setups based on:
 - EMA crossovers
 - Quick momentum shifts
 
-**TRADING RULES (V4 LOGIC - OPTIMIZED FOR PROFITABILITY):**
-- **FIXED SL**: $4 from entry (tighter risk control)
-- **FIXED TP**: $12 from entry (improved R:R = 3:1)
-- **BUY ONLY if**: strong bounce from support with 2-3 green candles + volume confirmation
-- **SELL ONLY if**: clear rejection at resistance with 2-3 red candles + volume confirmation
-- **WAIT if**: choppy price action, unclear direction, or low conviction
-- **ENTRY PRECISION**: Must be within $0.50 of current price for immediate execution
-- **TREND ALIGNMENT**: Only trade with 1H trend direction (check EMA alignment)
+**TRADING RULES (V4 M5 SCALPING - OPTIMIZED FOR PROFITABILITY):**
+- **FIXED SL**: $4 from entry (tight risk control)
+- **FIXED TP**: $12 from entry (R:R = 3:1)
+- **BUY ONLY if**: 
+  - Strong bounce from recent low with 2-3 solid green candles
+  - Clear upward momentum on M5 (not just single spike)
+  - Price structure shows higher lows forming
+- **SELL ONLY if**: 
+  - Clear rejection at recent high with 2-3 solid red candles
+  - Clear downward momentum on M5 (not just single drop)
+  - Price structure shows lower highs forming
+- **WAIT if**: 
+  - Choppy/overlapping candles (consolidation)
+  - No clear direction in last 10 candles
+  - Price ping-ponging in tight range
 
 **CRITICAL IMPROVEMENTS:**
-1. **STRICTER ENTRY CRITERIA**: Only trade HIGH PROBABILITY setups
-2. **TIGHTER SL ($4)** but **BIGGER TP ($12)** → Better R:R ratio
-3. **TREND FILTER**: Don't counter-trade strong H1 trends
-4. **PATIENCE**: Wait for clear setup, don't force trades
-5. Entry quality MUST be "optimal" - skip "fair" setups
+1. **M5 MOMENTUM FOCUS**: Only trade when last 5-10 candles show clear direction
+2. **AVOID CHOPPY MARKETS**: Skip if candles overlap/indecisive
+3. **STRUCTURE MATTERS**: Look for higher lows (BUY) or lower highs (SELL)
+4. **PATIENCE**: Better to miss trade than force entry in unclear market
+5. Entry quality MUST be "optimal" - skip "fair" or "good" setups
 
 **RESPONSE FORMAT (JSON ONLY):**
 
@@ -349,17 +356,18 @@ Look at the LAST 20-30 M5 candles. Find quick scalping setups based on:
 6. Return ONLY valid JSON, no extra text
 
 **EXAMPLES OF GOOD M5 SETUPS:**
-- Price touched recent low ($2660), bounced with 2+ strong green candles + H1 trend bullish → BUY
-- Price rejected recent high ($2670), dropped with 2+ strong red candles + H1 trend bearish → SELL
-- EMA fast crossed above slow with momentum + price above all EMAs → BUY
-- Clear consolidation or choppy price action → NONE/WAIT
-- **SKIP WEAK SETUPS**: Single candle reversals, small wicks, or unclear patterns
+- Price touched recent low ($2660), bounced with 3+ strong green candles, forming higher low → BUY
+- Price rejected recent high ($2670), dropped with 3+ strong red candles, forming lower high → SELL
+- Last 5 candles show clear upward momentum, pullback to support → BUY
+- Last 5 candles show clear downward momentum, rejection at resistance → SELL
+- **SKIP WEAK SETUPS**: Single candle moves, overlapping candles, or choppy 10-candle range
 
 **RISK MANAGEMENT PRIORITY:**
 - **Preserve capital first**: Only take trades with 80%+ confidence
+- **M5 SCALPING = MOMENTUM TRADING**: Need clear directional move, not guessing reversals
 - **Better to miss a trade than take a bad one**
-- **Focus on R:R 3:1** - this compensates for occasional losses
-- Let trailing stop protect profits after +$6 move ($4 SL → $12 TP = $8 buffer)
+- **Focus on R:R 3:1** - compensates for occasional losses
+- Let trailing stop (40% activation) protect profits after $6 move
 
 Analyze the M5 chart NOW and give your decision!
 """
