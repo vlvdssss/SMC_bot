@@ -267,41 +267,24 @@ class SettingsDialog:
         canvas.pack(side='left', fill='both', expand=True)
         canvas.create_window((0, 0), window=content, anchor='nw')
         
-        # Risk Management
+        # Risk Management - SIMPLIFIED: Fixed lot only
         self._create_section(content, "💰 Risk Management (Управление Рисками)")
         
-        portfolio_config = self.configs.get('portfolio.yaml', {})
         trading_config = self.configs.get('trading.yaml', {})
         risk_config = trading_config.get('trading', {}).get('risk', {})
         
-        # Risk per trade - УПРОЩЁННОЕ ОБЪЯСНЕНИЕ
-        risk_frame = self._create_setting_row(content, "💵 Риск на сделку (% от баланса)")
-        self.risk_per_trade = tk.Entry(risk_frame, font=('Arial', 10), width=10)
-        self.risk_per_trade.insert(0, str(portfolio_config.get('portfolio', {}).get('risk_model', {}).get('max_total_exposure', 1.25)))
-        self.risk_per_trade.pack(side='right')
-        self._bind_paste(self.risk_per_trade)
+        # Fixed Lot Size ONLY
+        lot_frame = self._create_setting_row(content, "📊 Lot Size (фиксированный объём позиции)")
+        self.fixed_lot = tk.Entry(lot_frame, font=('Arial', 12, 'bold'), width=10)
+        self.fixed_lot.insert(0, str(risk_config.get('fixed_lot_size', 0.01)))
+        self.fixed_lot.pack(side='right')
+        self._bind_paste(self.fixed_lot)
         
-        # Подсказка для Risk
-        risk_hint = tk.Label(content, 
-                            text="💡 Пример: 1% при балансе $10,000 = максимум $100 риска на сделку",
-                            font=('Arial', 8, 'italic'),
-                            bg=Colors.BG_DARK,
-                            fg=Colors.TEXT_MUTED,
-                            justify='left')
-        risk_hint.pack(fill='x', pady=(2, 5), padx=20)
-        
-        # Max lot size - УПРОЩЁННОЕ ОБЪЯСНЕНИЕ
-        lot_frame = self._create_setting_row(content, "📊 Максимальный лот (объём позиции)")
-        self.max_lot = tk.Entry(lot_frame, font=('Arial', 10), width=10)
-        self.max_lot.insert(0, str(risk_config.get('max_lot_size', 1.0)))
-        self.max_lot.pack(side='right')
-        self._bind_paste(self.max_lot)
-        
-        # Подсказка для Lot Size с ДЕНЬГАМИ
+        # Подсказка для Lot Size
         lot_hint = tk.Label(content, 
-                           text="💡 1 лот = $100,000 (EURUSD) или ~$200,000 (XAUUSD на золото)\n"
-                                "   0.01 лот = $1,000 | 0.1 лот = $10,000 | 1.0 лот = $100,000\n"
-                                "   Рекомендация: 0.01-0.1 для безопасной торговли",
+                           text="💡 Бот ВСЕГДА торгует ТОЛЬКО этим лотом (не зависит от баланса/риска)\n"
+                                "   1 лот = $100,000 | 0.1 лот = $10,000 | 0.01 лот = $1,000\n"
+                                "   Если средств недостаточно → сделка НЕ открывается (ошибка)",
                            font=('Arial', 8, 'italic'),
                            bg=Colors.BG_DARK,
                            fg=Colors.TEXT_MUTED,
@@ -771,69 +754,10 @@ class SettingsDialog:
                 fg=Colors.TEXT_MUTED,
                 justify='left').pack(fill='x', pady=(2, 15), padx=40)
         
-        # Trading Hours
-        self._create_section(content, "Trading Hours (UTC)")
-        
-        hours_config = trading_config.get('trading', {}).get('hours', {})
-        
-        start_frame = self._create_setting_row(content, "Start time")
-        self.trade_start = tk.Entry(start_frame, font=('Arial', 10), width=10)
-        self.trade_start.insert(0, hours_config.get('start', '02:00'))
-        self.trade_start.pack(side='right')
-        self._bind_paste(self.trade_start)
-        
-        end_frame = self._create_setting_row(content, "End time")
-        self.trade_end = tk.Entry(end_frame, font=('Arial', 10), width=10)
-        self.trade_end.insert(0, hours_config.get('end', '22:00'))
-        self.trade_end.pack(side='right')
-        self._bind_paste(self.trade_end)
-        
-        # === AI SETTINGS (merged from AI tab) ===
+        # TTL SETTINGS - User configurable signal lifetime
+        self._create_section(content, "⏱ Signal Time To Live (TTL)")
+        # Load configs for TTL
         ai_config = self.configs.get('ai.yaml', {})
-        
-        # AI Enable
-        self._create_section(content, "AI Settings")
-        
-        enable_frame = self._create_setting_row(content, "Enable AI Analysis")
-        self.ai_enabled = tk.BooleanVar(value=ai_config.get('ai_enabled', True))
-        tk.Checkbutton(enable_frame, variable=self.ai_enabled,
-                      bg=Colors.BG_DARK, fg=Colors.TEXT_PRIMARY,
-                      selectcolor=Colors.BG_CARD).pack(side='right')
-        
-        # GPT Model
-        model_frame = self._create_setting_row(content, "GPT Model")
-        self.gpt_model = ttk.Combobox(model_frame, width=15, 
-                                     values=['gpt-4o', 'gpt-4-turbo', 'gpt-4'])
-        current_model = ai_config.get('market_analyst', {}).get('gpt', {}).get('model', 'gpt-4o')
-        self.gpt_model.set(current_model)
-        self.gpt_model.pack(side='right')
-        
-        # Temperature
-        temp_frame = self._create_setting_row(content, "Temperature")
-        self.temperature = tk.Entry(temp_frame, font=('Arial', 10), width=10)
-        current_temp = ai_config.get('market_analyst', {}).get('gpt', {}).get('temperature', 0.3)
-        self.temperature.insert(0, str(current_temp))
-        self.temperature.pack(side='right')
-        self._bind_paste(self.temperature)
-        
-        # Filters
-        self._create_section(content, "Signal Filters")
-        
-        signals_config = ai_config.get('market_analyst', {}).get('signals', {})
-        
-        conf_frame = self._create_setting_row(content, "Min confidence (%)")
-        self.min_confidence = tk.Entry(conf_frame, font=('Arial', 10), width=10)
-        self.min_confidence.insert(0, str(signals_config.get('min_confidence', 70)))
-        self.min_confidence.pack(side='right')
-        self._bind_paste(self.min_confidence)
-        
-        rr_frame = self._create_setting_row(content, "Min Risk/Reward ratio")
-        self.min_rr = tk.Entry(rr_frame, font=('Arial', 10), width=10)
-        self.min_rr.insert(0, str(signals_config.get('min_rr', 1.5)))
-        self.min_rr.pack(side='right')
-        self._bind_paste(self.min_rr)
-        
-        # TTL настройка
         ttl_config = trading_config.get('trading', {}).get('signal_ttl', {})
         
         validity_frame = self._create_setting_row(content, "⏱ Signal TTL (minutes)")
@@ -865,21 +789,6 @@ class SettingsDialog:
                            wraplength=450,
                            justify='left')
         ttl_hint.pack(fill='x', pady=(2, 10), padx=20)
-        
-        # Time restrictions
-        self._create_section(content, "Time Restrictions")
-        
-        night_block_frame = self._create_setting_row(content, "Block night trading (22:00-02:00)")
-        self.night_block = tk.BooleanVar(value=ai_config.get('market_analyst', {}).get('schedule', {}).get('restrictions', {}).get('night_block', {}).get('enabled', True))
-        tk.Checkbutton(night_block_frame, variable=self.night_block,
-                      bg=Colors.BG_DARK, fg=Colors.TEXT_PRIMARY,
-                      selectcolor=Colors.BG_CARD).pack(side='right')
-        
-        weekend_block_frame = self._create_setting_row(content, "Block weekend trading")
-        self.weekend_block = tk.BooleanVar(value=ai_config.get('market_analyst', {}).get('schedule', {}).get('restrictions', {}).get('weekend_block', {}).get('enabled', True))
-        tk.Checkbutton(weekend_block_frame, variable=self.weekend_block,
-                      bg=Colors.BG_DARK, fg=Colors.TEXT_PRIMARY,
-                      selectcolor=Colors.BG_CARD).pack(side='right')
         
         content.update_idletasks()
         canvas.config(scrollregion=canvas.bbox('all'))
@@ -1476,46 +1385,9 @@ If you received this message, Telegram notifications are configured correctly! �
     def _save_settings(self):
         """Сохранить настройки"""
         try:
-            # Обновить AI config
+            # AI config - NO GUI changes, all fixed in code
+            # We don't save ai_enabled, model, temperature, etc from GUI anymore
             ai_config = self.configs.get('ai.yaml', {})
-            ai_config['ai_enabled'] = self.ai_enabled.get()
-            
-            if 'market_analyst' not in ai_config:
-                ai_config['market_analyst'] = {}
-            
-            if 'gpt' not in ai_config['market_analyst']:
-                ai_config['market_analyst']['gpt'] = {}
-            
-            ai_config['market_analyst']['gpt']['model'] = self.gpt_model.get()
-            ai_config['market_analyst']['gpt']['temperature'] = float(self.temperature.get())
-            
-            if 'schedule' not in ai_config['market_analyst']:
-                ai_config['market_analyst']['schedule'] = {}
-            
-            # Schedule disabled (event-driven logic)
-            ai_config['market_analyst']['schedule']['enabled'] = False
-            ai_config['market_analyst']['schedule']['times'] = []
-            
-            # Time restrictions
-            if 'restrictions' not in ai_config['market_analyst']['schedule']:
-                ai_config['market_analyst']['schedule']['restrictions'] = {}
-            
-            if 'night_block' not in ai_config['market_analyst']['schedule']['restrictions']:
-                ai_config['market_analyst']['schedule']['restrictions']['night_block'] = {}
-            
-            ai_config['market_analyst']['schedule']['restrictions']['night_block']['enabled'] = self.night_block.get()
-            
-            if 'weekend_block' not in ai_config['market_analyst']['schedule']['restrictions']:
-                ai_config['market_analyst']['schedule']['restrictions']['weekend_block'] = {}
-            
-            ai_config['market_analyst']['schedule']['restrictions']['weekend_block']['enabled'] = self.weekend_block.get()
-            
-            # Signal filters
-            if 'signals' not in ai_config['market_analyst']:
-                ai_config['market_analyst']['signals'] = {}
-            
-            ai_config['market_analyst']['signals']['min_confidence'] = int(self.min_confidence.get())
-            ai_config['market_analyst']['signals']['min_rr'] = float(self.min_rr.get())
             
             # TTL настройки (сохраняем в trading.yaml)
             trading_config = self.configs.get('trading.yaml', {})
@@ -1529,28 +1401,14 @@ If you received this message, Telegram notifications are configured correctly! �
             trading_config['trading']['signal_ttl']['auto_requery_on_close'] = self.auto_requery_close.get()
             trading_config['trading']['signal_ttl']['enabled'] = True
             
-            # Обновить Portfolio config
-            portfolio_config = self.configs.get('portfolio.yaml', {})
+            # Portfolio config - NOT USED ANYMORE
+            # portfolio_config = self.configs.get('portfolio.yaml', {})
             
-            if 'portfolio' not in portfolio_config:
-                portfolio_config['portfolio'] = {}
-            
-            if 'risk_model' not in portfolio_config['portfolio']:
-                portfolio_config['portfolio']['risk_model'] = {}
-            
-            portfolio_config['portfolio']['risk_model']['max_total_exposure'] = float(self.risk_per_trade.get())
-            
-            # Обновить Trading config (first occurrence for save_ai_settings)
-            trading_config = self.configs.get('trading.yaml', {})
-            
-            if 'trading' not in trading_config:
-                trading_config['trading'] = {}
-            
-            # Risk settings
+            # Risk settings - ONLY FIXED LOT
             if 'risk' not in trading_config['trading']:
                 trading_config['trading']['risk'] = {}
             
-            trading_config['trading']['risk']['max_lot_size'] = float(self.max_lot.get())
+            trading_config['trading']['risk']['fixed_lot_size'] = float(self.fixed_lot.get())
             trading_config['trading']['risk']['default_sl_pips'] = int(self.default_sl.get())
             trading_config['trading']['risk']['default_tp_pips'] = int(self.default_tp.get())
             
@@ -1575,12 +1433,9 @@ If you received this message, Telegram notifications are configured correctly! �
             trading_config['trading']['trailing_stop']['breakeven']['activation_profit_pips'] = int(self.be_activation.get())
             trading_config['trading']['trailing_stop']['breakeven']['offset_pips'] = int(self.be_offset.get())
             
-            # Trading hours
-            if 'hours' not in trading_config['trading']:
-                trading_config['trading']['hours'] = {}
-            
-            trading_config['trading']['hours']['start'] = self.trade_start.get()
-            trading_config['trading']['hours']['end'] = self.trade_end.get()
+            # Trading hours - HARDCODED in bot logic (not from GUI)
+            # Weekend: Sat/Sun always blocked
+            # Night: 23:30-01:10 always blocked
             
             # Strategy tab removed
 
@@ -1637,13 +1492,12 @@ If you received this message, Telegram notifications are configured correctly! �
                 os.environ['OPENAI_API_KEY'] = new_api_key
             
             # Сохранить файлы
+            # Save config files
             ai_path = Path('config') / 'ai.yaml'
             with open(ai_path, 'w', encoding='utf-8') as f:
                 yaml.dump(ai_config, f, default_flow_style=False, allow_unicode=True)
             
-            portfolio_path = Path('config') / 'portfolio.yaml'
-            with open(portfolio_path, 'w', encoding='utf-8') as f:
-                yaml.dump(portfolio_config, f, default_flow_style=False, allow_unicode=True)
+            # Portfolio config - REMOVED (no % risk logic anymore)
             
             trading_path = Path('config') / 'trading.yaml'
             with open(trading_path, 'w', encoding='utf-8') as f:
@@ -1697,50 +1551,15 @@ If you received this message, Telegram notifications are configured correctly! �
     def _save_and_restart(self):
         """Сохранить настройки и перезапустить бота"""
         try:
-            # Сначала сохраняем все настройки (используем код из _save_settings)
-            # Обновить AI config
+            # First, save all settings using existing _save_settings logic
+            # But we need to save without closing dialog
+            
+            # Copy-paste save logic here (DRY violation, but necessary for restart flow)
+            # Load configs
             ai_config = self.configs.get('ai.yaml', {})
-            ai_config['ai_enabled'] = self.ai_enabled.get()
-            
-            if 'market_analyst' not in ai_config:
-                ai_config['market_analyst'] = {}
-            
-            if 'gpt' not in ai_config['market_analyst']:
-                ai_config['market_analyst']['gpt'] = {}
-            
-            ai_config['market_analyst']['gpt']['model'] = self.gpt_model.get()
-            ai_config['market_analyst']['gpt']['temperature'] = float(self.temperature.get())
-            
-            if 'schedule' not in ai_config['market_analyst']:
-                ai_config['market_analyst']['schedule'] = {}
-            
-            # Schedule disabled (event-driven logic)
-            ai_config['market_analyst']['schedule']['enabled'] = False
-            ai_config['market_analyst']['schedule']['times'] = []
-            
-            # Time restrictions
-            if 'restrictions' not in ai_config['market_analyst']['schedule']:
-                ai_config['market_analyst']['schedule']['restrictions'] = {}
-            
-            if 'night_block' not in ai_config['market_analyst']['schedule']['restrictions']:
-                ai_config['market_analyst']['schedule']['restrictions']['night_block'] = {}
-            
-            ai_config['market_analyst']['schedule']['restrictions']['night_block']['enabled'] = self.night_block.get()
-            
-            if 'weekend_block' not in ai_config['market_analyst']['schedule']['restrictions']:
-                ai_config['market_analyst']['schedule']['restrictions']['weekend_block'] = {}
-            
-            ai_config['market_analyst']['schedule']['restrictions']['weekend_block']['enabled'] = self.weekend_block.get()
-            
-            # Signal filters
-            if 'signals' not in ai_config['market_analyst']:
-                ai_config['market_analyst']['signals'] = {}
-            
-            ai_config['market_analyst']['signals']['min_confidence'] = int(self.min_confidence.get())
-            ai_config['market_analyst']['signals']['min_rr'] = float(self.min_rr.get())
-            
-            # TTL настройки (сохраняем в trading.yaml)
             trading_config = self.configs.get('trading.yaml', {})
+            
+            # TTL settings
             if 'trading' not in trading_config:
                 trading_config['trading'] = {}
             if 'signal_ttl' not in trading_config['trading']:
@@ -1751,22 +1570,11 @@ If you received this message, Telegram notifications are configured correctly! �
             trading_config['trading']['signal_ttl']['auto_requery_on_close'] = self.auto_requery_close.get()
             trading_config['trading']['signal_ttl']['enabled'] = True
             
-            # Обновить Portfolio config
-            portfolio_config = self.configs.get('portfolio.yaml', {})
-            if 'portfolio' not in portfolio_config:
-                portfolio_config['portfolio'] = {}
-            
-            # Сохраняем только risk_per_trade (max_total_exposure)
-            if 'risk_model' not in portfolio_config.get('portfolio', {}):
-                portfolio_config['portfolio']['risk_model'] = {}
-            portfolio_config['portfolio']['risk_model']['max_total_exposure'] = float(self.risk_per_trade.get())
-            
-            # Trading config (уже загружен выше для TTL)
-            
-            # Risk settings
+            # Risk settings - ONLY FIXED LOT
             if 'risk' not in trading_config['trading']:
                 trading_config['trading']['risk'] = {}
-            trading_config['trading']['risk']['max_lot_size'] = float(self.max_lot.get())
+            
+            trading_config['trading']['risk']['fixed_lot_size'] = float(self.fixed_lot.get())
             trading_config['trading']['risk']['default_sl_pips'] = int(self.default_sl.get())
             trading_config['trading']['risk']['default_tp_pips'] = int(self.default_tp.get())
             
@@ -1775,31 +1583,23 @@ If you received this message, Telegram notifications are configured correctly! �
                 trading_config['trading']['trailing_stop'] = {}
             
             trading_config['trading']['trailing_stop']['enabled'] = self.trail_enabled.get()
-            trading_config['trading']['trailing_stop']['activation_mode'] = self.trail_mode.get()  # 'pips' or 'percent'
-            trading_config['trading']['trailing_stop']['activation_profit_percent'] = int(self.trail_activation_percent.get())  # Процент от TP для активации
+            trading_config['trading']['trailing_stop']['activation_mode'] = self.trail_mode.get()
+            trading_config['trading']['trailing_stop']['activation_profit_percent'] = int(self.trail_activation_percent.get())
             trading_config['trading']['trailing_stop']['activation_profit_pips'] = int(self.trail_activation.get())
             trading_config['trading']['trailing_stop']['distance_pips'] = int(self.trail_distance.get())
             trading_config['trading']['trailing_stop']['step_pips'] = int(self.trail_step.get())
             
-            # Breakeven (SECOND OCCURRENCE)
+            # Breakeven
             if 'breakeven' not in trading_config['trading']['trailing_stop']:
                 trading_config['trading']['trailing_stop']['breakeven'] = {}
             
             trading_config['trading']['trailing_stop']['breakeven']['enabled'] = self.breakeven_enabled.get()
-            trading_config['trading']['trailing_stop']['breakeven']['activation_mode'] = self.be_mode.get()  # NEW
-            trading_config['trading']['trailing_stop']['breakeven']['activation_percent'] = int(self.be_activation_percent.get())  # NEW
+            trading_config['trading']['trailing_stop']['breakeven']['activation_mode'] = self.be_mode.get()
+            trading_config['trading']['trailing_stop']['breakeven']['activation_percent'] = int(self.be_activation_percent.get())
             trading_config['trading']['trailing_stop']['breakeven']['activation_profit_pips'] = int(self.be_activation.get())
             trading_config['trading']['trailing_stop']['breakeven']['offset_pips'] = int(self.be_offset.get())
             
-            # Trading hours
-            if 'hours' not in trading_config['trading']:
-                trading_config['trading']['hours'] = {}
-            
-            trading_config['trading']['hours']['start'] = self.trade_start.get()
-            trading_config['trading']['hours']['end'] = self.trade_end.get()
-            
-            # Strategy tab removed
-
+            # Telegram
             telegram_config = {}
             telegram_path = Path('config') / 'telegram.yaml'
             if telegram_path.exists():
@@ -1824,7 +1624,7 @@ If you received this message, Telegram notifications are configured correctly! �
             telegram_config['telegram']['notify']['alerts'] = self.notify_alerts.get()
             telegram_config['telegram']['alert_min_level'] = self.alert_min_level.get()
             
-            # Сохранить GPT API key в .env
+            # GPT API key
             env_path = Path('.env')
             env_lines = []
             api_key_updated = False
@@ -1833,33 +1633,27 @@ If you received this message, Telegram notifications are configured correctly! �
                 with open(env_path, 'r') as f:
                     env_lines = f.readlines()
             
-            # Update or add OPENAI_API_KEY
             new_api_key = self.gpt_api_key.get().strip()
             if new_api_key:
                 for i, line in enumerate(env_lines):
                     if line.startswith('OPENAI_API_KEY='):
-                        env_lines[i] = f'OPENAI_API_KEY={new_api_key}\n'
+                        env_lines[i] = f'OPENAI_API_KEY={new_api_key}\\n'
                         api_key_updated = True
                         break
                 
                 if not api_key_updated:
-                    env_lines.append(f'OPENAI_API_KEY={new_api_key}\n')
+                    env_lines.append(f'OPENAI_API_KEY={new_api_key}\\n')
                 
                 with open(env_path, 'w') as f:
                     f.writelines(env_lines)
                 
-                # Update environment variable
                 import os
                 os.environ['OPENAI_API_KEY'] = new_api_key
             
-            # Сохранить файлы
+            # Save files
             ai_path = Path('config') / 'ai.yaml'
             with open(ai_path, 'w', encoding='utf-8') as f:
                 yaml.dump(ai_config, f, default_flow_style=False, allow_unicode=True)
-            
-            portfolio_path = Path('config') / 'portfolio.yaml'
-            with open(portfolio_path, 'w', encoding='utf-8') as f:
-                yaml.dump(portfolio_config, f, default_flow_style=False, allow_unicode=True)
             
             trading_path = Path('config') / 'trading.yaml'
             with open(trading_path, 'w', encoding='utf-8') as f:
@@ -1868,7 +1662,7 @@ If you received this message, Telegram notifications are configured correctly! �
             with open(telegram_path, 'w', encoding='utf-8') as f:
                 yaml.dump(telegram_config, f, default_flow_style=False, allow_unicode=True)
             
-            # Сохранить Instruments config
+            # Instruments config
             instruments_path = Path('config') / 'instruments.yaml'
             instruments_config = {}
             if instruments_path.exists():
@@ -1878,14 +1672,12 @@ If you received this message, Telegram notifications are configured correctly! �
             if 'instruments' not in instruments_config:
                 instruments_config['instruments'] = {}
             
-            # Update XAUUSD
             if 'XAUUSD' not in instruments_config['instruments']:
                 instruments_config['instruments']['XAUUSD'] = {}
             instruments_config['instruments']['XAUUSD']['enabled'] = self.xauusd_enabled.get()
             instruments_config['instruments']['XAUUSD']['analysis_enabled'] = self.xauusd_analysis.get()
             instruments_config['instruments']['XAUUSD']['trading_enabled'] = self.xauusd_trading.get()
             
-            # Update EURUSD
             if 'EURUSD' not in instruments_config['instruments']:
                 instruments_config['instruments']['EURUSD'] = {}
             instruments_config['instruments']['EURUSD']['enabled'] = self.eurusd_enabled.get()
@@ -1899,22 +1691,18 @@ If you received this message, Telegram notifications are configured correctly! �
             logger.info("[SETTINGS] ✅ Settings saved, restarting bot...")
             logger.info("="*80)
             
-            # Перезапускаем бота через callback
+            # Close dialog
+            self.dialog.destroy()
+            
+            # Trigger restart via callback
             if self.on_save_callback:
-                # Закрываем диалог
-                self.dialog.destroy()
-                
-                # Вызываем callback с флагом restart
                 self.on_save_callback(restart=True)
-                
-                messagebox.showinfo("Success", "Settings saved!\nBot restarted with new configuration.")
-            else:
-                messagebox.showwarning("Warning", "Settings saved but bot restart not available.\nPlease restart manually.")
-                self.dialog.destroy()
+            
+            messagebox.showinfo("Success", "Settings saved!\\nBot will restart with new configuration.")
             
         except Exception as e:
             logger.error(f"[SETTINGS] Failed to save and restart: {e}")
-            messagebox.showerror("Error", f"Failed to save settings:\n{e}")
+            messagebox.showerror("Error", f"Failed to save settings:\\n{e}")
     
     def _open_lot_size_guide(self):
         """Открыть руководство по размеру лота"""

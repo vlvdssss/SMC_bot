@@ -15,9 +15,9 @@ trading:
     - H1
     - H4
   risk:
+    fixed_lot_size: 0.01
     default_sl_pips: 40
     default_tp_pips: 120
-    max_lot_size: 1.0
   signal_ttl:
     auto_requery_invalidate_cooldown_minutes: 5
     auto_requery_on_close: true
