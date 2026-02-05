@@ -322,7 +322,7 @@ class SettingsDialog:
         self.default_tp.pack(side='right')
         self._bind_paste(self.default_tp)
         
-        # === TRAILING STOP - ДЕТАЛЬНЫЕ НАСТРОЙКИ ===
+        # === TRAILING STOP - SIMPLIFIED (V4) ===
         self._create_section(content, "🎯 Trailing Stop (Автоматическая защита прибыли)")
         
         trailing_config = trading_config.get('trading', {}).get('trailing_stop', {})
@@ -335,16 +335,18 @@ class SettingsDialog:
                       selectcolor=Colors.BG_CARD,
                       font=('Arial', 10, 'bold')).pack(side='right')
         
-        # Info panel с объяснением
+        # Info panel с объяснением V4
         info_frame = tk.Frame(content, bg=Colors.BG_CARD,
                              highlightbackground=Colors.BORDER,
                              highlightthickness=1)
         info_frame.pack(fill='x', pady=(5, 15), padx=20)
         
-        info_text = """ℹ️ Что такое Trailing Stop?
-Автоматически двигает Stop Loss за ценой, защищая вашу прибыль.
-Пример: позиция в +30 пипсов → trailing держит SL на 20 пипсов от цены.
-Если цена откатит на 20 пипсов → закроется с профитом +10 пипсов."""
+        info_text = """ℹ️ TrailingStopV4 - Процентная система (АВТОМАТИЧЕСКАЯ)
+Единственный параметр: % активации от расстояния до TP.
+Остальное рассчитывается системой:
+• Первый SL = Activation - 10% (например: 40% → первый SL на 30%)
+• Шаг движения: фиксированный 10% каждые 10% профита
+• Защищает прибыль автоматически, без ручных настроек пипсов"""
         
         tk.Label(info_frame,
                 text=info_text,
@@ -354,34 +356,7 @@ class SettingsDialog:
                 justify='left',
                 wraplength=650).pack(padx=15, pady=10)
         
-        # ====== РЕЖИМ АКТИВАЦИИ (PIPS или PERCENT) ======
-        mode_frame = self._create_setting_row(content, "📊 Режим активации trailing")
-        self.trail_mode = tk.StringVar(value=trailing_config.get('activation_mode', 'percent'))  # 'pips' или 'percent'
-        
-        mode_selector = tk.Frame(mode_frame, bg=Colors.BG_DARK)
-        mode_selector.pack(side='right')
-        
-        tk.Radiobutton(mode_selector,
-                      text="Процент от TP",
-                      variable=self.trail_mode,
-                      value='percent',
-                      bg=Colors.BG_DARK,
-                      fg=Colors.TEXT_PRIMARY,
-                      selectcolor=Colors.PRIMARY,
-                      activebackground=Colors.BG_DARK,
-                      font=('Arial', 10)).pack(side='left', padx=5)
-        
-        tk.Radiobutton(mode_selector,
-                      text="Фиксированные пипсы",
-                      variable=self.trail_mode,
-                      value='pips',
-                      bg=Colors.BG_DARK,
-                      fg=Colors.TEXT_PRIMARY,
-                      selectcolor=Colors.PRIMARY,
-                      activebackground=Colors.BG_DARK,
-                      font=('Arial', 10)).pack(side='left', padx=5)
-        
-        # ====== ПРОЦЕНТ ОТ TP (НОВОЕ!) ======
+        # ЕДИНСТВЕННЫЙ ПАРАМЕТР: Activation %
         tk.Label(content,
                 text="📈 Активация при профите (% от TP distance):",
                 font=('Arial', 10, 'bold'),
@@ -404,181 +379,29 @@ class SettingsDialog:
                                                  bg=Colors.BG_CARD,
                                                  fg=Colors.SUCCESS,
                                                  insertbackground=Colors.TEXT_PRIMARY)
-        self.trail_activation_percent.insert(0, str(trailing_config.get('activation_profit_percent', 30)))
+        self.trail_activation_percent.insert(0, str(trailing_config.get('activation_profit_percent', 40)))
         self.trail_activation_percent.pack(side='left', padx=5)
         self._bind_paste(self.trail_activation_percent)
         
         tk.Label(percent_frame,
-                text="% (30% = активация при 30% до TP)",
+                text="% от TP distance",
                 font=('Arial', 9),
                 bg=Colors.BG_DARK,
                 fg=Colors.TEXT_MUTED).pack(side='left', padx=5)
         
-        tk.Label(content,
-                text="💡 Пример: TP +$30, 30% = активация при +$9 профита",
-                font=('Arial', 8, 'italic'),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_MUTED,
-                justify='left').pack(fill='x', pady=(2, 10), padx=40)
-        
-        # === ПАРАМЕТР 1: Activation Profit ===
-        tk.Label(content,
-                text="📊 Активация (после какого профита включить)",
-                font=('Arial', 10, 'bold'),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_PRIMARY).pack(anchor='w', padx=20, pady=(10, 5))
-        
-        activation_frame = tk.Frame(content, bg=Colors.BG_DARK)
-        activation_frame.pack(fill='x', padx=40, pady=5)
-        
-        tk.Label(activation_frame, text="Профит (пипсы):",
-                font=('Arial', 10),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_SECONDARY).pack(side='left', padx=5)
-        
-        self.trail_activation = tk.Entry(activation_frame,
-                                        font=('Arial', 10, 'bold'),
-                                        width=8,
-                                        bg=Colors.BG_CARD,
-                                        fg=Colors.SUCCESS,
-                                        insertbackground=Colors.TEXT_PRIMARY)
-        self.trail_activation.insert(0, str(trailing_config.get('activation_profit_pips', 15)))
-        self.trail_activation.pack(side='left', padx=5)
-        self._bind_paste(self.trail_activation)
-        
-        tk.Label(activation_frame,
-                text="пипсов профита",
-                font=('Arial', 9),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_MUTED).pack(side='left', padx=5)
-        
-        # Подсказка
-        tk.Label(content, 
-                text="💡 Пример: 15 пипсов = trailing включится когда профит >= 15 пипсов",
-                font=('Arial', 8, 'italic'),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_MUTED,
-                justify='left').pack(fill='x', pady=(2, 5), padx=40)
-        
-        # === ПАРАМЕТР 2: Distance ===
-        tk.Label(content,
-                text="📏 Расстояние (как далеко от цены держать SL)",
-                font=('Arial', 10, 'bold'),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_PRIMARY).pack(anchor='w', padx=20, pady=(10, 5))
-        
-        distance_frame = tk.Frame(content, bg=Colors.BG_DARK)
-        distance_frame.pack(fill='x', padx=40, pady=5)
-        
-        tk.Label(distance_frame, text="Расстояние (пипсы):",
-                font=('Arial', 10),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_SECONDARY).pack(side='left', padx=5)
-        
-        self.trail_distance = tk.Entry(distance_frame,
-                                      font=('Arial', 10, 'bold'),
-                                      width=8,
-                                      bg=Colors.BG_CARD,
-                                      fg=Colors.SUCCESS,
-                                      insertbackground=Colors.TEXT_PRIMARY)
-        self.trail_distance.insert(0, str(trailing_config.get('distance_pips', 15)))
-        self.trail_distance.pack(side='left', padx=5)
-        self._bind_paste(self.trail_distance)
-        
-        tk.Label(distance_frame,
-                text="пипсов от цены",
-                font=('Arial', 9),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_MUTED).pack(side='left', padx=5)
-        
-        # Подсказка
-        tk.Label(content, 
-                text="💡 Пример: 20 пипсов = SL будет на 20 пипсов ниже текущей цены (для BUY)",
-                font=('Arial', 8, 'italic'),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_MUTED,
-                justify='left').pack(fill='x', pady=(2, 5), padx=40)
-        
-        # === ПАРАМЕТР 3: Step ===
-        tk.Label(content,
-                text="⚙️ Шаг обновления (как часто двигать SL)",
-                font=('Arial', 10, 'bold'),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_PRIMARY).pack(anchor='w', padx=20, pady=(10, 5))
-        
-        step_frame = tk.Frame(content, bg=Colors.BG_DARK)
-        step_frame.pack(fill='x', padx=40, pady=5)
-        
-        tk.Label(step_frame, text="Шаг (пипсы):",
-                font=('Arial', 10),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_SECONDARY).pack(side='left', padx=5)
-        
-        self.trail_step = tk.Entry(step_frame,
-                                  font=('Arial', 10, 'bold'),
-                                  width=8,
-                                  bg=Colors.BG_CARD,
-                                  fg=Colors.SUCCESS,
-                                  insertbackground=Colors.TEXT_PRIMARY)
-        self.trail_step.insert(0, str(trailing_config.get('step_pips', 3)))
-        self.trail_step.pack(side='left', padx=5)
-        self._bind_paste(self.trail_step)
-        
-        tk.Label(step_frame,
-                text="пипсов движения",
-                font=('Arial', 9),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_MUTED).pack(side='left', padx=5)
-        
-        # Подсказка
-        tk.Label(content, 
-                text="💡 Пример: 5 пипсов = SL обновится только когда цена уйдет на 5+ пипсов\n"
-                     "   (защита от слишком частых изменений в MT5)",
-                font=('Arial', 8, 'italic'),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_MUTED,
-                justify='left').pack(fill='x', pady=(2, 5), padx=40)
-        
-        # === ЖИВОЙ ПРИМЕР ===
-        example_frame = tk.Frame(content, bg=Colors.BG_CARD,
-                                highlightbackground=Colors.SUCCESS,
-                                highlightthickness=2)
-        example_frame.pack(fill='x', pady=(15, 10), padx=20)
+        # Подробные примеры
+        example_frame = tk.Frame(content, bg=Colors.BG_DARK)
+        example_frame.pack(fill='x', pady=(5, 10), padx=40)
         
         tk.Label(example_frame,
-                text="📝 Пример работы с текущими настройками:",
-                font=('Arial', 10, 'bold'),
-                bg=Colors.BG_CARD,
-                fg=Colors.SUCCESS).pack(anchor='w', padx=15, pady=(10, 5))
-        
-        self.trail_example = tk.Label(example_frame,
-                                      text=self._generate_trail_example(
-                                          self.trail_activation.get(),
-                                          self.trail_distance.get(),
-                                          self.trail_step.get()),
-                                      font=('Arial', 9),
-                                      bg=Colors.BG_CARD,
-                                      fg=Colors.TEXT_SECONDARY,
-                                      justify='left',
-                                      wraplength=650)
-        self.trail_example.pack(padx=15, pady=(0, 10), anchor='w')
-        
-        # Update example when values change
-        def update_example(*args):
-            try:
-                activation = int(self.trail_activation.get() or 15)
-                distance = int(self.trail_distance.get() or 15)
-                step = int(self.trail_step.get() or 3)
-                self.trail_example.config(text=self._generate_trail_example(activation, distance, step))
-            except:
-                pass
-        
-        # Bind change events
-        self.trail_activation.bind('<KeyRelease>', update_example)
-        self.trail_distance.bind('<KeyRelease>', update_example)
-        self.trail_step.bind('<KeyRelease>', update_example)
-        
-        # BREAK EVEN REMOVED - percentage-based trailing is sufficient
+                text="💡 Примеры работы:\n"
+                     "   40% активация: профит $6 (40%) → первый SL $4.5 (30%), шаг +10% каждые $1.5\n"
+                     "   30% активация: профит $4.5 (30%) → первый SL $3.0 (20%), шаг +10% каждые $1.5\n"
+                     "   60% активация: профит $9 (60%) → первый SL $7.5 (50%), шаг +10% каждые $1.5",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED,
+                justify='left').pack(side='left')
         
         # TTL SETTINGS - User configurable signal lifetime
         self._create_section(content, "⏱ Signal Time To Live (TTL)")
@@ -1238,16 +1061,12 @@ If you received this message, Telegram notifications are configured correctly! �
             trading_config['trading']['risk']['default_sl_pips'] = int(self.default_sl.get())
             trading_config['trading']['risk']['default_tp_pips'] = int(self.default_tp.get())
             
-            # Trailing stop
+            # Trailing stop - V4 Simplified (only activation %)
             if 'trailing_stop' not in trading_config['trading']:
                 trading_config['trading']['trailing_stop'] = {}
             
             trading_config['trading']['trailing_stop']['enabled'] = self.trail_enabled.get()
-            trading_config['trading']['trailing_stop']['activation_mode'] = self.trail_mode.get()  # 'pips' or 'percent'
-            trading_config['trading']['trailing_stop']['activation_profit_percent'] = int(self.trail_activation_percent.get())  # Процент от TP для активации
-            trading_config['trading']['trailing_stop']['activation_profit_pips'] = int(self.trail_activation.get())
-            trading_config['trading']['trailing_stop']['distance_pips'] = int(self.trail_distance.get())
-            trading_config['trading']['trailing_stop']['step_pips'] = int(self.trail_step.get())
+            trading_config['trading']['trailing_stop']['activation_profit_percent'] = int(self.trail_activation_percent.get())
             
             # Breakeven REMOVED - percentage-based trailing is sufficient
             
@@ -1401,11 +1220,7 @@ If you received this message, Telegram notifications are configured correctly! �
                 trading_config['trading']['trailing_stop'] = {}
             
             trading_config['trading']['trailing_stop']['enabled'] = self.trail_enabled.get()
-            trading_config['trading']['trailing_stop']['activation_mode'] = self.trail_mode.get()
             trading_config['trading']['trailing_stop']['activation_profit_percent'] = int(self.trail_activation_percent.get())
-            trading_config['trading']['trailing_stop']['activation_profit_pips'] = int(self.trail_activation.get())
-            trading_config['trading']['trailing_stop']['distance_pips'] = int(self.trail_distance.get())
-            trading_config['trading']['trailing_stop']['step_pips'] = int(self.trail_step.get())
             
             # Breakeven REMOVED
             
@@ -1542,40 +1357,6 @@ If you received this message, Telegram notifications are configured correctly! �
         except Exception as e:
             logger.error(f"[SETTINGS] Failed to open guide: {e}")
             messagebox.showerror("Ошибка", f"Не удалось открыть руководство:\n{e}")
-    
-    def _generate_trail_example(self, activation: int, distance: int, step: int) -> str:
-        """Генерирует живой пример работы trailing stop"""
-        try:
-            # Convert to int if strings from Entry widgets
-            activation = int(activation)
-            distance = int(distance)
-            step = int(step)
-        except (ValueError, TypeError):
-            # Fallback to defaults
-            activation = 15
-            distance = 15
-            step = 3
-        
-        entry = 2650.0
-        current = entry + (activation + 10) * 0.0001  # Цена в профите
-        sl_initial = entry - 50 * 0.0001
-        sl_trailing = current - distance * 0.0001
-        profit = activation + 10
-        
-        example = f"""1️⃣ Вход в сделку BUY @ {entry:.4f}, SL @ {sl_initial:.4f}, TP @ {entry + 100*0.0001:.4f}
-
-2️⃣ Цена выросла до {current:.4f} (+{profit} пипсов профита)
-   ✅ Профит >= {activation} пипсов → Trailing активирован!
-
-3️⃣ Trailing двигает SL на {distance} пипсов от цены:
-   SL {sl_initial:.4f} → {sl_trailing:.4f}
-   
-4️⃣ Цена продолжает расти → SL постоянно следует за ценой
-   (обновление каждые {step} пипсов движения)
-
-5️⃣ Если цена откатит на {distance} пипсов → позиция закроется с профитом!"""
-        
-        return example
     
     def _bind_paste(self, entry_widget):
         """Добавить поддержку Ctrl+V для Entry виджета"""

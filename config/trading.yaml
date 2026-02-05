@@ -30,19 +30,8 @@ trading:
     fair_value_gaps: true
     order_blocks: true
   trailing_stop:
-    activation_mode: percent
-    activation_percent: 40
-    activation_profit_percent: 40
-    activation_profit_pips: 30
-    breakeven:
-      activation_mode: percent
-      activation_percent: 50
-      activation_profit_pips: 35
-      enabled: true
-      offset_pips: 8
-    distance_pips: 25
     enabled: true
-    step_pips: 5
+    activation_profit_percent: 40  # V4: Only parameter needed, rest is auto-calculated
     stop_distance_percent: 50
   trend_filter:
     enabled: true
