@@ -16,7 +16,7 @@ market_analyst:
   gpt:
     max_tokens: 4000
     model: gpt-4o
-    temperature: 0.4
+    temperature: 0.3
   prompt_version: 2026-01
   safety:
     max_daily_calls: 50
@@ -50,8 +50,8 @@ market_analyst:
     auto_cleanup: true
     confidence_decay: true
     default_ttl_hours: 24
-    min_confidence: 75
-    min_rr: 1.5
+    min_confidence: 80
+    min_rr: 2.0
     validity_minutes: 60
 news_filter:
   cache_duration: 3600

@@ -300,12 +300,21 @@ Look at the LAST 20-30 M5 candles. Find quick scalping setups based on:
 - EMA crossovers
 - Quick momentum shifts
 
-**TRADING RULES (V4 LOGIC):**
-- **FIXED SL**: $5 from entry (DO NOT CALCULATE, ALWAYS $5)
-- **FIXED TP**: $10 from entry (DO NOT CALCULATE, ALWAYS $10)
-- **BUY ONLY if**: price bounced from support and moving up 2-3 candles OR bullish momentum
-- **SELL ONLY if**: price rejected resistance and moving down 2-3 candles OR bearish momentum
-- **WAIT if**: no clear setup, consolidation, or low confidence
+**TRADING RULES (V4 LOGIC - OPTIMIZED FOR PROFITABILITY):**
+- **FIXED SL**: $4 from entry (tighter risk control)
+- **FIXED TP**: $12 from entry (improved R:R = 3:1)
+- **BUY ONLY if**: strong bounce from support with 2-3 green candles + volume confirmation
+- **SELL ONLY if**: clear rejection at resistance with 2-3 red candles + volume confirmation
+- **WAIT if**: choppy price action, unclear direction, or low conviction
+- **ENTRY PRECISION**: Must be within $0.50 of current price for immediate execution
+- **TREND ALIGNMENT**: Only trade with 1H trend direction (check EMA alignment)
+
+**CRITICAL IMPROVEMENTS:**
+1. **STRICTER ENTRY CRITERIA**: Only trade HIGH PROBABILITY setups
+2. **TIGHTER SL ($4)** but **BIGGER TP ($12)** → Better R:R ratio
+3. **TREND FILTER**: Don't counter-trade strong H1 trends
+4. **PATIENCE**: Wait for clear setup, don't force trades
+5. Entry quality MUST be "optimal" - skip "fair" setups
 
 **RESPONSE FORMAT (JSON ONLY):**
 
@@ -340,10 +349,17 @@ Look at the LAST 20-30 M5 candles. Find quick scalping setups based on:
 6. Return ONLY valid JSON, no extra text
 
 **EXAMPLES OF GOOD M5 SETUPS:**
-- Price touched recent low ($2660), bounced with 2 green candles → BUY
-- Price rejected recent high ($2670), dropped with 2 red candles → SELL
-- EMA fast crossed above slow with momentum → BUY
-- Clear consolidation or choppy → NONE/WAIT
+- Price touched recent low ($2660), bounced with 2+ strong green candles + H1 trend bullish → BUY
+- Price rejected recent high ($2670), dropped with 2+ strong red candles + H1 trend bearish → SELL
+- EMA fast crossed above slow with momentum + price above all EMAs → BUY
+- Clear consolidation or choppy price action → NONE/WAIT
+- **SKIP WEAK SETUPS**: Single candle reversals, small wicks, or unclear patterns
+
+**RISK MANAGEMENT PRIORITY:**
+- **Preserve capital first**: Only take trades with 80%+ confidence
+- **Better to miss a trade than take a bad one**
+- **Focus on R:R 3:1** - this compensates for occasional losses
+- Let trailing stop protect profits after +$6 move ($4 SL → $12 TP = $8 buffer)
 
 Analyze the M5 chart NOW and give your decision!
 """
@@ -585,13 +601,13 @@ Analyze the M5 chart NOW and give your decision!
                             
                             logger.info(f"[AI] ✅ Entry validation OK: ${entry:.2f} (distance: ${entry_distance:.2f})")
                         
-                        # FIXED PARAMETERS (V4) - Updated SL/TP for better R:R
-                        MIN_SL_DISTANCE = 2.0   # Minimum $2
-                        MAX_SL_DISTANCE = 8.0   # Maximum $8
-                        FIXED_TP_DISTANCE = 15.0  # $15
+                        # FIXED PARAMETERS (V4) - Optimized for better profitability
+                        MIN_SL_DISTANCE = 3.0   # Minimum $3 (tighter risk)
+                        MAX_SL_DISTANCE = 5.0   # Maximum $5 (prevent wide stops)
+                        FIXED_TP_DISTANCE = 15.0  # $15 (keep target ambitious)
                         
-                        # Use default SL of $8, but clamp between $2-$8
-                        FIXED_SL_DISTANCE = max(MIN_SL_DISTANCE, min(MAX_SL_DISTANCE, 8.0))
+                        # Use default SL of $4, but clamp between $3-$5
+                        FIXED_SL_DISTANCE = 4.0  # Fixed at $4 for consistent risk
                         
                         # Calculate fixed SL/TP based on direction
                         if action == "BUY":

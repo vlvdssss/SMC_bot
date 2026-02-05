@@ -15,8 +15,8 @@ trading:
     - H1
     - H4
   risk:
-    default_sl_pips: 50
-    default_tp_pips: 100
+    default_sl_pips: 40
+    default_tp_pips: 120
     max_lot_size: 1.0
   signal_ttl:
     auto_requery_invalidate_cooldown_minutes: 5
@@ -31,18 +31,18 @@ trading:
     order_blocks: true
   trailing_stop:
     activation_mode: percent
-    activation_percent: 30
+    activation_percent: 50
     activation_profit_percent: 60
-    activation_profit_pips: 20
+    activation_profit_pips: 30
     breakeven:
       activation_mode: percent
-      activation_percent: 30
-      activation_profit_pips: 25
+      activation_percent: 50
+      activation_profit_pips: 35
       enabled: true
-      offset_pips: 5
-    distance_pips: 15
+      offset_pips: 8
+    distance_pips: 25
     enabled: true
-    step_pips: 3
+    step_pips: 5
     stop_distance_percent: 50
   trend_filter:
     enabled: true
