@@ -356,7 +356,7 @@ class SettingsDialog:
                 justify='left',
                 wraplength=650).pack(padx=15, pady=10)
         
-        # ЕДИНСТВЕННЫЙ ПАРАМЕТР: Activation %
+        # ПАРАМЕТР 1: Activation %
         tk.Label(content,
                 text="📈 Активация при профите (% от TP distance):",
                 font=('Arial', 10, 'bold'),
@@ -364,16 +364,16 @@ class SettingsDialog:
                 fg=Colors.TEXT_PRIMARY,
                 anchor='w').pack(fill='x', pady=(10, 5), padx=40)
         
-        percent_frame = tk.Frame(content, bg=Colors.BG_DARK)
-        percent_frame.pack(fill='x', pady=5, padx=40)
+        activation_frame = tk.Frame(content, bg=Colors.BG_DARK)
+        activation_frame.pack(fill='x', pady=5, padx=40)
         
-        tk.Label(percent_frame,
-                text="Процент:",
+        tk.Label(activation_frame,
+                text="Активация:",
                 font=('Arial', 10),
                 bg=Colors.BG_DARK,
                 fg=Colors.TEXT_SECONDARY).pack(side='left', padx=5)
         
-        self.trail_activation_percent = tk.Entry(percent_frame,
+        self.trail_activation_percent = tk.Entry(activation_frame,
                                                  font=('Arial', 10, 'bold'),
                                                  width=8,
                                                  bg=Colors.BG_CARD,
@@ -383,11 +383,56 @@ class SettingsDialog:
         self.trail_activation_percent.pack(side='left', padx=5)
         self._bind_paste(self.trail_activation_percent)
         
-        tk.Label(percent_frame,
+        tk.Label(activation_frame,
                 text="% от TP distance",
                 font=('Arial', 9),
                 bg=Colors.BG_DARK,
                 fg=Colors.TEXT_MUTED).pack(side='left', padx=5)
+        
+        tk.Label(content,
+                text="💡 При 40%: если TP $15 → активация при +$6 профита",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED).pack(fill='x', pady=(2, 10), padx=40)
+        
+        # ПАРАМЕТР 2: Trailing Step %
+        tk.Label(content,
+                text="⚙️ Шаг трейлинга (% от TP distance):",
+                font=('Arial', 10, 'bold'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_PRIMARY,
+                anchor='w').pack(fill='x', pady=(10, 5), padx=40)
+        
+        step_frame = tk.Frame(content, bg=Colors.BG_DARK)
+        step_frame.pack(fill='x', pady=5, padx=40)
+        
+        tk.Label(step_frame,
+                text="Шаг:",
+                font=('Arial', 10),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_SECONDARY).pack(side='left', padx=5)
+        
+        self.trail_step_percent = tk.Entry(step_frame,
+                                          font=('Arial', 10, 'bold'),
+                                          width=8,
+                                          bg=Colors.BG_CARD,
+                                          fg=Colors.SUCCESS,
+                                          insertbackground=Colors.TEXT_PRIMARY)
+        self.trail_step_percent.insert(0, str(trailing_config.get('trailing_step_percent', 10)))
+        self.trail_step_percent.pack(side='left', padx=5)
+        self._bind_paste(self.trail_step_percent)
+        
+        tk.Label(step_frame,
+                text="% (каждые X% профита двигать SL вверх)",
+                font=('Arial', 9),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED).pack(side='left', padx=5)
+        
+        tk.Label(content,
+                text="💡 При 10%: если TP $15 → SL двигается каждые $1.5 профита",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED).pack(fill='x', pady=(2, 10), padx=40)
         
         # Подробные примеры
         example_frame = tk.Frame(content, bg=Colors.BG_DARK)
@@ -395,9 +440,9 @@ class SettingsDialog:
         
         tk.Label(example_frame,
                 text="💡 Примеры работы:\n"
-                     "   40% активация: профит $6 (40%) → первый SL $4.5 (30%), шаг +10% каждые $1.5\n"
-                     "   30% активация: профит $4.5 (30%) → первый SL $3.0 (20%), шаг +10% каждые $1.5\n"
-                     "   60% активация: профит $9 (60%) → первый SL $7.5 (50%), шаг +10% каждые $1.5",
+                     "   Актив 40%, шаг 10%: профит $6 (40%) → первый SL $4.5 (30%), далее каждые $1.5\n"
+                     "   Актив 30%, шаг 5%: профит $4.5 (30%) → первый SL $3.75 (25%), далее каждые $0.75\n"
+                     "   Актив 60%, шаг 15%: профит $9 (60%) → первый SL $6.75 (45%), далее каждые $2.25",
                 font=('Arial', 8, 'italic'),
                 bg=Colors.BG_DARK,
                 fg=Colors.TEXT_MUTED,
@@ -1061,12 +1106,13 @@ If you received this message, Telegram notifications are configured correctly! �
             trading_config['trading']['risk']['default_sl_pips'] = int(self.default_sl.get())
             trading_config['trading']['risk']['default_tp_pips'] = int(self.default_tp.get())
             
-            # Trailing stop - V4 Simplified (only activation %)
+            # Trailing stop - V4 (activation % and step %)
             if 'trailing_stop' not in trading_config['trading']:
                 trading_config['trading']['trailing_stop'] = {}
             
             trading_config['trading']['trailing_stop']['enabled'] = self.trail_enabled.get()
             trading_config['trading']['trailing_stop']['activation_profit_percent'] = int(self.trail_activation_percent.get())
+            trading_config['trading']['trailing_stop']['trailing_step_percent'] = int(self.trail_step_percent.get())
             
             # Breakeven REMOVED - percentage-based trailing is sufficient
             

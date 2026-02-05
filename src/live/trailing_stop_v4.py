@@ -45,10 +45,10 @@ class TrailingStopV4:
         # Load config
         self._load_config()
         
-        logger.info(f"[V4-Trailing] Initialized DYNAMIC 10% STEP MODE")
+        logger.info(f"[V4-Trailing] Initialized DYNAMIC TRAILING")
         logger.info(f"[V4-Trailing]    Activation: {self.activation_percent}% of TP")
-        logger.info(f"[V4-Trailing]    First Stop: {self.first_stop_percent}% (activation - 10%)")
-        logger.info(f"[V4-Trailing]    Trailing Step: 10% every 10% profit")
+        logger.info(f"[V4-Trailing]    Step: {self.step_percent}% every {self.step_percent}% profit")
+        logger.info(f"[V4-Trailing]    First Stop: {self.first_stop_percent}% (activation - step)")
     
     def _load_config(self):
         """Load trailing stop parameters from trading.yaml"""
@@ -59,37 +59,40 @@ class TrailingStopV4:
                     config = yaml.safe_load(f)
                     trailing_config = config.get('trading', {}).get('trailing_stop', {})
                     
-                    # Read activation from config (default 30%)
-                    self.activation_percent = trailing_config.get('activation_profit_percent', 30)
+                    # Read activation from config (default 40%)
+                    self.activation_percent = trailing_config.get('activation_profit_percent', 40)
                     
-                    # Первый стоп: activation - 10%
-                    self.first_stop_percent = max(0, self.activation_percent - 10)
+                    # Read trailing step from config (default 10%)
+                    self.step_percent = trailing_config.get('trailing_step_percent', 10)
+                    
+                    # Первый стоп: activation - step
+                    self.first_stop_percent = max(0, self.activation_percent - self.step_percent)
                     
                     # Convert to decimal
                     self.ACTIVATION_PERCENT = self.activation_percent / 100.0
                     self.FIRST_STOP_PERCENT = self.first_stop_percent / 100.0
+                    self.TRAILING_STEP_PERCENT = self.step_percent / 100.0
+                    self.STOP_DISTANCE_PERCENT = self.step_percent / 100.0  # Distance = step
                     
-                    # ФИКСИРОВАННЫЕ параметры: 10% шаг
-                    self.TRAILING_STEP_PERCENT = 0.10  # 10% шаг
-                    self.STOP_DISTANCE_PERCENT = 0.10  # 10% от цены
-                    
-                    logger.info(f"[V4-Trailing] Config loaded: activation={self.activation_percent}%, first_stop={self.first_stop_percent}%")
+                    logger.info(f"[V4-Trailing] Config loaded: activation={self.activation_percent}%, step={self.step_percent}%, first_stop={self.first_stop_percent}%")
             else:
                 # Fallback to defaults
-                self.activation_percent = 30
-                self.first_stop_percent = 20
-                self.ACTIVATION_PERCENT = 0.3
-                self.FIRST_STOP_PERCENT = 0.2
+                self.activation_percent = 40
+                self.step_percent = 10
+                self.first_stop_percent = 30
+                self.ACTIVATION_PERCENT = 0.4
+                self.FIRST_STOP_PERCENT = 0.3
                 self.TRAILING_STEP_PERCENT = 0.10
                 self.STOP_DISTANCE_PERCENT = 0.10
-                logger.warning("[V4-Trailing] Config not found, using defaults: 30% activation, 20% first stop")
+                logger.warning("[V4-Trailing] Config not found, using defaults: 40% activation, 10% step, 30% first stop")
         except Exception as e:
             logger.error(f"[V4-Trailing] Failed to load config: {e}")
             # Fallback
-            self.activation_percent = 30
-            self.first_stop_percent = 20
-            self.ACTIVATION_PERCENT = 0.3
-            self.FIRST_STOP_PERCENT = 0.2
+            self.activation_percent = 40
+            self.step_percent = 10
+            self.first_stop_percent = 30
+            self.ACTIVATION_PERCENT = 0.4
+            self.FIRST_STOP_PERCENT = 0.3
             self.TRAILING_STEP_PERCENT = 0.10
             self.STOP_DISTANCE_PERCENT = 0.10
     
