@@ -112,14 +112,13 @@ class StrategyXAUUSD:
             self.build_context(current_h1_idx)
         return self.get_signal(self.m15_data, current_m15_idx, analysis_price, entry_price)
     
-    def execute_trade(self, signal: dict, balance: float, risk_pct: float = 1.0) -> dict:
+    def execute_trade(self, signal: dict, fixed_lot_size: float = 0.01) -> dict:
         """
-        Расчет параметров сделки с правильным лот-сайзом.
+        Prepare trade parameters with fixed lot size.
         
         Args:
-            signal: Сигнал от generate_signal()
-            balance: Текущий баланс
-            risk_pct: Риск на сделку в % (default: 1%)
+            signal: Signal from generate_signal()
+            fixed_lot_size: Fixed lot size from config (default: 0.01)
             
         Returns:
             dict: {
@@ -129,33 +128,19 @@ class StrategyXAUUSD:
                 'tp': float,
                 'lot_size': float
             }
+        
+        Note: Removed % risk calculation - bot now trades fixed lot only.
         """
         if not signal['valid']:
             return None
         
-        # Расчет лот-сайза (XAUUSD contract size = 100 oz)
-        entry_price = signal['entry']
-        sl_price = signal['sl']
-        contract_size = 100
-        
-        risk_amount = balance * (risk_pct / 100.0)  # Сколько $ рискуем
-        sl_distance = abs(entry_price - sl_price)    # Расстояние до SL
-        
-        if sl_distance == 0:
-            lot_size = 0.01  # Минимум
-        else:
-            # risk_amount = lot_size * contract_size * sl_distance
-            lot_size = risk_amount / (contract_size * sl_distance)
-            lot_size = max(0.01, lot_size)  # Минимум 0.01
-            lot_size = min(1.0, lot_size)   # Максимум 1.0
-            lot_size = round(lot_size, 2)   # Округление
-        
+        # Use fixed lot size (no dynamic calculation)
         return {
             'direction': signal['direction'],
-            'entry': entry_price,
+            'entry': signal['entry'],
             'sl': signal['sl'],
             'tp': signal['tp'],
-            'lot_size': lot_size
+            'lot_size': fixed_lot_size
         }
     
     def get_trade(self, h1_data: pd.DataFrame, m15_data: pd.DataFrame,

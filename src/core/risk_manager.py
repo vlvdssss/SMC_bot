@@ -14,7 +14,7 @@ class RiskManager:
         # Настройки рисков
         self.max_daily_loss_percent = config.get('max_daily_loss_percent', 5.0)
         self.max_open_positions = config.get('max_open_positions', 4)
-        self.max_lot_size = config.get('max_lot_size', 1.0)
+        self.fixed_lot_size = config.get('fixed_lot_size', 0.01)  # Changed from max_lot_size
         self.max_daily_trades = config.get('max_daily_trades', 10)
         
         # Отслеживание
@@ -30,10 +30,10 @@ class RiskManager:
             self.logger.warning(f"Maximum open positions ({self.max_open_positions}) reached")
             return False
         
-        # Проверка размера лота
-        if lot_size > self.max_lot_size:
-            self.logger.warning(f"Lot size {lot_size} exceeds maximum {self.max_lot_size}")
-            return False
+        # Проверка что lot_size соответствует настроенному fixed_lot_size
+        if lot_size != self.fixed_lot_size:
+            self.logger.warning(f"Lot size {lot_size} does not match fixed_lot_size {self.fixed_lot_size}")
+            # Allow it but log (может быть уменьшен AI risk multiplier)
         
         # Проверка дневного лимита сделок
         today = datetime.now().date()
@@ -52,7 +52,11 @@ class RiskManager:
         return True
     
     def validate_signal(self, signal: Dict, current_price: float, account_balance: float) -> bool:
-        """Валидация торгового сигнала"""
+        """
+        Валидация торгового сигнала.
+        
+        Note: Removed dynamic lot calculation - bot now uses fixed_lot_size from config.
+        """
         
         # Проверка SL/TP расстояния
         if 'sl' not in signal or 'tp' not in signal:
@@ -70,15 +74,8 @@ class RiskManager:
                 self.logger.warning("Invalid SL/TP levels for SELL signal")
                 return False
         
-        # Расчет размера позиции
-        risk_amount = account_balance * signal.get('risk_percent', 1.0) / 100
-        stop_distance = abs(current_price - signal['sl'])
-        
-        if stop_distance == 0:
-            self.logger.error("Stop distance cannot be zero")
-            return False
-        
-        lot_size = risk_amount / (stop_distance * 100000)  # Для EURUSD, упрощено
+        # Use fixed lot size (no calculation based on % risk)
+        lot_size = self.fixed_lot_size
         
         return self.can_open_position(signal.get('instrument', 'UNKNOWN'), lot_size, account_balance)
     

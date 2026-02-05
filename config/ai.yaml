@@ -50,8 +50,6 @@ market_analyst:
     auto_cleanup: true
     confidence_decay: true
     default_ttl_hours: 24
-    min_confidence: 80
-    min_rr: 2.0
     validity_minutes: 60
 news_filter:
   cache_duration: 3600

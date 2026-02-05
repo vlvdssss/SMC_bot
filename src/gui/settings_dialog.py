@@ -578,181 +578,7 @@ class SettingsDialog:
         self.trail_distance.bind('<KeyRelease>', update_example)
         self.trail_step.bind('<KeyRelease>', update_example)
         
-        breakeven_config = trailing_config.get('breakeven', {})
-        
-        # Включить breakeven
-        be_enabled_frame = self._create_setting_row(content, "✅ Включить автоматический breakeven")
-        self.breakeven_enabled = tk.BooleanVar(value=breakeven_config.get('enabled', True))
-        tk.Checkbutton(be_enabled_frame,
-                      variable=self.breakeven_enabled,
-                      bg=Colors.BG_DARK,
-                      fg=Colors.TEXT_PRIMARY,
-                      selectcolor=Colors.BG_PANEL,
-                      activebackground=Colors.BG_DARK,
-                      activeforeground=Colors.SUCCESS,
-                      font=('Arial', 10, 'bold')).pack(side='right')
-        
-        # Информация о breakeven
-        be_info_frame = tk.Frame(content, bg=Colors.BG_CARD,
-                                highlightbackground=Colors.INFO,
-                                highlightthickness=1)
-        be_info_frame.pack(fill='x', pady=(5, 10), padx=40)
-        
-        tk.Label(be_info_frame,
-                text="ℹ️ Breakeven автоматически переводит SL в безубыток при достижении профита.\n"
-                     "Пример: профит +25 пипсов → SL на entry+5 пипсов (гарантия +$0.50 на 0.01 лот)",
-                font=('Arial', 9),
-                bg=Colors.BG_CARD,
-                fg=Colors.TEXT_SECONDARY,
-                justify='left',
-                wraplength=600).pack(padx=15, pady=10)
-        
-        # Режим активации breakeven
-        be_mode_frame = self._create_setting_row(content, "📊 Режим активации breakeven")
-        self.be_mode = tk.StringVar(value=breakeven_config.get('activation_mode', 'percent'))  # 'pips' или 'percent'
-        
-        be_mode_selector = tk.Frame(be_mode_frame, bg=Colors.BG_DARK)
-        be_mode_selector.pack(side='right')
-        
-        tk.Radiobutton(be_mode_selector,
-                      text="Процент от TP",
-                      variable=self.be_mode,
-                      value='percent',
-                      bg=Colors.BG_DARK,
-                      fg=Colors.TEXT_PRIMARY,
-                      selectcolor=Colors.PRIMARY,
-                      activebackground=Colors.BG_DARK,
-                      font=('Arial', 10)).pack(side='left', padx=5)
-        
-        tk.Radiobutton(be_mode_selector,
-                      text="Фиксированные пипсы",
-                      variable=self.be_mode,
-                      value='pips',
-                      bg=Colors.BG_DARK,
-                      fg=Colors.TEXT_PRIMARY,
-                      selectcolor=Colors.PRIMARY,
-                      activebackground=Colors.BG_DARK,
-                      font=('Arial', 10)).pack(side='left', padx=5)
-        
-        # Процент от TP для breakeven
-        tk.Label(content,
-                text="📈 Активация breakeven (% от TP distance):",
-                font=('Arial', 10, 'bold'),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_PRIMARY,
-                anchor='w').pack(fill='x', pady=(10, 5), padx=40)
-        
-        be_percent_frame = tk.Frame(content, bg=Colors.BG_DARK)
-        be_percent_frame.pack(fill='x', pady=5, padx=40)
-        
-        tk.Label(be_percent_frame,
-                text="Процент:",
-                font=('Arial', 10),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_SECONDARY).pack(side='left', padx=5)
-        
-        self.be_activation_percent = tk.Entry(be_percent_frame,
-                                             font=('Arial', 10, 'bold'),
-                                             width=8,
-                                             bg=Colors.BG_CARD,
-                                             fg=Colors.SUCCESS,
-                                             insertbackground=Colors.TEXT_PRIMARY)
-        self.be_activation_percent.insert(0, str(breakeven_config.get('activation_percent', 30)))
-        self.be_activation_percent.pack(side='left', padx=5)
-        self._bind_paste(self.be_activation_percent)
-        
-        tk.Label(be_percent_frame,
-                text="% (также 30% как trailing)",
-                font=('Arial', 9),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_MUTED).pack(side='left', padx=5)
-        
-        tk.Label(content,
-                text="💡 Breakeven и Trailing используют один процент для консистентности",
-                font=('Arial', 8, 'italic'),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_MUTED,
-                justify='left').pack(fill='x', pady=(2, 10), padx=40)
-        
-        # Активация breakeven
-        tk.Label(content,
-                text="🎯 Активация при профите (фиксированные пипсы):",
-                font=('Arial', 10, 'bold'),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_PRIMARY,
-                anchor='w').pack(fill='x', pady=(10, 5), padx=40)
-        
-        be_activation_frame = tk.Frame(content, bg=Colors.BG_DARK)
-        be_activation_frame.pack(fill='x', pady=5, padx=40)
-        
-        tk.Label(be_activation_frame,
-                text="Пипсы:",
-                font=('Arial', 10),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_SECONDARY).pack(side='left', padx=5)
-        
-        self.be_activation = tk.Entry(be_activation_frame,
-                                     font=('Arial', 10, 'bold'),
-                                     width=8,
-                                     bg=Colors.BG_CARD,
-                                     fg=Colors.SUCCESS,
-                                     insertbackground=Colors.TEXT_PRIMARY)
-        self.be_activation.insert(0, str(breakeven_config.get('activation_profit_pips', 25)))
-        self.be_activation.pack(side='left', padx=5)
-        self._bind_paste(self.be_activation)
-        
-        tk.Label(be_activation_frame,
-                text="пипсов профита",
-                font=('Arial', 9),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_MUTED).pack(side='left', padx=5)
-        
-        tk.Label(content,
-                text="💡 При достижении этого профита SL переводится в безубыток",
-                font=('Arial', 8, 'italic'),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_MUTED,
-                justify='left').pack(fill='x', pady=(2, 5), padx=40)
-        
-        # Отступ от входа
-        tk.Label(content,
-                text="➕ Отступ от входа (защита прибыли в пипсах):",
-                font=('Arial', 10, 'bold'),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_PRIMARY,
-                anchor='w').pack(fill='x', pady=(10, 5), padx=40)
-        
-        be_offset_frame = tk.Frame(content, bg=Colors.BG_DARK)
-        be_offset_frame.pack(fill='x', pady=5, padx=40)
-        
-        tk.Label(be_offset_frame,
-                text="Пипсы:",
-                font=('Arial', 10),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_SECONDARY).pack(side='left', padx=5)
-        
-        self.be_offset = tk.Entry(be_offset_frame,
-                                 font=('Arial', 10, 'bold'),
-                                 width=8,
-                                 bg=Colors.BG_CARD,
-                                 fg=Colors.SUCCESS,
-                                 insertbackground=Colors.TEXT_PRIMARY)
-        self.be_offset.insert(0, str(breakeven_config.get('offset_pips', 5)))
-        self.be_offset.pack(side='left', padx=5)
-        self._bind_paste(self.be_offset)
-        
-        tk.Label(be_offset_frame,
-                text="пипсов отступа",
-                font=('Arial', 9),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_MUTED).pack(side='left', padx=5)
-        
-        tk.Label(content,
-                text="💡 SL ставится на entry + этот отступ (0 = точный безубыток)",
-                font=('Arial', 8, 'italic'),
-                bg=Colors.BG_DARK,
-                fg=Colors.TEXT_MUTED,
-                justify='left').pack(fill='x', pady=(2, 15), padx=40)
+        # BREAK EVEN REMOVED - percentage-based trailing is sufficient
         
         # TTL SETTINGS - User configurable signal lifetime
         self._create_section(content, "⏱ Signal Time To Live (TTL)")
@@ -1423,15 +1249,7 @@ If you received this message, Telegram notifications are configured correctly! �
             trading_config['trading']['trailing_stop']['distance_pips'] = int(self.trail_distance.get())
             trading_config['trading']['trailing_stop']['step_pips'] = int(self.trail_step.get())
             
-            # Breakeven (FIRST OCCURRENCE)
-            if 'breakeven' not in trading_config['trading']['trailing_stop']:
-                trading_config['trading']['trailing_stop']['breakeven'] = {}
-            
-            trading_config['trading']['trailing_stop']['breakeven']['enabled'] = self.breakeven_enabled.get()
-            trading_config['trading']['trailing_stop']['breakeven']['activation_mode'] = self.be_mode.get()  # NEW
-            trading_config['trading']['trailing_stop']['breakeven']['activation_percent'] = int(self.be_activation_percent.get())  # NEW
-            trading_config['trading']['trailing_stop']['breakeven']['activation_profit_pips'] = int(self.be_activation.get())
-            trading_config['trading']['trailing_stop']['breakeven']['offset_pips'] = int(self.be_offset.get())
+            # Breakeven REMOVED - percentage-based trailing is sufficient
             
             # Trading hours - HARDCODED in bot logic (not from GUI)
             # Weekend: Sat/Sun always blocked
@@ -1589,15 +1407,7 @@ If you received this message, Telegram notifications are configured correctly! �
             trading_config['trading']['trailing_stop']['distance_pips'] = int(self.trail_distance.get())
             trading_config['trading']['trailing_stop']['step_pips'] = int(self.trail_step.get())
             
-            # Breakeven
-            if 'breakeven' not in trading_config['trading']['trailing_stop']:
-                trading_config['trading']['trailing_stop']['breakeven'] = {}
-            
-            trading_config['trading']['trailing_stop']['breakeven']['enabled'] = self.breakeven_enabled.get()
-            trading_config['trading']['trailing_stop']['breakeven']['activation_mode'] = self.be_mode.get()
-            trading_config['trading']['trailing_stop']['breakeven']['activation_percent'] = int(self.be_activation_percent.get())
-            trading_config['trading']['trailing_stop']['breakeven']['activation_profit_pips'] = int(self.be_activation.get())
-            trading_config['trading']['trailing_stop']['breakeven']['offset_pips'] = int(self.be_offset.get())
+            # Breakeven REMOVED
             
             # Telegram
             telegram_config = {}

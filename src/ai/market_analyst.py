@@ -300,9 +300,8 @@ Look at the LAST 20-30 M5 candles. Find quick scalping setups based on:
 - EMA crossovers
 - Quick momentum shifts
 
-**TRADING RULES (V4 M5 SCALPING - OPTIMIZED FOR PROFITABILITY):**
-- **FIXED SL**: $4 from entry (tight risk control)
-- **FIXED TP**: $12 from entry (R:R = 3:1)
+**TRADING RULES (V4 M5 SCALPING - FIXED SL/TP FROM CONFIG):**
+- **SL/TP are FIXED** by user config (you don't set them)
 - **BUY ONLY if**: 
   - Strong bounce from recent low with 2-3 solid green candles
   - Clear upward momentum on M5 (not just single spike)
@@ -349,9 +348,9 @@ Look at the LAST 20-30 M5 candles. Find quick scalping setups based on:
 }
 
 **CRITICAL (V4 REQUIREMENTS):**
-1. **SL/TP are FIXED** - system will calculate automatically as entry ± $5/$10
+1. **SL/TP will be calculated by system** - just provide entry price and direction
 2. Entry must be close to current price (within $1)
-3. **ALWAYS return BUY or SELL** - even with low confidence, pick the most likely direction
+3. **ALWAYS return BUY or SELL** - even in uncertain conditions, pick the most likely direction
 4. Focus on LAST 20-30 candles only (not full chart history)
 5. Look for quick reversals and momentum - this is scalping!
 6. Return ONLY valid JSON, no extra text
@@ -364,11 +363,10 @@ Look at the LAST 20-30 M5 candles. Find quick scalping setups based on:
 - **SKIP WEAK SETUPS**: Single candle moves, overlapping candles, or choppy 10-candle range
 
 **RISK MANAGEMENT PRIORITY:**
-- **Preserve capital first**: Only take trades with 80%+ confidence
+- **Preserve capital first**: Only take high-quality setups with clear directional bias
 - **M5 SCALPING = MOMENTUM TRADING**: Need clear directional move, not guessing reversals
 - **Better to miss a trade than take a bad one**
-- **Focus on R:R 3:1** - compensates for occasional losses
-- Let trailing stop (40% activation) protect profits after $6 move
+- Let trailing stop (40% activation) protect profits
 
 Analyze the M5 chart NOW and give your decision!
 """

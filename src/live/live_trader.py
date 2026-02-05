@@ -4,7 +4,7 @@ Live Trader - Live and Demo Trading Module
 
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, time as datetime_time
 from typing import Dict, Tuple
 import threading
 import json
@@ -237,6 +237,36 @@ class LiveTrader:
         except Exception as e:
             logger.warning(f"[TRADE] Failed to check trading config for {symbol}: {e}")
             return True  # По умолчанию разрешаем если не смогли проверить
+    
+    def _can_trade_now(self) -> bool:
+        """
+        Check if trading is allowed at current time (hardcoded restrictions).
+        
+        HARDCODED RESTRICTIONS (removed from GUI):
+        - No trading on weekends (Saturday=5, Sunday=6)
+        - No trading during night hours: 23:30 UTC - 01:10 UTC
+        
+        Returns:
+            bool: True if trading allowed, False if blocked
+        """
+        now = datetime.now()
+        
+        # Block weekends (Saturday and Sunday)
+        if now.weekday() >= 5:  # 5=Saturday, 6=Sunday
+            logger.info(f"[TRADE] ⛔ Weekend block: No trading on {now.strftime('%A')}")
+            return False
+        
+        # Block night hours: 23:30 - 01:10 UTC
+        current_time = now.time()
+        night_start = datetime_time(23, 30)
+        night_end = datetime_time(1, 10)
+        
+        # Night block spans across midnight (23:30 → 00:00 → 01:10)
+        if current_time >= night_start or current_time <= night_end:
+            logger.info(f"[TRADE] ⛔ Night block: No trading from 23:30 to 01:10 UTC (current: {current_time.strftime('%H:%M')})")
+            return False
+        
+        return True
     
     def connect_mt5(self) -> bool:
         """Подключение к MetaTrader 5."""
@@ -574,7 +604,12 @@ class LiveTrader:
                     filtered_signal = self.process_signal(symbol, signal, h1_data, m15_data, len(m15_data)-1)
                     
                     if filtered_signal:
-                        # Apply AI risk multiplier
+                        # Add fixed lot size from config (removed % risk calculation)
+                        fixed_lot_size = self.config.get('trading', {}).get('risk', {}).get('fixed_lot_size', 0.01)
+                        filtered_signal['lot_size'] = fixed_lot_size
+                        filtered_signal['volume'] = fixed_lot_size  # Duplicate for compatibility
+                        
+                        # Apply AI risk multiplier (may reduce lot_size)
                         filtered_signal = self._apply_ai_risk_multiplier(symbol, filtered_signal)
                         
                         direction = "BUY" if filtered_signal.get('direction') == 'long' else "SELL"
@@ -688,6 +723,11 @@ class LiveTrader:
     def execute_trade(self, symbol: str, signal: dict):
         """Исполнение сделки."""
         try:
+            # HARDCODED TRADING HOURS CHECK (removed from GUI)
+            if not self._can_trade_now():
+                logger.warning(f"[TRADE] Trading blocked by hardcoded hours/weekend restriction")
+                return None
+            
             # КРИТИЧНО: Проверяем статус сигнала - prevent duplicate trades
             signal_id = signal.get('ai_signal_id')
             if signal_id and self.ai_signal_manager:
@@ -1216,21 +1256,58 @@ class LiveTrader:
         
         Returns:
             Dict в формате стратегии
+            
+        Note: SL/TP from GUI config (default_sl_pips, default_tp_pips) are used 
+        instead of AI-suggested values.
         """
+        # Get fixed lot size from config (removed % risk calculation)
+        fixed_lot_size = self.config.get('trading', {}).get('risk', {}).get('fixed_lot_size', 0.01)
+        
+        # Get SL/TP in pips from config (user settings from GUI)
+        default_sl_pips = self.config.get('trading', {}).get('risk', {}).get('default_sl_pips', 40)
+        default_tp_pips = self.config.get('trading', {}).get('risk', {}).get('default_tp_pips', 120)
+        
+        # Convert pips to price (symbol-specific)
+        symbol = ai_signal.symbol
+        entry_price = ai_signal.entry_price
+        direction = 'long' if ai_signal.type.upper() == 'BUY' else 'short'
+        
+        # Determine pip value based on symbol
+        if 'JPY' in symbol:
+            pip_value = 0.01  # For JPY pairs
+        elif 'XAU' in symbol or 'GOLD' in symbol:
+            pip_value = 0.1   # For XAUUSD (Gold)
+        else:
+            pip_value = 0.0001  # For most currency pairs (EURUSD, GBPUSD, etc.)
+        
+        # Calculate SL/TP prices from GUI config (ignore AI suggestions)
+        if direction == 'long':
+            sl_price = entry_price - (default_sl_pips * pip_value)
+            tp_price = entry_price + (default_tp_pips * pip_value)
+        else:  # short
+            sl_price = entry_price + (default_sl_pips * pip_value)
+            tp_price = entry_price - (default_tp_pips * pip_value)
+        
+        logger.info(f"[AI-Convert] {symbol} {direction.upper()}: GUI SL/TP applied "
+                   f"({default_sl_pips}/{default_tp_pips} pips) = SL:{sl_price:.5f}, TP:{tp_price:.5f} "
+                   f"(AI suggestions ignored)")
+        
         return {
             'symbol': ai_signal.symbol,
-            'direction': 'long' if ai_signal.type.upper() == 'BUY' else 'short',
-            'entry_price': ai_signal.entry_price,
-            'sl': ai_signal.stop_loss,
-            'tp': ai_signal.take_profit,
-            'stop_loss': ai_signal.stop_loss,  # Дублируем для совместимости
-            'take_profit': ai_signal.take_profit,
+            'direction': direction,
+            'entry_price': entry_price,
+            'sl': sl_price,  # From GUI config, not AI
+            'tp': tp_price,  # From GUI config, not AI
+            'stop_loss': sl_price,  # Дублируем для совместимости
+            'take_profit': tp_price,
             'confidence': ai_signal.confidence / 100.0,  # 0-1 scale
             'reasoning': ai_signal.reasoning,
             'source': 'AI-GPT',
             'ai_signal_id': ai_signal.id,
             'valid': True,  # AI сигналы всегда валидны после проверки
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
+            'lot_size': fixed_lot_size,  # Fixed lot from config
+            'volume': fixed_lot_size  # Duplicate for compatibility
         }
     
     def _should_trade_allowed(self, symbol: str) -> bool:
