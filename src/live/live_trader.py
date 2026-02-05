@@ -1160,7 +1160,10 @@ class LiveTrader:
                     
                     # Если нет позиций и нет сигналов - запускаем анализ через 5 минут
                     if not has_active_signals:
-                        if hasattr(self, 'analyst_scheduler') and self.analyst_scheduler:
+                        # БЛОКИРОВКА: Не запускать fallback анализ ночью или в выходные
+                        if not self._can_trade_now():
+                            logger.debug("[LiveTrader] FALLBACK blocked - outside trading hours")
+                        elif hasattr(self, 'analyst_scheduler') and self.analyst_scheduler:
                             # Проверяем когда был последний анализ
                             last_analysis_time = getattr(self, '_last_fallback_analysis_time', None)
                             current_time = datetime.now()
