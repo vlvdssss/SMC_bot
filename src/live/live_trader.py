@@ -1131,9 +1131,12 @@ class LiveTrader:
                             reason="position_closed",
                             cooldown_minutes=5  # Wait 5 minutes before next analysis
                         )
+                        # Mark that analysis was triggered to prevent FALLBACK duplicate
+                        self._last_fallback_analysis_time = datetime.now()
             
             # FALLBACK: Если нет tracked позиций, но есть закрытые сделки в MT5
             # Проверяем последние сделки и запускаем анализ если нужно
+            # NOTE: Skip if position_closed already triggered above (prevents duplicate analysis)
             if not self.tracked_positions:
                 # Нет отслеживаемых позиций - проверяем MT5 напрямую
                 current_positions = self.mt5_connector.positions_get()
