@@ -581,8 +581,22 @@ class AnalystScheduler:
             # Wait cooldown period if specified
             if cooldown_minutes > 0:
                 logger.info(f"[AI-Scheduler] ⏳ Waiting {cooldown_minutes} minutes before analysis...")
-                time.sleep(cooldown_minutes * 60)  # Convert to seconds
+                # Sleep in small intervals to check running flag
+                total_seconds = cooldown_minutes * 60
+                sleep_interval = 10  # Check every 10 seconds
+                elapsed = 0
+                while elapsed < total_seconds:
+                    if not self.running:
+                        logger.info("[AI-Scheduler] ⏸️ Cooldown interrupted - scheduler stopped")
+                        return
+                    time.sleep(min(sleep_interval, total_seconds - elapsed))
+                    elapsed += sleep_interval
                 logger.info(f"[AI-Scheduler] ⏰ Cooldown finished - starting analysis")
+            
+            # Check if scheduler is still running before analysis
+            if not self.running:
+                logger.info("[AI-Scheduler] ⏸️ Analysis skipped - scheduler stopped")
+                return
             
             # ЗАЩИТА ОТ ДУБЛИРОВАНИЯ: проверяем ПОСЛЕ cooldown
             now = datetime.now()
