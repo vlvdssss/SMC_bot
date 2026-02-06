@@ -1133,13 +1133,14 @@ class LiveTrader:
                         # Удаляем из tracked
                         del self.tracked_positions[ticket]
                     
-                    # AUTO-REQUERY: Trigger GPT analysis 5 minutes after position close
+                    # AUTO-REQUERY: Trigger GPT analysis after position close (configurable cooldown)
                     if hasattr(self, 'analyst_scheduler') and self.analyst_scheduler:
-                        logger.info("[LiveTrader] 🔄 Position closed - triggering GPT analysis in 5 minutes")
+                        cooldown = self.config.get('trading', {}).get('signal_ttl', {}).get('requery_cooldown_minutes', 5)
+                        logger.info(f"[LiveTrader] 🔄 Position closed - triggering GPT analysis in {cooldown} minutes")
                         self.analyst_scheduler.trigger_immediate_analysis(
                             symbol=pos_info['symbol'],
                             reason="position_closed",
-                            cooldown_minutes=5  # Wait 5 minutes before next analysis
+                            cooldown_minutes=cooldown
                         )
                         # Mark that analysis was triggered to prevent FALLBACK duplicate
                         self._last_fallback_analysis_time = datetime.now()
@@ -1168,12 +1169,15 @@ class LiveTrader:
                             last_analysis_time = getattr(self, '_last_fallback_analysis_time', None)
                             current_time = datetime.now()
                             
-                            if last_analysis_time is None or (current_time - last_analysis_time).total_seconds() > 300:  # 5 минут
-                                logger.info("[LiveTrader] 🔄 FALLBACK: No positions and no signals - triggering analysis")
+                            cooldown = self.config.get('trading', {}).get('signal_ttl', {}).get('requery_cooldown_minutes', 5)
+                            cooldown_seconds = cooldown * 60
+                            
+                            if last_analysis_time is None or (current_time - last_analysis_time).total_seconds() > cooldown_seconds:
+                                logger.info(f"[LiveTrader] 🔄 FALLBACK: No positions and no signals - triggering analysis in {cooldown} min")
                                 self.analyst_scheduler.trigger_immediate_analysis(
                                     symbol='XAUUSD',
                                     reason="fallback_no_positions",
-                                    cooldown_minutes=5
+                                    cooldown_minutes=cooldown
                                 )
                                 self._last_fallback_analysis_time = current_time
         

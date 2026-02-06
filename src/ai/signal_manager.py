@@ -939,38 +939,37 @@ class AISignalManager:
         if ttl_expired:
             auto_requery = self.config.get('trading', {}).get('signal_ttl', {}).get('auto_requery_on_expire', True)
             if auto_requery and hasattr(self, 'scheduler') and self.scheduler:
-                logger.info("[AI-Signal] 🔄 Triggering auto-requery (TTL expired)")
-                self.scheduler.trigger_immediate_analysis(reason="ttl_expired")
+                cooldown = self.config.get('trading', {}).get('signal_ttl', {}).get('requery_cooldown_minutes', 5)
+                logger.info(f"[AI-Signal] 🔄 Triggering auto-requery (TTL expired) in {cooldown} minutes")
+                self.scheduler.trigger_immediate_analysis(reason="ttl_expired", cooldown_minutes=cooldown)
 
     def _schedule_invalidation_requery(self, symbol: str):
         """Schedule AI requery after price invalidation with cooldown guard."""
         auto_requery = self.config.get('trading', {}).get('signal_ttl', {}).get('auto_requery_on_invalidate', True)
+        cooldown = self.config.get('trading', {}).get('signal_ttl', {}).get('requery_cooldown_minutes', 5)
         if not auto_requery:
             return
         if not hasattr(self, 'scheduler') or not self.scheduler:
             logger.warning("[AI-Signal] No scheduler reference - cannot schedule invalidation requery")
             return
 
-        cooldown_minutes = self.config.get('trading', {}).get('signal_ttl', {}).get(
-            'auto_requery_invalidate_cooldown_minutes', 5
-        )
         now = datetime.now()
         last_time = self._last_invalidation_requery.get(symbol)
-        if last_time and (now - last_time).total_seconds() < cooldown_minutes * 60:
+        if last_time and (now - last_time).total_seconds() < cooldown * 60:
             logger.info(
                 f"[AI-Signal] ⏳ Invalidation requery already scheduled for {symbol} "
-                f"({cooldown_minutes}min cooldown)"
+                f"({cooldown}min cooldown)"
             )
             return
 
         self._last_invalidation_requery[symbol] = now
         logger.info(
-            f"[AI-Signal] 🔄 Signal invalidated - scheduling requery in {cooldown_minutes} minutes for {symbol}"
+            f"[AI-Signal] 🔄 Signal invalidated - scheduling requery in {cooldown} minutes for {symbol}"
         )
         self.scheduler.trigger_immediate_analysis(
             symbol=symbol,
             reason=f"price_invalidated_{symbol}",
-            cooldown_minutes=cooldown_minutes
+            cooldown_minutes=cooldown
         )
     
     def set_scheduler(self, scheduler):

@@ -474,9 +474,16 @@ class SettingsDialog:
                       bg=Colors.BG_DARK, fg=Colors.TEXT_PRIMARY,
                       selectcolor=Colors.BG_CARD).pack(side='right')
         
+        # Cooldown минуты (задержка перед новым анализом)
+        cooldown_frame = self._create_setting_row(content, "⏳ Cooldown до анализа (минуты)")
+        self.requery_cooldown = tk.Entry(cooldown_frame, font=('Arial', 10), width=10)
+        self.requery_cooldown.insert(0, str(ttl_config.get('requery_cooldown_minutes', 5)))
+        self.requery_cooldown.pack(side='right')
+        self._bind_paste(self.requery_cooldown)
+        
         # Подсказка о TTL
         ttl_hint = tk.Label(content, 
-                           text="💡 TTL: Время жизни сигнала. После истечения → auto-requery (если enabled). После закрытия позиции → auto-requery.",
+                           text="💡 TTL: Время жизни сигнала. После истечения/закрытия → auto-requery через cooldown минут.",
                            font=('Arial', 8, 'italic'),
                            bg=Colors.BG_DARK,
                            fg=Colors.TEXT_MUTED,
@@ -1093,6 +1100,7 @@ If you received this message, Telegram notifications are configured correctly! �
             trading_config['trading']['signal_ttl']['ttl_minutes'] = int(self.signal_validity.get())
             trading_config['trading']['signal_ttl']['auto_requery_on_expire'] = self.auto_requery_expire.get()
             trading_config['trading']['signal_ttl']['auto_requery_on_close'] = self.auto_requery_close.get()
+            trading_config['trading']['signal_ttl']['requery_cooldown_minutes'] = int(self.requery_cooldown.get())
             trading_config['trading']['signal_ttl']['enabled'] = True
             
             # Portfolio config - NOT USED ANYMORE
@@ -1251,6 +1259,7 @@ If you received this message, Telegram notifications are configured correctly! �
             trading_config['trading']['signal_ttl']['ttl_minutes'] = int(self.signal_validity.get())
             trading_config['trading']['signal_ttl']['auto_requery_on_expire'] = self.auto_requery_expire.get()
             trading_config['trading']['signal_ttl']['auto_requery_on_close'] = self.auto_requery_close.get()
+            trading_config['trading']['signal_ttl']['requery_cooldown_minutes'] = int(self.requery_cooldown.get())
             trading_config['trading']['signal_ttl']['enabled'] = True
             
             # Risk settings - ONLY FIXED LOT
