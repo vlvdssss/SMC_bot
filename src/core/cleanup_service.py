@@ -2,6 +2,7 @@
 Cleanup Service - Автоматическая очистка старых данных
 Очищает:
 - AI сигналы старше 36 часов (в 22:00 каждый день)
+- Скриншоты старше 3 дней (в 22:00 каждый день)
 - Логи старше 7 дней 20 часов (в 22:00 раз в неделю)
 """
 
@@ -41,12 +42,17 @@ class CleanupService:
                 'max_age_hours': 20,  # + 20 часов = 7 дней 20 часов
                 'cleanup_time': '22:00',  # Время очистки
                 'cleanup_day': 0  # 0=Monday, день недели для очистки
+            },
+            'screenshots': {
+                'max_age_days': 3,  # Скриншоты старше 3 дней удаляются
+                'cleanup_time': '22:00'  # Время очистки каждый день
             }
         }
         
         # Пути к данным
         self.signals_dir = Path('data/ai_signals')
         self.logs_dir = Path('logs')
+        self.screenshots_dir = Path('data/screenshots')
         
         # Фоновый поток
         self._cleanup_thread = None
@@ -55,10 +61,12 @@ class CleanupService:
         
         # Время последней очистки
         self._last_signals_cleanup = None
+        self._last_screenshots_cleanup = None
         self._last_logs_cleanup = None
         
         self.logger.info("🧹 Cleanup Service initialized")
         self.logger.info(f"   Signals: delete after {self.config['signals']['max_age_hours']}h")
+        self.logger.info(f"   Screenshots: delete after {self.config['screenshots']['max_age_days']}d")
         self.logger.info(f"   Logs: delete after {self.config['logs']['max_age_days']}d {self.config['logs']['max_age_hours']}h")
     
     def _load_config(self) -> Dict:
@@ -114,6 +122,14 @@ class CleanupService:
                         self.logger.info("🕐 Time for signals cleanup: 22:00")
                         self.cleanup_old_signals()
                         self._last_signals_cleanup = now
+                
+                # Проверяем время для очистки скриншотов (каждый день в 22:00)
+                if current_time == self.config['screenshots']['cleanup_time']:
+                    if not self._last_screenshots_cleanup or \
+                       (now - self._last_screenshots_cleanup).total_seconds() > 3600:  # Не чаще раза в час
+                        self.logger.info("🕐 Time for screenshots cleanup: 22:00")
+                        self.cleanup_old_screenshots()
+                        self._last_screenshots_cleanup = now
                 
                 # Проверяем время для очистки логов (раз в неделю в понедельник в 22:00)
                 if now.weekday() == self.config['logs']['cleanup_day'] and \
@@ -322,23 +338,85 @@ class CleanupService:
         
         return stats
     
-    def force_cleanup_now(self, cleanup_type: str = 'both') -> Dict:
+    def cleanup_old_screenshots(self) -> Dict:
+        """
+        Очистка старых скриншотов (старше 3 дней)
+        
+        Returns:
+            Статистика очистки
+        """
+        stats = {
+            'deleted_files': 0,
+            'deleted_size_mb': 0.0,
+            'errors': []
+        }
+        
+        try:
+            max_age = timedelta(days=self.config['screenshots']['max_age_days'])
+            cutoff_time = datetime.now() - max_age
+            
+            self.logger.info(f"🧹 Starting screenshots cleanup (older than {cutoff_time.strftime('%Y-%m-%d %H:%M:%S')})")
+            self.logger.info(f"   Max age: {self.config['screenshots']['max_age_days']} days")
+            
+            if not self.screenshots_dir.exists():
+                self.logger.warning(f"   Screenshots directory not found: {self.screenshots_dir}")
+                return stats
+            
+            # Проходим по всем PNG файлам
+            for screenshot_file in self.screenshots_dir.glob('*.png'):
+                try:
+                    # Проверяем время модификации файла
+                    file_mtime = datetime.fromtimestamp(screenshot_file.stat().st_mtime)
+                    
+                    if file_mtime < cutoff_time:
+                        # Файл старый - удаляем
+                        file_size_mb = screenshot_file.stat().st_size / (1024 * 1024)
+                        screenshot_file.unlink()
+                        
+                        stats['deleted_files'] += 1
+                        stats['deleted_size_mb'] += file_size_mb
+                        
+                        age = datetime.now() - file_mtime
+                        self.logger.debug(f"   🗑️ Deleted: {screenshot_file.name} ({file_size_mb:.2f} MB, age: {age.days}d {age.seconds//3600}h)")
+                
+                except Exception as e:
+                    error_msg = f"Error deleting {screenshot_file.name}: {e}"
+                    self.logger.error(f"   ❌ {error_msg}")
+                    stats['errors'].append(error_msg)
+            
+            if stats['deleted_files'] > 0:
+                self.logger.info(f"✅ Screenshots cleanup complete: {stats['deleted_files']} files deleted ({stats['deleted_size_mb']:.2f} MB freed)")
+            else:
+                self.logger.info("✅ Screenshots cleanup complete: no old screenshots found")
+        
+        except Exception as e:
+            error_msg = f"Critical error in cleanup_old_screenshots: {e}"
+            self.logger.error(f"❌ {error_msg}", exc_info=True)
+            stats['errors'].append(error_msg)
+        
+        return stats
+    
+    def force_cleanup_now(self, cleanup_type: str = 'all') -> Dict:
         """
         Принудительная очистка (не дожидаясь расписания)
         
         Args:
-            cleanup_type: 'signals', 'logs' или 'both'
+            cleanup_type: 'signals', 'screenshots', 'logs' или 'all'
         
         Returns:
             Статистика очистки
         """
         results = {}
         
-        if cleanup_type in ['signals', 'both']:
+        if cleanup_type in ['signals', 'all']:
             self.logger.info("🔧 Force cleanup: signals")
             results['signals'] = self.cleanup_old_signals()
         
-        if cleanup_type in ['logs', 'both']:
+        if cleanup_type in ['screenshots', 'all']:
+            self.logger.info("🔧 Force cleanup: screenshots")
+            results['screenshots'] = self.cleanup_old_screenshots()
+        
+        if cleanup_type in ['logs', 'all']:
             self.logger.info("🔧 Force cleanup: logs")
             results['logs'] = self.cleanup_old_logs()
         
@@ -349,6 +427,7 @@ class CleanupService:
         return {
             'running': self._running,
             'last_signals_cleanup': self._last_signals_cleanup.isoformat() if self._last_signals_cleanup else None,
+            'last_screenshots_cleanup': self._last_screenshots_cleanup.isoformat() if self._last_screenshots_cleanup else None,
             'last_logs_cleanup': self._last_logs_cleanup.isoformat() if self._last_logs_cleanup else None,
             'config': self.config
         }
@@ -366,7 +445,7 @@ if __name__ == "__main__":
     
     # Тестовая принудительная очистка
     print("\n=== Test Cleanup ===")
-    results = cleanup.force_cleanup_now('both')
+    results = cleanup.force_cleanup_now('all')
     print(f"\nResults: {results}")
     
     # Запуск в фоне (для продакшена)
