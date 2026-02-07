@@ -267,6 +267,8 @@ class MT5Manager:
                             dt = datetime.fromtimestamp(int(t))
                         else:
                             dt = t
+                        # Корректировка на разницу часовых поясов MT5 сервера (-2 часа)
+                        dt = dt - timedelta(hours=2)
                     except Exception:
                         from datetime import datetime
                         dt = datetime.now()
