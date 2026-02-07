@@ -32,6 +32,40 @@ class TelegramNotifier:
         else:
             logger.info("Telegram уведомления активированы")
     
+    def _format_price(self, price: float, symbol: str) -> str:
+        """
+        Форматирование цены в зависимости от инструмента
+        
+        Args:
+            price: Цена
+            symbol: Символ инструмента (XAUUSD, EURUSD и т.д.)
+        
+        Returns:
+            Отформатированная строка с ценой
+        """
+        if 'XAU' in symbol.upper() or 'GOLD' in symbol.upper():
+            return f"{price:.2f}"
+        else:
+            return f"{price:.5f}"
+    
+    def _format_diff(self, diff: float, symbol: str) -> str:
+        """
+        Форматирование разницы (риска/потенциала) в пипсах
+        
+        Args:
+            diff: Разница в цене
+            symbol: Символ инструмента
+        
+        Returns:
+            Отформатированная строка
+        """
+        if 'XAU' in symbol.upper() or 'GOLD' in symbol.upper():
+            return f"{diff:.2f}"
+        else:
+            # Для валютных пар конвертируем в пипсы (1 пипс = 0.0001)
+            pips = diff * 10000
+            return f"{pips:.1f} pips"
+    
     def send_message(self, text: str, parse_mode: str = "HTML") -> bool:
         """
         Отправка текстового сообщения
@@ -132,13 +166,18 @@ class TelegramNotifier:
             }
             quality_emoji = quality_map.get(quality.upper(), "✅")
             
+            # Форматируем цены правильно
+            entry_str = self._format_price(entry, symbol)
+            sl_str = self._format_price(sl, symbol)
+            tp_str = self._format_price(tp, symbol)
+            
             # Формируем текст сигнала
             text = f"""
 🤖 <b>{direction.upper()} {symbol} {quality_emoji} {quality.upper()}</b>
 
-💵 <b>Entry:</b> <code>{entry:.5f}</code>
-🛑 <b>Stop Loss:</b> <code>{sl:.5f}</code>
-🎯 <b>Take Profit:</b> <code>{tp:.5f}</code>
+💵 <b>Entry:</b> <code>{entry_str}</code>
+🛑 <b>Stop Loss:</b> <code>{sl_str}</code>
+🎯 <b>Take Profit:</b> <code>{tp_str}</code>
 
 🧠 <b>Confidence:</b> {confidence:.1f}%
 📊 <b>GPT V3:</b> {accuracy.upper()} accuracy, {quality.upper()} quality, lot {lot_multiplier:.2f}x
@@ -195,6 +234,12 @@ class TelegramNotifier:
         """
         if mode == "pure_ai":
             # Pure AI режим - детальное сообщение с объяснением GPT
+            entry_str = self._format_price(entry, symbol)
+            sl_str = self._format_price(sl, symbol)
+            tp_str = self._format_price(tp, symbol)
+            risk_str = self._format_diff(abs(entry-sl), symbol)
+            potential_str = self._format_diff(abs(tp-entry), symbol)
+            
             text = f"""
 🤖 <b>PURE AI: Открыта сделка</b>
 
@@ -202,9 +247,9 @@ class TelegramNotifier:
 💰 Объем: <b>{lot} лот</b>
 🎯 Уверенность GPT: <b>{confidence:.0f}%</b>
 
-💵 Вход: <code>{entry}</code>
-🛑 Stop Loss: <code>{sl}</code> (риск: {abs(entry-sl):.2f})
-🎯 Take Profit: <code>{tp}</code> (потенциал: {abs(tp-entry):.2f})
+💵 Вход: <code>{entry_str}</code>
+🛑 Stop Loss: <code>{sl_str}</code> (риск: {risk_str})
+🎯 Take Profit: <code>{tp_str}</code> (потенциал: {potential_str})
 📊 R:R: <b>1:{abs(tp-entry)/abs(entry-sl):.2f}</b>
 
 🧠 <b>Анализ GPT:</b>
@@ -215,6 +260,10 @@ class TelegramNotifier:
 """
         else:
             # Strategy + AI режим - стандартное сообщение
+            entry_str = self._format_price(entry, symbol)
+            sl_str = self._format_price(sl, symbol)
+            tp_str = self._format_price(tp, symbol)
+            
             text = f"""
 🚀 <b>Открыта сделка</b>
 
@@ -222,9 +271,9 @@ class TelegramNotifier:
 📈 Направление: <b>{direction}</b>
 💰 Объем: <b>{lot} лот</b>
 
-💵 Вход: <b>{entry}</b>
-🛑 Stop Loss: <b>{sl}</b>
-🎯 Take Profit: <b>{tp}</b>
+💵 Вход: <b>{entry_str}</b>
+🛑 Stop Loss: <b>{sl_str}</b>
+🎯 Take Profit: <b>{tp_str}</b>
 
 ⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 🔄 Режим: <b>Strategy + AI</b>

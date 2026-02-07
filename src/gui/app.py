@@ -245,17 +245,17 @@ class StatsPanel(tk.Frame):
         """Обновить статистику"""
         # Balance
         balance_label = self.balance_card.winfo_children()[1]
-        balance_label.config(text=f"${balance:,.2f}")
+        balance_label.config(text=f"${balance:.2f}")
         
         # Today PnL
         today_label = self.today_pnl_card.winfo_children()[1]
         today_color = Colors.SUCCESS if today_pnl >= 0 else Colors.ERROR
-        today_label.config(text=f"${today_pnl:+,.2f}", fg=today_color)
+        today_label.config(text=f"${today_pnl:+.2f}", fg=today_color)
         
         # Total PnL
         total_label = self.total_pnl_card.winfo_children()[1]
         total_color = Colors.SUCCESS if total_pnl >= 0 else Colors.ERROR
-        total_label.config(text=f"${total_pnl:+,.2f}", fg=total_color)
+        total_label.config(text=f"${total_pnl:+.2f}", fg=total_color)
 
 
 # ==================== CURRENT SETTINGS PANEL ====================
