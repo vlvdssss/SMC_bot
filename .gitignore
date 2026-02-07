@@ -23,6 +23,7 @@ logs/
 
 # Data files
 data/ai_analysis/
+data/ai_signals/
 data/screenshots/
 data/backtest/
 data/*.json
