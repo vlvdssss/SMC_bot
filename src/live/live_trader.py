@@ -189,7 +189,7 @@ class LiveTrader:
         # Загружаем MT5 конфиг
         mt5_config_path = config_path / 'mt5.yaml'
         if mt5_config_path.exists():
-            with open(mt5_config_path, 'r') as f:
+            with open(mt5_config_path, 'r', encoding='utf-8') as f:
                 self.mt5_config = yaml.safe_load(f)
         else:
             self.mt5_config = {}
@@ -197,7 +197,7 @@ class LiveTrader:
         # Загружаем конфиг инструментов
         instruments_config_path = config_path / 'instruments.yaml'
         if instruments_config_path.exists():
-            with open(instruments_config_path, 'r') as f:
+            with open(instruments_config_path, 'r', encoding='utf-8') as f:
                 self.instruments_config = yaml.safe_load(f)
         else:
             self.instruments_config = {}
@@ -205,7 +205,7 @@ class LiveTrader:
         # Загружаем конфиг портфеля
         portfolio_config_path = config_path / 'portfolio.yaml'
         if portfolio_config_path.exists():
-            with open(portfolio_config_path, 'r') as f:
+            with open(portfolio_config_path, 'r', encoding='utf-8') as f:
                 self.portfolio_config = yaml.safe_load(f)
         else:
             self.portfolio_config = {}
@@ -213,7 +213,7 @@ class LiveTrader:
         # Загружаем trading.yaml (для RiskManager и других настроек)
         trading_config_path = config_path / 'trading.yaml'
         if trading_config_path.exists():
-            with open(trading_config_path, 'r') as f:
+            with open(trading_config_path, 'r', encoding='utf-8') as f:
                 self.config = yaml.safe_load(f)
         else:
             self.config = {}
@@ -354,7 +354,7 @@ class LiveTrader:
                             config_file = get_data_path('config.json')
                             if config_file.exists():
                                 import json
-                                with open(config_file, 'r') as f:
+                                with open(config_file, 'r', encoding='utf-8') as f:
                                     user_config = json.load(f)
                                     strategy_settings = user_config.get('strategy', {})
                                     if strategy_settings:

@@ -1160,7 +1160,7 @@ If you received this message, Telegram notifications are configured correctly! ð
             api_key_updated = False
             
             if env_path.exists():
-                with open(env_path, 'r') as f:
+                with open(env_path, 'r', encoding='utf-8') as f:
                     env_lines = f.readlines()
             
             # Update or add OPENAI_API_KEY
@@ -1175,7 +1175,7 @@ If you received this message, Telegram notifications are configured correctly! ð
                 if not api_key_updated:
                     env_lines.append(f'OPENAI_API_KEY={new_api_key}\n')
                 
-                with open(env_path, 'w') as f:
+                with open(env_path, 'w', encoding='utf-8') as f:
                     f.writelines(env_lines)
                 
                 # Update environment variable
@@ -1310,7 +1310,7 @@ If you received this message, Telegram notifications are configured correctly! ð
             api_key_updated = False
             
             if env_path.exists():
-                with open(env_path, 'r') as f:
+                with open(env_path, 'r', encoding='utf-8') as f:
                     env_lines = f.readlines()
             
             new_api_key = self.gpt_api_key.get().strip()
@@ -1324,7 +1324,7 @@ If you received this message, Telegram notifications are configured correctly! ð
                 if not api_key_updated:
                     env_lines.append(f'OPENAI_API_KEY={new_api_key}\\n')
                 
-                with open(env_path, 'w') as f:
+                with open(env_path, 'w', encoding='utf-8') as f:
                     f.writelines(env_lines)
                 
                 import os
