@@ -274,7 +274,7 @@ class StrategyBacktester:
             h1_idx = h1_data.index.get_indexer([m15_time], method='ffill')[0]
             if h1_idx >= 0:
                 return h1_idx
-        except:
+        except (IndexError, KeyError, ValueError):
             pass
         return None
     

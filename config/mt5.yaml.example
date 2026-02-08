@@ -10,6 +10,7 @@ mt5:
     enable_trade: false
     max_retries: 3
     retry_delay: 5
+    magic_number: 123456  # Unique identifier for bot orders
     
   safety:
     max_lot_size: 1.0

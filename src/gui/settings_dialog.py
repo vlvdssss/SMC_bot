@@ -844,8 +844,8 @@ class SettingsDialog:
                 import yaml
                 with open(telegram_path, 'r', encoding='utf-8') as f:
                     telegram_config = yaml.safe_load(f) or {}
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to load telegram config: {e}")
         
         telegram_settings = telegram_config.get('telegram', {})
         

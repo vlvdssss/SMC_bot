@@ -55,8 +55,17 @@ def main():
     parser = argparse.ArgumentParser(description='BAZA Trading Bot')
     parser.add_argument('--backtest', action='store_true', help='Режим бэктеста')
     parser.add_argument('--year', type=int, default=2024, help='Год для бэктеста')
+    parser.add_argument('--quiet', action='store_true', help='Минимальный вывод (production mode)')
     
     args = parser.parse_args()
+    
+    # Quiet mode - минимальный вывод
+    if args.quiet:
+        print("🤖 BAZA Trading Bot v4.0 - Starting...")
+        # Подавить warnings в quiet mode
+        warnings.filterwarnings('ignore')
+        import logging
+        logging.getLogger().setLevel(logging.WARNING)
     
     if args.backtest:
         # Бэктест - полная реальная логика стратегии

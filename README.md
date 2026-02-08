@@ -5,6 +5,41 @@
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
 [![MT5](https://img.shields.io/badge/MetaTrader-5-green.svg)](https://www.metatrader5.com/)
 [![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4-orange.svg)](https://openai.com/)
+[![Status](https://img.shields.io/badge/Status-Production-success.svg)](https://github.com)
+[![Version](https://img.shields.io/badge/Version-4.0-blue.svg)](https://github.com)
+
+---
+
+## 🚀 QUICK START (30 секунд)
+
+```powershell
+# 1. Клонируйте репозиторий
+git clone <your-repo-url>
+cd BAZA
+
+# 2. Установите зависимости
+.\quick_install.ps1
+
+# 3. Настройте .env файл (API ключи)
+notepad .env
+
+# 4. Запустите бота
+.\run.ps1
+```
+
+**Требования:** Windows 10/11, Python 3.9-3.12, MetaTrader 5
+
+📚 **Полный гайд:** [docs/QUICK_START.md](docs/QUICK_START.md)
+
+---
+
+## ⚙️ Статус проекта
+
+- ✅ **Production Ready** - стабильная версия
+- 📊 **893 успешных сделки** - проверено в боевых условиях
+- 🤖 **Pure AI Mode** - 100% GPT-4 принятие решений
+- 🔒 **Risk Management** - продвинутое управление рисками
+- 📱 **Telegram Bot** - полная интеграция с уведомлениями
 
 ---
 
@@ -82,16 +117,26 @@ python main.py
 
 ---
 
-##  Структура
+##  Структура проекта
 
 ```
 BAZA/
-  src/           # Исходный код
-  config/        # Конфигурация (YAML)
-  data/          # Данные (JSON, логи)
-  docs/          # Документация
-  scripts/       # Утилиты и скрипты
-  main.py       # Точка входа
+├── src/              # Исходный код
+│   ├── ai/          # AI модули (GPT-4, анализ, сигналы)
+│   ├── core/        # Ядро (BotManager, MT5Manager)
+│   ├── gui/         # Графический интерфейс
+│   ├── live/        # Live trading логика
+│   └── monitoring/  # Мониторинг и уведомления
+├── config/          # Конфигурация (YAML файлы)
+├── data/            # Данные (сделки, статистика)
+├── docs/            # Документация (20+ гайдов)
+├── scripts/         # Утилиты и скрипты
+│   ├── install/    # Установочные скрипты
+│   └── utilities/  # Вспомогательные инструменты
+├── tests/           # Юнит-тесты
+├── main.py         # 🚀 Точка входа
+├── run.ps1         # 🏃 Быстрый запуск
+└── requirements.txt # Зависимости
 ```
 
 ---

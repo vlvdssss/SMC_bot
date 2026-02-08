@@ -301,7 +301,8 @@ class TelegramNotifier:
                 scheduler = get_scheduler()
                 if scheduler and hasattr(scheduler, 'get_next_analysis_time'):
                     next_analysis_time = scheduler.get_next_analysis_time()
-            except:
+            except Exception as e:
+                logger.debug(f"Could not get next analysis time: {e}")
                 next_analysis_time = None
         
         next_analysis_info = f"\n\n🔮 <b>Следующий анализ:</b> {next_analysis_time}" if next_analysis_time else ""

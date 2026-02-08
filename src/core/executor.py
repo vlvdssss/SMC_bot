@@ -34,7 +34,7 @@ class Position:
 class Executor:
     """Execute and manage trades."""
 
-    def __init__(self, broker_sim=None, mt5_connector=None, contract_size: int = 100):
+    def __init__(self, broker_sim=None, mt5_connector=None, contract_size: int = 100, magic_number: int = 123456):
         if broker_sim is not None:
             self.broker = broker_sim
             self.is_live = False
@@ -45,6 +45,7 @@ class Executor:
             raise ValueError("Either broker_sim or mt5_connector must be provided")
         
         self.contract_size = contract_size
+        self.magic_number = magic_number
         self.position = None
         self.last_closed_position = None
 
@@ -123,7 +124,7 @@ class Executor:
                 "sl": sl_price,
                 "tp": tp_price,
                 "deviation": 10,
-                "magic": 123456,
+                "magic": self.magic_number,
                 "comment": "BAZA Live Trade",
                 "type_time": self.mt5.ORDER_TIME_GTC,
                 "type_filling": self.mt5.ORDER_FILLING_IOC,
@@ -133,12 +134,12 @@ class Executor:
             result = self.mt5.order_send(request)
             
             if result is None:
-                print(f"[ERROR] order_send returned None for {symbol}")
+                logger.error(f"[Executor] order_send returned None for {symbol}")
                 return False
             
             # Проверяем код возврата
             if result.retcode == self.mt5.TRADE_RETCODE_DONE:
-                print(f"[OK] Order executed: {symbol} {direction} {lot_size} lots at {price}")
+                logger.info(f"[Executor] Order executed: {symbol} {direction} {lot_size} lots at {price}")
                 return True
             else:
                 # Логируем детали ошибки
@@ -151,16 +152,14 @@ class Executor:
                     self.mt5.TRADE_RETCODE_NO_MONEY: "Not enough money",
                 }.get(result.retcode, f"Unknown error code: {result.retcode}")
                 
-                print(f"[ERROR] Order failed: {error_desc}. Comment: {result.comment}")
+                logger.error(f"[Executor] Order failed: {error_desc}. Comment: {result.comment}")
                 return False
 
         except AttributeError as e:
-            print(f"[ERROR] MT5 attribute error (check if MT5 is initialized): {e}")
+            logger.error(f"[Executor] MT5 attribute error (check if MT5 is initialized): {e}")
             return False
         except Exception as e:
-            print(f"[ERROR] Live trade execution error: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"[Executor] Live trade execution error: {e}", exc_info=True)
             return False
 
     def open_position(self, signal: dict, lot_size: float, current_price: float,

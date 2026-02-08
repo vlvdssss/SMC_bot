@@ -125,7 +125,7 @@ class RealTimeNewsFetcher:
                         try:
                             dt = datetime.fromisoformat(date_str_full.replace('Z', '+00:00'))
                             time_str = dt.strftime("%H:%M UTC")
-                        except:
+                        except (ValueError, AttributeError):
                             time_str = date_str_full[:5]  # Берем первые 5 символов (HH:MM)
                     else:
                         time_str = ""
@@ -465,7 +465,7 @@ class RealTimeNewsFetcher:
                         time_until = (event_dt - now).total_seconds() / 3600  # часы
                         if -1 <= time_until <= hours_ahead:  # -1 час назад до hours_ahead вперед
                             high_impact.append(event)
-                    except:
+                    except (ValueError, TypeError, AttributeError, KeyError):
                         # Если не можем распарсить - добавляем на всякий случай
                         high_impact.append(event)
         

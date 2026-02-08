@@ -60,7 +60,7 @@ class AISignal:
         """Check if signal expired."""
         try:
             return datetime.now() > datetime.fromisoformat(self.expires_at)
-        except:
+        except (ValueError, TypeError, AttributeError):
             return False
     
     def get_confidence_with_decay(self) -> float:
@@ -78,7 +78,7 @@ class AISignal:
             
             decay_factor = 1.0 - (elapsed / total_lifetime) * 0.5
             return self.confidence * decay_factor
-        except:
+        except (ValueError, TypeError, ZeroDivisionError):
             return self.confidence
 
 
@@ -881,7 +881,7 @@ class AISignalManager:
             window_end = trigger_dt + timedelta(minutes=10)
             
             return window_start <= current_time <= window_end
-        except:
+        except (ValueError, TypeError, AttributeError):
             return True
     
     def _is_price_triggered(self, signal: AISignal, current_price: float) -> bool:
@@ -1052,8 +1052,8 @@ class AISignalManager:
                     self.block_until = None
                     self.risk_multiplier = 1.0
                     logger.info("[AI-Signal] Block expired - CLEARED")
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"[AI-Signal] Error checking block expiry: {e}")
         
         # Return permission based on block type
         if self.block_type == BlockType.HARD_BLOCK:

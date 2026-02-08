@@ -187,8 +187,9 @@ class CleanupService:
                             else:
                                 stats['deleted_active'] += 1
                                 self.logger.debug(f"   Deleted active signal: {signal.get('id', 'N/A')} (age: {datetime.now() - created_at})")
-                        except:
+                        except (ValueError, TypeError, KeyError) as e:
                             # Если не можем распарсить дату - удаляем на всякий случай
+                            self.logger.debug(f"   Could not parse signal date: {e}")
                             stats['deleted_active'] += 1
                     
                     # Сохраняем обратно
@@ -225,8 +226,9 @@ class CleanupService:
                                         filtered_history.append(entry)
                                     else:
                                         stats['deleted_history'] += 1
-                                except:
+                                except (ValueError, TypeError, KeyError) as e:
                                     # Если не можем распарсить - удаляем
+                                    self.logger.debug(f"   Could not parse history timestamp: {e}")
                                     stats['deleted_history'] += 1
                             
                             # Если удалили что-то - перезаписываем файл

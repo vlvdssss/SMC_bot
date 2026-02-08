@@ -568,7 +568,7 @@ Analyze the M5 chart NOW and give your decision!
                 try:
                     conf = float(decision.get("confidence", 0))
                     decision["confidence"] = max(0, min(100, conf))
-                except:
+                except (ValueError, TypeError):
                     decision["confidence"] = 0
                     logger.warning("[AI] Invalid confidence value, set to 0")
             

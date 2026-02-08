@@ -2,9 +2,12 @@
 Startup - инициализация при запуске EXE
 """
 import sys
+import logging
 from pathlib import Path
 import yaml
 import shutil
+
+logger = logging.getLogger('BAZA.Startup')
 
 
 def init_exe_environment():
@@ -16,7 +19,7 @@ def init_exe_environment():
     else:
         base_dir = Path(__file__).parent.parent.parent
     
-    print(f"Base directory: {base_dir}")
+    logger.info(f"Base directory: {base_dir}")
     
     # Создать необходимые директории
     folders = [
@@ -34,7 +37,7 @@ def init_exe_environment():
     for folder in folders:
         folder_path = base_dir / folder
         folder_path.mkdir(parents=True, exist_ok=True)
-        print(f"Created: {folder_path}")
+        logger.debug(f"Created: {folder_path}")
     
     # Создать пустые конфиги если их нет
     config_dir = base_dir / 'config'
@@ -55,7 +58,8 @@ def init_exe_environment():
                     'enable_trade': True,
                     'max_retries': 3,
                     'retry_delay': 5,
-                    'check_connection_interval': 60
+                    'check_connection_interval': 60,
+                    'magic_number': 123456
                 },
                 'safety': {
                     'max_lot_size': 1.0,
@@ -96,7 +100,7 @@ def init_exe_environment():
         
         with open(mt5_config, 'w', encoding='utf-8') as f:
             yaml.dump(default_mt5, f, default_flow_style=False, allow_unicode=True)
-        print(f"Created: {mt5_config}")
+        logger.info(f"Created: {mt5_config}")
     
     # telegram.yaml
     telegram_config = config_dir / 'telegram.yaml'
@@ -120,7 +124,7 @@ def init_exe_environment():
         
         with open(telegram_config, 'w', encoding='utf-8') as f:
             yaml.dump(default_telegram, f, default_flow_style=False, allow_unicode=True)
-        print(f"Created: {telegram_config}")
+        logger.info(f"Created: {telegram_config}")
     
     # ai.yaml
     ai_config = config_dir / 'ai.yaml'
@@ -153,7 +157,7 @@ def init_exe_environment():
         
         with open(ai_config, 'w', encoding='utf-8') as f:
             yaml.dump(default_ai, f, default_flow_style=False, allow_unicode=True)
-        print(f"Created: {ai_config}")
+        logger.info(f"Created: {ai_config}")
     
     # portfolio.yaml
     portfolio_config = config_dir / 'portfolio.yaml'
@@ -170,7 +174,7 @@ def init_exe_environment():
         
         with open(portfolio_config, 'w', encoding='utf-8') as f:
             yaml.dump(default_portfolio, f, default_flow_style=False, allow_unicode=True)
-        print(f"Created: {portfolio_config}")
+        logger.info(f"Created: {portfolio_config}")
     
     # instruments.yaml
     instruments_config = config_dir / 'instruments.yaml'
@@ -190,7 +194,7 @@ def init_exe_environment():
         
         with open(instruments_config, 'w', encoding='utf-8') as f:
             yaml.dump(default_instruments, f, default_flow_style=False, allow_unicode=True)
-        print(f"Created: {instruments_config}")
+        logger.info(f"Created: {instruments_config}")
     
     # Создать .env если нет
     env_file = base_dir / '.env'
@@ -198,7 +202,7 @@ def init_exe_environment():
         with open(env_file, 'w', encoding='utf-8') as f:
             f.write('# OpenAI API Key\n')
             f.write('OPENAI_API_KEY=\n')
-        print(f"Created: {env_file}")
+        logger.info(f"Created: {env_file}")
     
-    print("✓ Initialization complete!")
+    logger.info("✓ Initialization complete!")
     return base_dir

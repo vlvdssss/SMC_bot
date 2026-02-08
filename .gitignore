@@ -12,6 +12,13 @@ venv/
 ENV/
 env/
 
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+*.cover
+
 # PyInstaller
 build/
 dist/
@@ -27,6 +34,7 @@ data/ai_signals/
 data/screenshots/
 data/backtest/
 data/*.json
+results/
 
 # Sensitive config
 config/*.enc
@@ -45,9 +53,17 @@ config/.env
 *.swp
 *.swo
 *~
+.vs/
 
 # OS
 .DS_Store
+Thumbs.db
+desktop.ini
+
+# Archive
+archive/
+*.bak
+*.tmp
 Thumbs.db
 desktop.ini
 

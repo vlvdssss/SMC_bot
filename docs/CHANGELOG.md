@@ -1,5 +1,38 @@
 # 📝 CHANGELOG
 
+Все важные изменения в проекте документируются в этом файле.
+
+Формат следует [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/),
+версионирование следует [Semantic Versioning](https://semver.org/lang/ru/).
+
+---
+
+## [Unreleased] - 2026-02-08
+
+### ✨ Added
+- **Quiet Mode** - минимальный вывод для production (`python main.py --quiet`)
+- **Project Reorganization** - новая структура файлов
+  - Установочные скрипты перемещены в `scripts/install/`
+  - `pyproject.toml` и `pytest.ini` в корне проекта (Python стандарт)
+  - Обёртки-редиректы для обратной совместимости
+
+### 🐛 Fixed
+- **MT5Manager IndentationError** - исправлены дублирующиеся строки кода
+- **Missing beautifulsoup4** - добавлен недостающий пакет для парсинга новостей
+- **Exception Handling** - заменены все bare `except` на специфичные типы (ValueError, TypeError, etc.)
+- **Balance Calculation Bug** - исправлен двойной подсчёт PnL в `add_trade()`
+
+### 🔧 Changed
+- **README.md** - обновлён с quick start секцией и статусом проекта
+- **Project Structure** - улучшена организация файлов в корне
+
+### 🧹 Improved
+- **Code Quality** - 18+ bare exceptions заменены на специфичные типы
+- **Logging** - заменены print() на logger в executor.py и startup.py
+- **Configuration** - magic_number перемещён из хардкода в mt5.yaml
+
+---
+
 ## [v4.0] - 2026-02-02
 
 ### 🚀 Новые возможности

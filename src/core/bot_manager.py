@@ -132,9 +132,16 @@ class BotManager:
             try:
                 account_info = self.mt5_manager.get_account_info()
                 if account_info:
-                    self.stats['balance'] = account_info.get('balance', self.stats['balance'])
+                    # Получаем текущий баланс из MT5 (единственный источник правды)
+                    current_balance = account_info.get('balance', self.stats['balance'])
+                    self.stats['balance'] = current_balance
                     self.stats['equity'] = account_info.get('equity', account_info.get('balance', 0))
-                    logger.info(f"Stats updated from MT5: balance=${self.stats['balance']:.2f}")
+                    
+                    # Рассчитываем total_pnl как: текущий баланс - начальный баланс
+                    starting_balance = self.stats.get('starting_balance', current_balance)
+                    self.stats['total_pnl'] = round(current_balance - starting_balance, 2)
+                    
+                    logger.debug(f"Stats updated from MT5: balance=${current_balance:.2f}, total_pnl=${self.stats['total_pnl']:.2f}")
                     return True
             except Exception as e:
                 logger.error(f"Failed to update stats from MT5: {e}")
@@ -398,8 +405,9 @@ class BotManager:
         self.status = BotStatus.STOPPED
         self.is_running = False  # Для Telegram бота
         
+        # Уменьшен таймаут для быстрой остановки
         if self.bot_thread:
-            self.bot_thread.join(timeout=5)
+            self.bot_thread.join(timeout=1)  # Было 5, теперь 1 секунда
         
         # Останавливаем cleanup service
         if self.cleanup_service:
@@ -408,18 +416,28 @@ class BotManager:
         
         self.log("Bot stopped")
         
-        # Обновляем статистику из MT5 перед отправкой уведомления
-        self._update_stats_from_mt5()
+        # Все операции с файлами и сетью делаем асинхронно
+        # чтобы не блокировать вызывающий поток
+        import threading
+        def _async_cleanup():
+            try:
+                # Обновляем статистику из MT5 перед отправкой уведомления
+                self._update_stats_from_mt5()
+                
+                # Сохраняем статистику для Telegram бота
+                self.save_stats()
+                
+                # Telegram уведомление
+                if self.telegram and self.notify_config.get('shutdown', True):
+                    self.telegram.send_shutdown(
+                        mode=self.trading_mode,  # Передаем режим торговли
+                        stats=self.stats
+                    )
+            except Exception as e:
+                logger.error(f"[BotManager] Error in async cleanup: {e}")
         
-        # Сохраняем статистику для Telegram бота
-        self.save_stats()
-        
-        # Telegram уведомление
-        if self.telegram and self.notify_config.get('shutdown', True):
-            self.telegram.send_shutdown(
-                mode=self.trading_mode,  # Передаем режим торговли
-                stats=self.stats
-            )
+        # Запускаем cleanup в фоне
+        threading.Thread(target=_async_cleanup, daemon=True, name="CleanupThread").start()
         
         return True
     
@@ -526,8 +544,9 @@ class BotManager:
         
         # Обновляем статистику
         pnl = trade.get('pnl', 0)
-        self.stats['total_pnl'] += pnl
-        self.stats['balance'] += pnl
+        # УДАЛЕНО: Не добавляем к total_pnl и balance - они берутся из MT5!
+        # total_pnl будет пересчитан как: текущий balance - starting_balance
+        
         # Обновляем счётчики сделок (синхронизируем оба ключа для совместимости)
         self.stats['total_trades'] += 1
         self.stats['trades'] = self.stats.get('trades', 0) + 1
@@ -569,7 +588,7 @@ class BotManager:
             pass
     
     def save_trade(self, trade: dict):
-        """Сохранение сделки в файл."""
+        """Сохранение сделки в файл (JSON + CSV)."""
         trades_file = get_data_path('trades_history.json')
         trades_file.parent.mkdir(exist_ok=True)
         
@@ -598,6 +617,7 @@ class BotManager:
 
         trades.append(trade)
 
+        # Сохранить в JSON
         with open(trades_file, 'w', encoding='utf-8') as f:
             json.dump(trades, f, indent=2, ensure_ascii=False)
     
@@ -624,14 +644,6 @@ class BotManager:
                 saved_stats = json.load(f)
                 # Обновим базовые значения из сохранённого файла
                 self.stats.update(saved_stats)
-                
-                # Проверяем наличие starting_balance
-                if 'starting_balance' not in self.stats:
-                    # Если нет starting_balance, вычисляем его
-                    current_balance = self.stats.get('balance', 0)
-                    total_pnl = self.stats.get('total_pnl', 0)
-                    self.stats['starting_balance'] = current_balance - total_pnl
-                    logger.info(f"[Stats] Calculated starting_balance: ${self.stats['starting_balance']:.2f}")
 
         # Попробуем загрузить историю сделок и пересчитать агрегаты (если файл есть)
         
@@ -640,8 +652,8 @@ class BotManager:
             with open(trades_file, 'r') as f:
                 trades = json.load(f)
 
-            # Пересчитываем суммарный PnL, число сделок, wins/losses и PnL за сегодня
-            total_pnl = sum(t.get('pnl', 0) for t in trades)
+            # Пересчитываем ONLY: trades count, wins/losses, today_pnl
+            # total_pnl = берем из MT5 balance - starting_balance!
             total_trades = len(trades)
             wins = sum(1 for t in trades if t.get('pnl', 0) > 0)
             losses = sum(1 for t in trades if t.get('pnl', 0) <= 0)
@@ -649,8 +661,7 @@ class BotManager:
             today = datetime.now().strftime('%Y-%m-%d')
             today_pnl = sum(t.get('pnl', 0) for t in trades if t.get('date') == today)
 
-            # Обновляем статистику
-            self.stats['total_pnl'] = round(float(total_pnl), 2)
+            # Обновляем статистику (НЕ total_pnl - он рассчитывается из balance!)
             self.stats['today_pnl'] = round(float(today_pnl), 2)
             # Сохраняем обе вариации ключей для совместимости с GUI и API
             self.stats['total_trades'] = total_trades
@@ -660,9 +671,26 @@ class BotManager:
             self.stats['winning_trades'] = wins
             self.stats['losing_trades'] = losses
             
+            # Проверяем наличие starting_balance
+            if 'starting_balance' not in self.stats:
+                # Вычисляем starting_balance как: текущий баланс - сумма PnL всех сделок
+                total_pnl_from_trades = sum(t.get('pnl', 0) for t in trades)
+                current_balance = self.stats.get('balance', 0)
+                self.stats['starting_balance'] = round(current_balance - total_pnl_from_trades, 2)
+                logger.info(f"[Stats] Calculated starting_balance: ${self.stats['starting_balance']:.2f} (balance={current_balance:.2f} - trades_pnl={total_pnl_from_trades:.2f})")
+            
             # Сохраняем обновленную статистику в файл
             self.save_stats()
-            logger.info(f"[STATS] Loaded: Total PnL=${total_pnl:.2f}, Today PnL=${today_pnl:.2f}, Trades={total_trades}")
+            
+            # total_pnl будет вычислен из MT5 в _update_stats_from_mt5()
+            logger.info(f"[STATS] Loaded: Today PnL=${today_pnl:.2f}, Trades={total_trades} (Total PnL will be calculated from MT5 balance)")
+        else:
+            # Нет файла с историей - это первый запуск
+            # starting_balance = текущий баланс
+            if 'starting_balance' not in self.stats:
+                current_balance = self.stats.get('balance', 10000.0)
+                self.stats['starting_balance'] = current_balance
+                logger.info(f"[Stats] First run - setting starting_balance to current balance: ${current_balance:.2f}")
         
         # Синхронизация с MT5: проверяем новые закрытые сделки
         self._sync_with_mt5()

@@ -142,7 +142,8 @@ class MT5Manager:
             # Проверяем соединение через ping
             terminal_info = self.mt5.terminal_info()
             return terminal_info is not None
-        except:
+        except Exception as e:
+            self.logger.debug(f"Connection check failed: {e}")
             self.connected = False
             return False
 
@@ -278,10 +279,20 @@ class MT5Manager:
                         'date': dt.strftime('%Y-%m-%d'),
                         'time': dt.strftime('%H:%M'),
                         'instrument': deal.symbol,
+                        'symbol': deal.symbol,
                         'direction': 'BUY' if deal.type == self.mt5.DEAL_TYPE_BUY else 'SELL',
                         'pnl': round(pnl, 2),
                         'volume': float(deal.volume),
-                        'price': float(deal.price)
+                        'price': float(deal.price),
+                        'exit_price': float(deal.price),
+                        # Дополнительные поля для детального анализа
+                        'exit_time': dt,  # Полный datetime объект
+                        'commission': float(deal.commission) if hasattr(deal, 'commission') else 0.0,
+                        'swap': float(deal.swap) if hasattr(deal, 'swap') else 0.0,
+                        'position_id': int(deal.position_id) if hasattr(deal, 'position_id') else 0,
+                        'order_id': int(deal.order) if hasattr(deal, 'order') else 0,
+                        'entry_type': deal.entry if hasattr(deal, 'entry') else 0,
+                        'comment': deal.comment if hasattr(deal, 'comment') else ''
                     })
 
         except Exception as e:

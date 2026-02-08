@@ -379,8 +379,8 @@ class MT5Dialog:
                 entry_widget.delete(0, 'end')
                 entry_widget.insert(0, text)
                 return 'break'
-            except:
-                pass
+            except Exception:
+                return 'break'  # Clipboard may not be available
         
         entry_widget.bind('<Control-v>', paste)
         entry_widget.bind('<Control-V>', paste)
