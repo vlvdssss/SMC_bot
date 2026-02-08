@@ -73,6 +73,9 @@ class LiveTrader:
         self.enable_gpt: bool = enable_gpt
         self.connected: bool = False
         
+        # Флаг для отслеживания блокировки торговли (чтобы не спамить логи)
+        self._last_block_reason: str = None
+        
         # Загрузка конфигов
         logger.info("[LiveTrader] Loading configuration files...")
         self.load_configs()
@@ -258,10 +261,15 @@ class LiveTrader:
             bool: True if trading allowed, False if blocked
         """
         now = datetime.now()
+        block_reason = None
         
         # Block weekends (Saturday and Sunday)
         if now.weekday() >= 5:  # 5=Saturday, 6=Sunday
-            logger.info(f"[TRADE] ⛔ Weekend block: No trading on {now.strftime('%A')}")
+            block_reason = f"weekend_{now.strftime('%A')}"
+            # Логируем только при первом входе в блокировку
+            if self._last_block_reason != block_reason:
+                logger.info(f"[TRADE] ⛔ Weekend block: No trading on {now.strftime('%A')}")
+                self._last_block_reason = block_reason
             return False
         
         # Block night hours: 23:30 - 01:10 UTC
@@ -271,8 +279,17 @@ class LiveTrader:
         
         # Night block spans across midnight (23:30 → 00:00 → 01:10)
         if current_time >= night_start or current_time <= night_end:
-            logger.info(f"[TRADE] ⛔ Night block: No trading from 23:30 to 01:10 UTC (current: {current_time.strftime('%H:%M')})")
+            block_reason = f"night_{current_time.strftime('%H:%M')}"
+            # Логируем только при первом входе в блокировку
+            if self._last_block_reason != block_reason:
+                logger.info(f"[TRADE] ⛔ Night block: No trading from 23:30 to 01:10 UTC (current: {current_time.strftime('%H:%M')})")
+                self._last_block_reason = block_reason
             return False
+        
+        # Сбросить флаг если блокировка снята
+        if self._last_block_reason is not None:
+            logger.info("[TRADE] ✅ Trading restrictions lifted - trading allowed")
+            self._last_block_reason = None
         
         return True
     
