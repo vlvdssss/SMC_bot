@@ -30,6 +30,7 @@ trading:
     enabled: true
     fair_value_gaps: true
     order_blocks: true
+  check_interval_seconds: 1  # Интервал проверки сигналов (1-5 сек рекомендуется)
   trailing_stop:
     enabled: true
     activation_profit_percent: 40  # При каком % от TP активировать trailing

@@ -912,7 +912,7 @@ class AnalystPanel(tk.Frame):
                 else:
                     # Вчера или старше - показываем дату + время
                     time_display = dt.strftime("%d.%m %H:%M")
-            except:
+            except (ValueError, AttributeError):
                 time_display = timestamp_str[:19] if len(timestamp_str) >= 19 else timestamp_str
         
         # Action emoji and text
@@ -1352,31 +1352,39 @@ class BazaApp:
         try:
             app_logger.info("[BOT] Stopping...")
             
-            # Сигнал остановки
+            # Моментальное обновление UI - без ожидания!
             self.stop_event.set()
             self.bot_running = False
-            
-            # Обновить UI
             self.control_panel.set_bot_running(False)
             
-            # Дождаться завершения потока
-            if self.bot_thread and self.bot_thread.is_alive():
-                self.bot_thread.join(timeout=3)
-            
-            # Остановить AI Scheduler если запущен
-            if AI_ANALYSIS_AVAILABLE:
+            # Все остальное делаем асинхронно в отдельном потоке
+            # чтобы не блокировать GUI
+            import threading
+            def _async_stop():
                 try:
-                    scheduler = get_scheduler()
-                    if scheduler:
-                        scheduler.stop()
-                        app_logger.info("[BOT] AI Scheduler stopped")
+                    # Дождаться завершения потока с коротким таймаутом
+                    if self.bot_thread and self.bot_thread.is_alive():
+                        self.bot_thread.join(timeout=1)  # Уменьшено с 3 до 1 сек
+                    
+                    # Остановить AI Scheduler если запущен
+                    if AI_ANALYSIS_AVAILABLE:
+                        try:
+                            scheduler = get_scheduler()
+                            if scheduler:
+                                scheduler.stop()
+                                app_logger.info("[BOT] AI Scheduler stopped")
+                        except Exception as e:
+                            app_logger.error(f"[BOT] Failed to stop AI Scheduler: {e}")
+                    
+                    # Уведомить BotManager об остановке (в фоновом потоке)
+                    self.bot_manager.stop()
+                    
+                    app_logger.info("[BOT] Stopped")
                 except Exception as e:
-                    app_logger.error(f"[BOT] Failed to stop AI Scheduler: {e}")
+                    app_logger.error(f"[BOT] Error during async stop: {e}")
             
-            # Уведомить BotManager об остановке (для Telegram уведомлений)
-            self.bot_manager.stop()
-            
-            app_logger.info("[BOT] Stopped")
+            # Запускаем остановку в фоне - GUI не блокируется!
+            threading.Thread(target=_async_stop, daemon=True, name="StopThread").start()
             
         except Exception as e:
             app_logger.error(f"[BOT] Error during stop: {e}")
@@ -1488,8 +1496,9 @@ class BazaApp:
                     # Обновить открытые позиции
                     self._update_positions()
                     
-                    # Пауза перед следующей итерацией (3 секунды для быстрого trailing)
-                    self.stop_event.wait(3)
+                    # Пауза перед следующей итерацией (настраивается в config/trading.yaml)
+                    check_interval = trader.get_check_interval() if trader else 3
+                    self.stop_event.wait(check_interval)
                     
                 except Exception as e:
                     app_logger.error(f"[LOOP] Error in trading loop: {e}")
@@ -1506,35 +1515,17 @@ class BazaApp:
         """Обновить статистику из MT5"""
         try:
             if self.app_state.mt5_manager and self.app_state.mt5_manager.is_connected():
-                account_info = self.app_state.mt5_manager.get_account_info()
-                if account_info:
-                    balance = float(account_info.get('balance', 0))
-                    equity = float(account_info.get('equity', 0))
-                    
-                    # СИНХРОНИЗАЦИЯ: Берем все данные из bot_stats.json (единый источник правды)
-                    stats_file = get_data_path('bot_stats.json')
-                    total_pnl = 0
-                    today_pnl = 0
-                    
-                    if stats_file.exists():
-                        try:
-                            with open(stats_file, 'r') as f:
-                                stats = json.load(f)
-                                # Используем данные из файла, который обновляет bot_manager
-                                total_pnl = stats.get('total_pnl', 0)
-                                today_pnl = stats.get('today_pnl', 0)
-                                
-                                # Фоллбэк: если нет total_pnl, но есть initial_balance - вычисляем
-                                if total_pnl == 0 and 'initial_balance' in stats:
-                                    initial_balance = stats.get('initial_balance', balance)
-                                    total_pnl = balance - initial_balance
-                        except Exception as e:
-                            app_logger.error(f"[STATS] Failed to load stats from file: {e}")
-                            total_pnl = 0
-                            today_pnl = 0
-                    
-                    # Обновить UI
-                    self.root.after(0, lambda: self.stats_panel.update_stats(balance, today_pnl, total_pnl))
+                # Сначала обновляем статистику в BotManager (он рассчитает total_pnl из balance)
+                if hasattr(self.bot_manager, '_update_stats_from_mt5'):
+                    self.bot_manager._update_stats_from_mt5()
+                
+                # Теперь берем данные из bot_manager.stats (единственный источник правды)
+                balance = self.bot_manager.stats.get('balance', 0)
+                total_pnl = self.bot_manager.stats.get('total_pnl', 0)
+                today_pnl = self.bot_manager.stats.get('today_pnl', 0)
+                
+                # Обновить UI
+                self.root.after(0, lambda: self.stats_panel.update_stats(balance, today_pnl, total_pnl))
         except Exception as e:
             app_logger.error(f"[STATS] Error updating stats: {e}")
     
@@ -1552,8 +1543,8 @@ class BazaApp:
         try:
             if hasattr(self, 'analyst_panel'):
                 self.root.after(0, lambda: self.analyst_panel.add_log(message, level))
-        except:
-            pass
+        except Exception as e:
+            app_logger.debug(f"Failed to add log to UI: {e}")
     
     def load_settings(self):
         """Загрузка настроек"""

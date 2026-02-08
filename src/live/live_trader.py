@@ -92,8 +92,9 @@ class LiveTrader:
         # Инициализация executor
         logger.info("[LiveTrader] Initializing Executor...")
         from src.core.executor import Executor
-        self.executor = Executor(mt5_connector=self.mt5_connector)
-        logger.info("[LiveTrader] Executor ready")
+        magic_number = self.mt5_config.get('mt5', {}).get('settings', {}).get('magic_number', 123456)
+        self.executor = Executor(mt5_connector=self.mt5_connector, magic_number=magic_number)
+        logger.info(f"[LiveTrader] Executor ready (Magic: {magic_number})")
         
         # Инициализация RiskManager для trailing расчётов
         logger.info("[LiveTrader] Initializing RiskManager...")
@@ -216,6 +217,13 @@ class LiveTrader:
                 self.config = yaml.safe_load(f)
         else:
             self.config = {}
+    
+    def get_check_interval(self) -> float:
+        """Получить интервал проверки сигналов из конфига (в секундах)."""
+        try:
+            return float(self.config.get('trading', {}).get('check_interval_seconds', 3))
+        except (ValueError, TypeError):
+            return 3.0  # По умолчанию 3 секунды
     
     def _is_trading_enabled_for_instrument(self, symbol: str) -> bool:
         """Проверить включена ли торговля для инструмента."""
