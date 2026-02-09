@@ -35,6 +35,10 @@ trading:
     enabled: true
     consecutive_stops: 2  # Количество последовательных стопов для блокировки
     cooldown_minutes: 15  # Время блокировки торговли после стопов (в минутах)
+  profit_protection:
+    enabled: true
+    consecutive_wins: 3  # Количество последовательных прибыльных сделок для блокировки
+    cooldown_minutes: 10  # Время блокировки торговли после серии профитов (в минутах)
   trailing_stop:
     enabled: true
     activation_profit_percent: 40  # При каком % от TP активировать trailing

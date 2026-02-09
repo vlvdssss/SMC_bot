@@ -523,6 +523,82 @@ class SettingsDialog:
                 fg=Colors.TEXT_MUTED,
                 justify='left').pack(side='left')
         
+        # === PROFIT PROTECTION - ФИКСАЦИЯ ПРИБЫЛИ ===
+        self._create_section(content, "💎 Profit Protection (Фиксация прибыли)")
+        
+        profit_protection_config = trading_config.get('trading', {}).get('profit_protection', {})
+        
+        # Enable checkbox
+        profit_enable_frame = self._create_setting_row(content, "✅ Включить фиксацию прибыли")
+        self.profit_protection_enabled = tk.BooleanVar(value=profit_protection_config.get('enabled', True))
+        tk.Checkbutton(profit_enable_frame, variable=self.profit_protection_enabled,
+                      bg=Colors.BG_DARK, fg=Colors.TEXT_PRIMARY,
+                      selectcolor=Colors.BG_CARD,
+                      font=('Arial', 10, 'bold')).pack(side='right')
+        
+        # Info panel
+        profit_info_frame = tk.Frame(content, bg=Colors.BG_CARD,
+                                     highlightbackground=Colors.BORDER,
+                                     highlightthickness=1)
+        profit_info_frame.pack(fill='x', pady=(5, 15), padx=20)
+        
+        profit_info_text = """ℹ️ Profit Protection - Защита от жадности
+Блокирует торговлю на N минут после серии прибыльных сделок.
+• Защищает заработанную прибыль от последующих убытков
+• Trailing Stop СЧИТАЕТСЯ прибыльной сделкой
+• После убыточной сделки счетчик сбрасывается
+• Психологическая защита: зафиксировать прибыль, сделать паузу"""
+        
+        tk.Label(profit_info_frame,
+                text=profit_info_text,
+                font=('Arial', 9),
+                bg=Colors.BG_CARD,
+                fg=Colors.TEXT_SECONDARY,
+                justify='left',
+                wraplength=650).pack(padx=15, pady=10)
+        
+        # Количество последовательных прибыльных сделок
+        wins_frame = self._create_setting_row(content, "💰 Количество профитов для блокировки:")
+        self.profit_protection_consecutive = tk.Entry(wins_frame, font=('Arial', 10), width=8)
+        self.profit_protection_consecutive.insert(0, str(profit_protection_config.get('consecutive_wins', 3)))
+        self.profit_protection_consecutive.pack(side='right', padx=5)
+        self._bind_paste(self.profit_protection_consecutive)
+        
+        tk.Label(content,
+                text="💡 Рекомендуется 3-5 прибыльных сделок",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED).pack(fill='x', pady=(2, 10), padx=40)
+        
+        # Время блокировки
+        profit_cooldown_frame = self._create_setting_row(content, "⏰ Время паузы (минут):")
+        self.profit_protection_cooldown = tk.Entry(profit_cooldown_frame, font=('Arial', 10), width=8)
+        self.profit_protection_cooldown.insert(0, str(profit_protection_config.get('cooldown_minutes', 10)))
+        self.profit_protection_cooldown.pack(side='right', padx=5)
+        self._bind_paste(self.profit_protection_cooldown)
+        
+        tk.Label(content,
+                text="💡 Рекомендуется 10-20 минут (защитить прибыль, остыть)",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED).pack(fill='x', pady=(2, 10), padx=40)
+        
+        # Пример работы
+        profit_example_frame = tk.Frame(content, bg=Colors.BG_DARK)
+        profit_example_frame.pack(fill='x', pady=(5, 10), padx=40)
+        
+        tk.Label(profit_example_frame,
+                text="💡 Пример: При настройках 3 профита / 10 минут:\n"
+                     "   Сделка 1: +$5 ✅ (профит 1/3)\n"
+                     "   Сделка 2: +$3 ✅ (профит 2/3)\n"
+                     "   Сделка 3: +$7 ✅ (профит 3/3) → 💎 ФИКСАЦИЯ ПРИБЫЛИ 10 минут\n"
+                     "   Бот делает паузу, чтобы сохранить заработанное\n"
+                     "   Убыточная сделка сбрасывает счетчик!",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED,
+                justify='left').pack(side='left')
+        
         # TTL SETTINGS - User configurable signal lifetime
         self._create_section(content, "⏱ Signal Time To Live (TTL)")
         # Load configs for TTL
@@ -1205,6 +1281,14 @@ If you received this message, Telegram notifications are configured correctly! �
             trading_config['trading']['stop_loss_protection']['consecutive_stops'] = int(self.stop_protection_consecutive.get())
             trading_config['trading']['stop_loss_protection']['cooldown_minutes'] = int(self.stop_protection_cooldown.get())
             
+            # Profit Protection - фиксация прибыли
+            if 'profit_protection' not in trading_config['trading']:
+                trading_config['trading']['profit_protection'] = {}
+            
+            trading_config['trading']['profit_protection']['enabled'] = self.profit_protection_enabled.get()
+            trading_config['trading']['profit_protection']['consecutive_wins'] = int(self.profit_protection_consecutive.get())
+            trading_config['trading']['profit_protection']['cooldown_minutes'] = int(self.profit_protection_cooldown.get())
+            
             # Breakeven REMOVED - percentage-based trailing is sufficient
             
             # Trading hours - HARDCODED in bot logic (not from GUI)
@@ -1368,6 +1452,14 @@ If you received this message, Telegram notifications are configured correctly! �
             trading_config['trading']['stop_loss_protection']['enabled'] = self.stop_protection_enabled.get()
             trading_config['trading']['stop_loss_protection']['consecutive_stops'] = int(self.stop_protection_consecutive.get())
             trading_config['trading']['stop_loss_protection']['cooldown_minutes'] = int(self.stop_protection_cooldown.get())
+            
+            # Profit Protection - фиксация прибыли
+            if 'profit_protection' not in trading_config['trading']:
+                trading_config['trading']['profit_protection'] = {}
+            
+            trading_config['trading']['profit_protection']['enabled'] = self.profit_protection_enabled.get()
+            trading_config['trading']['profit_protection']['consecutive_wins'] = int(self.profit_protection_consecutive.get())
+            trading_config['trading']['profit_protection']['cooldown_minutes'] = int(self.profit_protection_cooldown.get())
             
             # Breakeven REMOVED
             

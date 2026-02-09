@@ -81,6 +81,11 @@ class LiveTrader:
         self._stop_protection_until: datetime = None  # Время до которого заблокирована торговля
         self._last_stop_protection_log: datetime = None  # Время последнего лога о защите
         
+        # Profit Protection - защита от жадности (фиксация прибыли)
+        self._consecutive_wins_count: int = 0  # Счетчик последовательных прибыльных сделок
+        self._profit_protection_until: datetime = None  # Время до которого заблокирована торговля после профитов
+        self._last_profit_protection_log: datetime = None  # Время последнего лога о profit защите
+        
         # Загрузка конфигов
         logger.info("[LiveTrader] Loading configuration files...")
         self.load_configs()
@@ -333,48 +338,109 @@ class LiveTrader:
         
         return True
     
+    def _check_profit_protection(self) -> bool:
+        """
+        Проверка защиты от жадности (фиксация прибыли).
+        
+        Блокирует торговлю на N минут после серии прибыльных сделок
+        для фиксации заработанной прибыли.
+        
+        Returns:
+            bool: True если торговля разрешена, False если заблокирована
+        """
+        # Проверяем включена ли защита
+        protection_config = self.config.get('trading', {}).get('profit_protection', {})
+        if not protection_config.get('enabled', False):
+            return True
+        
+        now = datetime.now()
+        
+        # Проверяем активна ли блокировка
+        if self._profit_protection_until and now < self._profit_protection_until:
+            # Логируем только раз в минуту чтобы не спамить
+            if not self._last_profit_protection_log or (now - self._last_profit_protection_log).seconds >= 60:
+                remaining = (self._profit_protection_until - now).seconds // 60
+                logger.info(f"[PROTECTION] 💎 Profit protection ACTIVE: {remaining} min remaining (consecutive wins: {self._consecutive_wins_count})")
+                self._last_profit_protection_log = now
+            return False
+        
+        # Блокировка истекла - сбрасываем счетчик
+        if self._profit_protection_until and now >= self._profit_protection_until:
+            logger.info(f"[PROTECTION] ✅ Profit protection LIFTED - trading resumed")
+            self._consecutive_wins_count = 0
+            self._profit_protection_until = None
+            self._last_profit_protection_log = None
+        
+        return True
+    
     def _register_trade_result(self, pnl: float, is_trailing_stop: bool = False):
         """
-        Регистрация результата сделки для защиты от стопов.
+        Регистрация результата сделки для защиты от стопов и фиксации прибыли.
         
         Args:
             pnl: Прибыль/убыток сделки
-            is_trailing_stop: True если сделка закрыта трейлинг стопом (не учитывается)
+            is_trailing_stop: True если сделка закрыта трейлинг стопом (учитывается как профит)
         """
-        protection_config = self.config.get('trading', {}).get('stop_loss_protection', {})
-        if not protection_config.get('enabled', False):
-            return
+        # === STOP LOSS PROTECTION ===
+        stop_protection_config = self.config.get('trading', {}).get('stop_loss_protection', {})
+        stop_protection_enabled = stop_protection_config.get('enabled', False)
         
-        # Игнорируем трейлинг стопы
-        if is_trailing_stop:
-            logger.debug(f"[PROTECTION] Trade closed by trailing stop (PnL: {pnl:.2f}) - not counted")
-            return
+        # === PROFIT PROTECTION ===
+        profit_protection_config = self.config.get('trading', {}).get('profit_protection', {})
+        profit_protection_enabled = profit_protection_config.get('enabled', False)
         
-        # Прибыльная сделка - сбрасываем счетчик
+        # Прибыльная сделка (включая трейлинг стоп)
         if pnl > 0:
-            if self._consecutive_stops_count > 0:
+            # Сбрасываем счетчик стопов
+            if stop_protection_enabled and self._consecutive_stops_count > 0:
                 logger.info(f"[PROTECTION] ✅ Winning trade - reset stop counter (was {self._consecutive_stops_count})")
                 self._consecutive_stops_count = 0
+            
+            # Считаем прибыльные сделки для profit protection
+            if profit_protection_enabled:
+                self._consecutive_wins_count += 1
+                consecutive_wins_limit = profit_protection_config.get('consecutive_wins', 3)
+                
+                logger.info(f"[PROTECTION] 💰 Profitable trade - consecutive wins: {self._consecutive_wins_count}/{consecutive_wins_limit}")
+                
+                # Проверяем достигнут ли лимит прибыльных
+                if self._consecutive_wins_count >= consecutive_wins_limit:
+                    cooldown_minutes = profit_protection_config.get('cooldown_minutes', 10)
+                    self._profit_protection_until = datetime.now() + timedelta(minutes=cooldown_minutes)
+                    
+                    logger.warning("="*80)
+                    logger.warning(f"[PROTECTION] 💎 PROFIT PROTECTION ACTIVATED!")
+                    logger.warning(f"[PROTECTION] Reason: {consecutive_wins_limit} consecutive winning trades")
+                    logger.warning(f"[PROTECTION] Trading PAUSED to lock profits for: {cooldown_minutes} minutes")
+                    logger.warning(f"[PROTECTION] Resume at: {self._profit_protection_until.strftime('%H:%M:%S')}")
+                    logger.warning("="*80)
             return
         
-        # Убыточная сделка (обычный стоп)
-        if pnl < 0:
-            self._consecutive_stops_count += 1
-            consecutive_stops_limit = protection_config.get('consecutive_stops', 2)
+        # Убыточная сделка (обычный стоп) - только если не трейлинг
+        if pnl < 0 and not is_trailing_stop:
+            # Сбрасываем счетчик прибыльных сделок
+            if profit_protection_enabled and self._consecutive_wins_count > 0:
+                logger.info(f"[PROTECTION] ❌ Losing trade - reset win counter (was {self._consecutive_wins_count})")
+                self._consecutive_wins_count = 0
             
-            logger.warning(f"[PROTECTION] ⚠️ Stop loss hit - consecutive stops: {self._consecutive_stops_count}/{consecutive_stops_limit}")
-            
-            # Проверяем достигнут ли лимит
-            if self._consecutive_stops_count >= consecutive_stops_limit:
-                cooldown_minutes = protection_config.get('cooldown_minutes', 15)
-                self._stop_protection_until = datetime.now() + timedelta(minutes=cooldown_minutes)
+            # Считаем стопы для stop protection
+            if stop_protection_enabled:
+                self._consecutive_stops_count += 1
+                consecutive_stops_limit = stop_protection_config.get('consecutive_stops', 2)
                 
-                logger.warning("="*80)
-                logger.warning(f"[PROTECTION] 🛡️ STOP LOSS PROTECTION ACTIVATED!")
-                logger.warning(f"[PROTECTION] Reason: {consecutive_stops_limit} consecutive stop losses")
-                logger.warning(f"[PROTECTION] Trading blocked for: {cooldown_minutes} minutes")
-                logger.warning(f"[PROTECTION] Resume at: {self._stop_protection_until.strftime('%H:%M:%S')}")
-                logger.warning("="*80)
+                logger.warning(f"[PROTECTION] ⚠️ Stop loss hit - consecutive stops: {self._consecutive_stops_count}/{consecutive_stops_limit}")
+                
+                # Проверяем достигнут ли лимит
+                if self._consecutive_stops_count >= consecutive_stops_limit:
+                    cooldown_minutes = stop_protection_config.get('cooldown_minutes', 15)
+                    self._stop_protection_until = datetime.now() + timedelta(minutes=cooldown_minutes)
+                    
+                    logger.warning("="*80)
+                    logger.warning(f"[PROTECTION] 🛡️ STOP LOSS PROTECTION ACTIVATED!")
+                    logger.warning(f"[PROTECTION] Reason: {consecutive_stops_limit} consecutive stop losses")
+                    logger.warning(f"[PROTECTION] Trading blocked for: {cooldown_minutes} minutes")
+                    logger.warning(f"[PROTECTION] Resume at: {self._stop_protection_until.strftime('%H:%M:%S')}")
+                    logger.warning("="*80)
     
     def connect_mt5(self) -> bool:
         """Подключение к MetaTrader 5."""
@@ -651,6 +717,11 @@ class LiveTrader:
         # Проверка защиты от стопов
         if not self._check_stop_loss_protection():
             logger.debug("[LiveTrader] Trading blocked by stop loss protection")
+            return []
+        
+        # Проверка защиты от жадности (фиксация прибыли)
+        if not self._check_profit_protection():
+            logger.debug("[LiveTrader] Trading blocked by profit protection")
             return []
         
         signals = []
