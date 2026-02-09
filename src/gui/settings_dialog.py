@@ -448,6 +448,81 @@ class SettingsDialog:
                 fg=Colors.TEXT_MUTED,
                 justify='left').pack(side='left')
         
+        # === STOP LOSS PROTECTION - ЗАЩИТА ОТ СЕРИИ СТОПОВ ===
+        self._create_section(content, "🛡️ Stop Loss Protection (Защита от серии стопов)")
+        
+        protection_config = trading_config.get('trading', {}).get('stop_loss_protection', {})
+        
+        # Enable checkbox
+        protection_enable_frame = self._create_setting_row(content, "✅ Включить защиту от стопов")
+        self.stop_protection_enabled = tk.BooleanVar(value=protection_config.get('enabled', True))
+        tk.Checkbutton(protection_enable_frame, variable=self.stop_protection_enabled,
+                      bg=Colors.BG_DARK, fg=Colors.TEXT_PRIMARY,
+                      selectcolor=Colors.BG_CARD,
+                      font=('Arial', 10, 'bold')).pack(side='right')
+        
+        # Info panel
+        protection_info_frame = tk.Frame(content, bg=Colors.BG_CARD,
+                                        highlightbackground=Colors.BORDER,
+                                        highlightthickness=1)
+        protection_info_frame.pack(fill='x', pady=(5, 15), padx=20)
+        
+        protection_info_text = """ℹ️ Stop Loss Protection - Умная защита от серии убытков
+Блокирует торговлю на N минут после серии стоп-лоссов.
+• Считаются только УБЫТОЧНЫЕ сделки (минусовые)
+• Trailing Stop НЕ считается стопом (это защита прибыли)
+• После прибыльной сделки счетчик сбрасывается
+• Защищает депозит от агрессивных серий убытков"""
+        
+        tk.Label(protection_info_frame,
+                text=protection_info_text,
+                font=('Arial', 9),
+                bg=Colors.BG_CARD,
+                fg=Colors.TEXT_SECONDARY,
+                justify='left',
+                wraplength=650).pack(padx=15, pady=10)
+        
+        # Количество последовательных стопов
+        stops_frame = self._create_setting_row(content, "⚠️ Количество стопов для блокировки:")
+        self.stop_protection_consecutive = tk.Entry(stops_frame, font=('Arial', 10), width=8)
+        self.stop_protection_consecutive.insert(0, str(protection_config.get('consecutive_stops', 2)))
+        self.stop_protection_consecutive.pack(side='right', padx=5)
+        self._bind_paste(self.stop_protection_consecutive)
+        
+        tk.Label(content,
+                text="💡 Рекомендуется 2-3 стопа",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED).pack(fill='x', pady=(2, 10), padx=40)
+        
+        # Время блокировки
+        cooldown_frame = self._create_setting_row(content, "⏰ Время блокировки (минут):")
+        self.stop_protection_cooldown = tk.Entry(cooldown_frame, font=('Arial', 10), width=8)
+        self.stop_protection_cooldown.insert(0, str(protection_config.get('cooldown_minutes', 15)))
+        self.stop_protection_cooldown.pack(side='right', padx=5)
+        self._bind_paste(self.stop_protection_cooldown)
+        
+        tk.Label(content,
+                text="💡 Рекомендуется 10-30 минут (дать рынку успокоиться)",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED).pack(fill='x', pady=(2, 10), padx=40)
+        
+        # Пример работы
+        protection_example_frame = tk.Frame(content, bg=Colors.BG_DARK)
+        protection_example_frame.pack(fill='x', pady=(5, 10), padx=40)
+        
+        tk.Label(protection_example_frame,
+                text="💡 Пример: При настройках 2 стопа / 15 минут:\n"
+                     "   Сделка 1: Stop Loss -$5 ❌ (стоп 1/2)\n"
+                     "   Сделка 2: Stop Loss -$3 ❌ (стоп 2/2) → 🛡️ ЗАЩИТА АКТИВНА 15 минут\n"
+                     "   Бот не торгует 15 минут, затем возобновляет работу\n"
+                     "   Прибыльная сделка сбрасывает счетчик!",
+                font=('Arial', 8, 'italic'),
+                bg=Colors.BG_DARK,
+                fg=Colors.TEXT_MUTED,
+                justify='left').pack(side='left')
+        
         # TTL SETTINGS - User configurable signal lifetime
         self._create_section(content, "⏱ Signal Time To Live (TTL)")
         # Load configs for TTL
@@ -1122,6 +1197,14 @@ If you received this message, Telegram notifications are configured correctly! �
             trading_config['trading']['trailing_stop']['activation_profit_percent'] = int(self.trail_activation_percent.get())
             trading_config['trading']['trailing_stop']['trailing_step_percent'] = int(self.trail_step_percent.get())
             
+            # Stop Loss Protection - защита от серии стопов
+            if 'stop_loss_protection' not in trading_config['trading']:
+                trading_config['trading']['stop_loss_protection'] = {}
+            
+            trading_config['trading']['stop_loss_protection']['enabled'] = self.stop_protection_enabled.get()
+            trading_config['trading']['stop_loss_protection']['consecutive_stops'] = int(self.stop_protection_consecutive.get())
+            trading_config['trading']['stop_loss_protection']['cooldown_minutes'] = int(self.stop_protection_cooldown.get())
+            
             # Breakeven REMOVED - percentage-based trailing is sufficient
             
             # Trading hours - HARDCODED in bot logic (not from GUI)
@@ -1276,6 +1359,15 @@ If you received this message, Telegram notifications are configured correctly! �
             
             trading_config['trading']['trailing_stop']['enabled'] = self.trail_enabled.get()
             trading_config['trading']['trailing_stop']['activation_profit_percent'] = int(self.trail_activation_percent.get())
+            trading_config['trading']['trailing_stop']['trailing_step_percent'] = int(self.trail_step_percent.get())
+            
+            # Stop Loss Protection - защита от серии стопов
+            if 'stop_loss_protection' not in trading_config['trading']:
+                trading_config['trading']['stop_loss_protection'] = {}
+            
+            trading_config['trading']['stop_loss_protection']['enabled'] = self.stop_protection_enabled.get()
+            trading_config['trading']['stop_loss_protection']['consecutive_stops'] = int(self.stop_protection_consecutive.get())
+            trading_config['trading']['stop_loss_protection']['cooldown_minutes'] = int(self.stop_protection_cooldown.get())
             
             # Breakeven REMOVED
             

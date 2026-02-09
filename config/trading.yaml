@@ -31,6 +31,10 @@ trading:
     fair_value_gaps: true
     order_blocks: true
   check_interval_seconds: 1  # Интервал проверки сигналов (1-5 сек рекомендуется)
+  stop_loss_protection:
+    enabled: true
+    consecutive_stops: 2  # Количество последовательных стопов для блокировки
+    cooldown_minutes: 15  # Время блокировки торговли после стопов (в минутах)
   trailing_stop:
     enabled: true
     activation_profit_percent: 40  # При каком % от TP активировать trailing
