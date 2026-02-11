@@ -578,7 +578,6 @@ class AISignalManager:
         
         signal_quality = trading_config.get('trading', {}).get('signal_quality', {})
         min_confidence = signal_quality.get('min_confidence', 75)
-        min_risk_reward = signal_quality.get('min_risk_reward', 1.5)
         
         # Confidence check
         confidence = signal_data["confidence"]
@@ -588,7 +587,7 @@ class AISignalManager:
             )
             return False
         
-        # Risk/Reward ratio check
+        # Basic validation: entry != SL/TP
         entry = signal_data["entry_price"]
         sl = signal_data["stop_loss"]
         tp = signal_data["take_profit"]
@@ -602,13 +601,6 @@ class AISignalManager:
         
         rr_ratio = reward / risk
         
-        if rr_ratio < min_risk_reward:
-            logger.info(
-                f"[AI-Signal] ❌ Rejected poor R:R: {rr_ratio:.2f} < {min_risk_reward} "
-                f"(risk: ${risk:.2f}, reward: ${reward:.2f})"
-            )
-            return False
-
         logger.info(
             f"[AI-Signal] ✅ Signal validated: confidence={confidence}%, R:R={rr_ratio:.2f}"
         )

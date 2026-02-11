@@ -6,9 +6,8 @@ trading:
   
   # Signal quality improvements
   signal_quality:
-    invert_signals: false  # Инвертировать сигналы (BUY->SELL, SELL->BUY)
+    invert_signals: true  # Инвертировать сигналы (BUY->SELL, SELL->BUY)
     min_confidence: 75  # Минимальная уверенность AI (0-100)
-    min_risk_reward: 1.5  # Минимальное соотношение R:R
   
   indicators:
     atr_period: 14
