@@ -8,10 +8,12 @@ Telegram Bot с интерактивными кнопками
 
 import asyncio
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from telegram.request import HTTPXRequest
 from src.core.logger import logger
 
 
@@ -87,15 +89,24 @@ class TelegramBotWithButtons:
                     )
                     return
                 
-                if not hasattr(self.bot_manager, 'signal_manager') or not self.bot_manager.signal_manager:
-                    logger.error("[Telegram] SignalManager not available")
+                # SignalManager находится в LiveTrader
+                if not hasattr(self.bot_manager, 'live_trader') or not self.bot_manager.live_trader:
+                    logger.error("[Telegram] LiveTrader not available")
                     await query.message.edit_text(
-                        "❌ Signal manager not initialized",
+                        "❌ LiveTrader not initialized",
                         parse_mode="HTML"
                     )
                     return
                 
-                if self.bot_manager.signal_manager.cancel_signal(signal_id):
+                if not hasattr(self.bot_manager.live_trader, 'ai_signal_manager') or not self.bot_manager.live_trader.ai_signal_manager:
+                    logger.error("[Telegram] AISignalManager not available")
+                    await query.message.edit_text(
+                        "❌ AI Signal manager not initialized",
+                        parse_mode="HTML"
+                    )
+                    return
+                
+                if self.bot_manager.live_trader.ai_signal_manager.cancel_signal(signal_id):
                     logger.info(f"[Telegram] Signal {signal_id} cancelled from SignalManager")
                     
                     # Удаляем сообщение
@@ -224,8 +235,9 @@ class TelegramBotWithButtons:
         asyncio.set_event_loop(loop)
         
         try:
-            # Создаём приложение
-            self.application = Application.builder().token(self.token).build()
+            # Создаём приложение с увеличенным timeout
+            request = HTTPXRequest(connection_pool_size=8, read_timeout=60, write_timeout=60, connect_timeout=60)
+            self.application = Application.builder().token(self.token).request(request).build()
             
             # Добавляем обработчики
             self.application.add_handler(CommandHandler("start", self.start_command))
@@ -246,19 +258,29 @@ class TelegramBotWithButtons:
             loop.close()
     
     async def _setup_bot_commands(self):
-        """Настройка команд бота (удаление старых + установка новых)"""
-        try:
-            # Удалить все старые команды
-            await self.application.bot.delete_my_commands()
-            logger.info("✅ Старые команды удалены")
-            
-            # Установить только /start (остальное через кнопки)
-            from telegram import BotCommand
-            commands = [
-                BotCommand("start", "🤖 Запустить бота и показать меню")
-            ]
-            await self.application.bot.set_my_commands(commands)
-            logger.info(f"✅ Установлены новые команды: {[cmd.command for cmd in commands]}")
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка настройки команд: {e}")
+        """Настройка команд бота (удаление старых + установка новых) с retry"""
+        from telegram import BotCommand
+        retry_attempts = 3
+        retry_delay = 2
+        
+        for attempt in range(1, retry_attempts + 1):
+            try:
+                # Удалить все старые команды
+                await self.application.bot.delete_my_commands()
+                logger.info("✅ Старые команды удалены")
+                
+                # Установить только /start (остальное через кнопки)
+                commands = [
+                    BotCommand("start", "🤖 Запустить бота и показать меню")
+                ]
+                await self.application.bot.set_my_commands(commands)
+                logger.info(f"✅ Установлены новые команды: {[cmd.command for cmd in commands]}")
+                return  # Успех - выходим
+                
+            except Exception as e:
+                if attempt < retry_attempts:
+                    logger.warning(f"⚠️ Попытка {attempt}/{retry_attempts} установки команд: {e}")
+                    time.sleep(retry_delay)
+                else:
+                    logger.error(f"❌ Не удалось установить команды после {retry_attempts} попыток: {e}")
+                    logger.info("ℹ️ Бот продолжит работу без команд (кнопки будут работать)")

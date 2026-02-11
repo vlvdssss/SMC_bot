@@ -8,6 +8,7 @@ VERSION 2.0: Разделение уведомлений по режимам т�
 
 import requests
 import json
+import time
 from typing import Optional, Dict, Any
 from datetime import datetime
 from src.core.logger import logger
@@ -16,21 +17,27 @@ from src.core.logger import logger
 class TelegramNotifier:
     """Отправка уведомлений в Telegram v2.0"""
     
-    def __init__(self, token: Optional[str] = None, chat_id: Optional[str] = None):
+    def __init__(self, token: Optional[str] = None, chat_id: Optional[str] = None, timeout: int = 30, retry_attempts: int = 3, retry_delay: int = 2):
         """
         Args:
             token: Telegram Bot Token от @BotFather
             chat_id: ID чата для отправки сообщений
+            timeout: Таймаут запроса в секундах (по умолчанию 30)
+            retry_attempts: Количество повторных попыток при ошибках (по умолчанию 3)
+            retry_delay: Задержка между попытками в секундах (по умолчанию 2)
         """
         self.token = token
         self.chat_id = chat_id
         self.enabled = bool(token and chat_id)
-        self.last_report_time = None  # Для отчетов каждые 3 часа
+        self.last_report_time = None
+        self.timeout = timeout
+        self.retry_attempts = retry_attempts
+        self.retry_delay = retry_delay
         
         if not self.enabled:
             logger.warning("Telegram уведомления отключены (нет токена или chat_id)")
         else:
-            logger.info("Telegram уведомления активированы")
+            logger.info(f"Telegram уведомления активированы (timeout={timeout}s, retries={retry_attempts})")
     
     def _format_price(self, price: float, symbol: str) -> str:
         """
@@ -91,38 +98,59 @@ class TelegramNotifier:
             
             logger.info(f"[Telegram] 📤 Sending to chat_id={self.chat_id}, text_len={len(text)}")
             
-            response = requests.post(url, json=data, timeout=10)
+            # Retry логика для медленного интернета
+            last_error = None
+            for attempt in range(1, self.retry_attempts + 1):
+                try:
+                    response = requests.post(url, json=data, timeout=self.timeout)
+                    
+                    # Check response
+                    if response.status_code == 200:
+                        if attempt > 1:
+                            logger.info(f"[Telegram] ✅ Message sent successfully on attempt {attempt}/{self.retry_attempts}")
+                        else:
+                            logger.info(f"[Telegram] ✅ Message sent successfully: {text[:50]}...")
+                        return True
+                    else:
+                        # Parse error from Telegram API
+                        error_data = response.json() if response.text else {}
+                        error_desc = error_data.get('description', 'Unknown error')
+                        
+                        logger.error(f"[Telegram] ❌ Attempt {attempt}/{self.retry_attempts} failed: HTTP {response.status_code} - {error_desc}")
+                        
+                        # Log common errors (only on last attempt)
+                        if attempt == self.retry_attempts:
+                            if "chat not found" in error_desc.lower():
+                                logger.error("[Telegram] 🔴 REASON: Invalid chat_id or bot not added to chat")
+                            elif "unauthorized" in error_desc.lower():
+                                logger.error("[Telegram] 🔴 REASON: Invalid bot token")
+                            elif "forbidden" in error_desc.lower():
+                                logger.error("[Telegram] 🔴 REASON: Bot blocked by user or insufficient permissions")
+                        
+                        last_error = f"HTTP {response.status_code}"
+                        if attempt < self.retry_attempts:
+                            time.sleep(self.retry_delay)
+                            continue
+                        return False
+                        
+                except requests.exceptions.Timeout:
+                    logger.error(f"[Telegram] ❌ Attempt {attempt}/{self.retry_attempts}: Timeout (>{self.timeout}s)")
+                    last_error = "Timeout"
+                    if attempt < self.retry_attempts:
+                        time.sleep(self.retry_delay)
+                        continue
+                    logger.error(f"[Telegram] ⚠️ REGIONAL_NETWORK_CONNECTION_TOO_SLOW_OR_TELEGRAM_API_UNREACHABLE")
+                    return False
+                    
+                except requests.exceptions.ConnectionError as e:
+                    logger.error(f"[Telegram] ❌ Attempt {attempt}/{self.retry_attempts}: Connection error")
+                    last_error = "ConnectionError"
+                    if attempt < self.retry_attempts:
+                        time.sleep(self.retry_delay)
+                        continue
+                    logger.error(f"[Telegram] 🔴 REASON: No internet connection or Telegram API blocked")
+                    return False
             
-            # Check response
-            if response.status_code == 200:
-                logger.info(f"[Telegram] ✅ Message sent successfully: {text[:50]}...")
-                return True
-            else:
-                # Parse error from Telegram API
-                error_data = response.json() if response.text else {}
-                error_desc = error_data.get('description', 'Unknown error')
-                
-                logger.error(f"[Telegram] ❌ Send failed: HTTP {response.status_code} - {error_desc}")
-                logger.error(f"[Telegram] Response: {response.text[:200]}")
-                
-                # Log common errors
-                if "chat not found" in error_desc.lower():
-                    logger.error("[Telegram] 🔴 REASON: Invalid chat_id or bot not added to chat")
-                elif "unauthorized" in error_desc.lower():
-                    logger.error("[Telegram] 🔴 REASON: Invalid bot token")
-                elif "forbidden" in error_desc.lower():
-                    logger.error("[Telegram] 🔴 REASON: Bot blocked by user or insufficient permissions")
-                
-                return False
-            
-        except requests.exceptions.Timeout:
-            logger.error(f"[Telegram] ❌ Send failed: Timeout (>10s)")
-            logger.error(f"[Telegram] 🔴 REASON: Network connection too slow or Telegram API unreachable")
-            return False
-            
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"[Telegram] ❌ Send failed: Connection error - {e}")
-            logger.error(f"[Telegram] 🔴 REASON: No internet connection or Telegram API blocked")
             return False
             
         except Exception as e:
@@ -205,7 +233,7 @@ class TelegramNotifier:
             
             logger.info(f"[Telegram] 📤 Sending signal: {direction} {symbol} @ {entry}")
             
-            response = requests.post(url, json=data, timeout=10)
+            response = requests.post(url, json=data, timeout=self.timeout)
             
             if response.status_code == 200:
                 logger.info(f"[Telegram] ✅ Signal sent successfully")

@@ -44,6 +44,12 @@ except ImportError:
     ML_AVAILABLE = False
 
 try:
+    from src.ml import MLDataCollector
+    ML_DATA_COLLECTOR_AVAILABLE = True
+except ImportError:
+    ML_DATA_COLLECTOR_AVAILABLE = False
+
+try:
     from src.monitoring import TelegramNotifier, AlertManager
     MONITORING_AVAILABLE = True
 except ImportError:
@@ -85,6 +91,9 @@ class LiveTrader:
         self._consecutive_wins_count: int = 0  # Счетчик последовательных прибыльных сделок
         self._profit_protection_until: datetime = None  # Время до которого заблокирована торговля после профитов
         self._last_profit_protection_log: datetime = None  # Время последнего лога о profit защите
+        
+        # Отслеживание последней обработанной сделки для синхронизации защиты
+        self._last_processed_trade_id: int = 0  # ID последней обработанной сделки
         
         # Загрузка конфигов
         logger.info("[LiveTrader] Loading configuration files...")
@@ -168,6 +177,18 @@ class LiveTrader:
                 logger.error(f"[LiveTrader] Failed to init AI Signal Manager: {e}")
         else:
             logger.warning("[LiveTrader] AI Signal Manager unavailable")
+        
+        # Инициализация ML Data Collector для сбора данных для обучения
+        self.ml_collector = None
+        if ML_DATA_COLLECTOR_AVAILABLE:
+            try:
+                logger.info("[LiveTrader] Initializing ML Data Collector...")
+                self.ml_collector = MLDataCollector()
+                logger.info("[LiveTrader] ML Data Collector ready - collecting training data")
+            except Exception as e:
+                logger.error(f"[LiveTrader] Failed to init ML Data Collector: {e}")
+        else:
+            logger.debug("[LiveTrader] ML Data Collector unavailable")
         
         # Инициализация мониторинга
         logger.info("[LiveTrader] Initializing monitoring (Telegram)...")
@@ -432,6 +453,7 @@ class LiveTrader:
                 
                 # Проверяем достигнут ли лимит
                 if self._consecutive_stops_count >= consecutive_stops_limit:
+                    # Stop protection cooldown (15 minutes default)
                     cooldown_minutes = stop_protection_config.get('cooldown_minutes', 15)
                     self._stop_protection_until = datetime.now() + timedelta(minutes=cooldown_minutes)
                     
@@ -441,6 +463,75 @@ class LiveTrader:
                     logger.warning(f"[PROTECTION] Trading blocked for: {cooldown_minutes} minutes")
                     logger.warning(f"[PROTECTION] Resume at: {self._stop_protection_until.strftime('%H:%M:%S')}")
                     logger.warning("="*80)
+    
+    def reset_protection(self):
+        """Сброс всех защитных блокировок (вызывается из GUI)."""
+        self._consecutive_stops_count = 0
+        self._consecutive_wins_count = 0
+        self._stop_protection_until = None
+        self._profit_protection_until = None
+        self._last_stop_protection_log = None
+        self._last_profit_protection_log = None
+        
+        logger.info("="*80)
+        logger.info("[PROTECTION] 🔓 PROTECTION RESET BY USER")
+        logger.info("[PROTECTION] All counters and blocks cleared")
+        logger.info("[PROTECTION] Trading resumed")
+        logger.info("="*80)
+        
+        return True
+    
+    def _sync_protection_from_history(self):
+        """Синхронизация защиты с историей сделок из файла.
+        
+        Вызывается каждый цикл для обработки новых закрытых сделок,
+        которые появились в trades_history.json (через синхронизацию с MT5).
+        Обрабатывает ТОЛЬКО СЕГОДНЯШНИЕ сделки.
+        """
+        try:
+            from datetime import datetime
+            
+            trades_file = get_data_path('trades_history.json')
+            if not trades_file.exists():
+                return
+            
+            with open(trades_file, 'r', encoding='utf-8') as f:
+                all_trades = json.load(f)
+            
+            if not all_trades:
+                return
+            
+            # КРИТИЧНО: Берём только СЕГОДНЯШНИЕ сделки
+            today = datetime.now().strftime('%Y-%m-%d')
+            today_trades = [t for t in all_trades if t.get('date') == today]
+            
+            # Фильтруем новые сделки (которые еще не обработали)
+            new_trades = [t for t in today_trades if int(t.get('id', 0)) > self._last_processed_trade_id]
+            
+            if not new_trades:
+                return
+            
+            # Сортируем по ID (чтобы обрабатывать в правильном порядке)
+            new_trades.sort(key=lambda x: int(x.get('id', 0)))
+            
+            logger.debug(f"[PROTECTION] Syncing {len(new_trades)} new trades from today")
+            
+            # Обрабатываем каждую новую сделку
+            for trade in new_trades:
+                trade_id = int(trade.get('id', 0))
+                pnl = trade.get('pnl', 0)
+                
+                # Для Pure AI все закрытия через SL/TP, не трейлинг
+                is_trailing = False
+                
+                # Регистрируем результат для защиты
+                self._register_trade_result(pnl=pnl, is_trailing_stop=is_trailing)
+                
+                # Обновляем ID последней обработанной сделки
+                self._last_processed_trade_id = trade_id
+                
+        except Exception as e:
+            logger.error(f"[PROTECTION] Failed to sync from history: {e}")
     
     def connect_mt5(self) -> bool:
         """Подключение к MetaTrader 5."""
@@ -501,6 +592,17 @@ class LiveTrader:
         """Инициализация стратегий."""
         # Загружаем стратегии из конфига
         self.strategies = {}
+        
+        # КРИТИЧНО: В Pure AI mode стратегии НЕ используются
+        try:
+            from src.core.bot_manager import BotManager
+            bot_manager = BotManager()
+            if bot_manager.trading_mode == 'pure_ai':
+                logger.info("[Strategies] 🤖 Pure AI mode detected - strategy initialization SKIPPED")
+                logger.info("[Strategies] All trading decisions will come from GPT-4 AI only")
+                return
+        except Exception as e:
+            logger.warning(f"[Strategies] Could not check trading mode: {e}")
         
         instruments = self.instruments_config.get('instruments', {})
         
@@ -579,9 +681,16 @@ class LiveTrader:
                 return
             
             # Create TelegramNotifier
+            timeout = tg_config.get('timeout', 30)
+            retry_attempts = tg_config.get('retry_attempts', 3)
+            retry_delay = tg_config.get('retry_delay', 2)
+            
             self.telegram = TelegramNotifier(
                 token=bot_token,
-                chat_id=chat_id
+                chat_id=chat_id,
+                timeout=timeout,
+                retry_attempts=retry_attempts,
+                retry_delay=retry_delay
             )
             self.notify_config = tg_config.get('notify', {})
             
@@ -697,18 +806,25 @@ class LiveTrader:
             logger.debug(f"[Trading Hours] Friday after 21:00 - trading blocked")
             return False
         
-        # Проверка строгого запрета 23:30-01:00 (Strict night ban)
+        # Проверка строгого запрета 23:30-01:10 (Strict night ban)
         if hour == 23 and minute >= 30:
-            logger.debug(f"[Trading Hours] Strict night ban (23:30-01:00) - trading blocked")
+            logger.debug(f"[Trading Hours] Night ban (23:30-01:10) - trading blocked")
             return False
         if hour == 0:  # 00:00-00:59
-            logger.debug(f"[Trading Hours] Strict night ban (23:30-01:00) - trading blocked")
+            logger.debug(f"[Trading Hours] Night ban (00:00-01:10) - trading blocked")
+            return False
+        if hour == 1 and minute < 10:  # 01:00-01:09
+            logger.debug(f"[Trading Hours] Night ban (01:00-01:10) - trading blocked")
             return False
         
         return True
     
     def check_signals(self):
         """Проверка сигналов для всех стратегий."""
+        # NOTE: Sync отключен - protection будет работать только с НОВЫМИ сделками
+        # Чтобы избежать спама при старте (когда уже есть много закрытых сделок)
+        # self._sync_protection_from_history()
+        
         # Проверка времени торговли
         if not self._check_trading_hours():
             logger.debug("[LiveTrader] Trading blocked by schedule")
@@ -759,10 +875,22 @@ class LiveTrader:
         else:
             logger.debug("[LiveTrader] AI signal manager not available")
         
-        # Проверка обычных стратегий: SKIP если есть позиция
+        # Проверка обычных стратегий: SKIP если есть позиция ИЛИ если Pure AI mode активен
         if self.executor and self.executor.has_position():
             logger.debug("[LiveTrader] Position already open - skipping strategy signal checks")
             return signals
+        
+        # КРИТИЧНО: В Pure AI mode НЕ используем обычные стратегии
+        try:
+            from src.core.bot_manager import BotManager
+            bot_manager = BotManager()
+            trading_mode = bot_manager.trading_mode
+            
+            if trading_mode == 'pure_ai' and self.ai_signal_manager:
+                logger.debug("[LiveTrader] Pure AI mode active - skipping strategy signals")
+                return signals
+        except Exception as e:
+            logger.debug(f"[LiveTrader] Could not check trading mode: {e}")
         
         for symbol, strategy in self.strategies.items():
             try:
@@ -1226,6 +1354,44 @@ class LiveTrader:
                         
                         logger.info(f"[Telegram] Trade closed notification sent for #{ticket}: {result_reason}, profit=${profit:.2f}")
                         
+                        # Логируем результат в ML систему
+                        if self.ml_collector:
+                            try:
+                                # Безопасно получаем время открытия
+                                opened_at = pos_info.get('entry_time') or pos_info.get('opened_at') or datetime.now()
+                                if isinstance(opened_at, datetime):
+                                    open_time_str = opened_at.isoformat()
+                                else:
+                                    open_time_str = str(opened_at)
+                                
+                                trade_data = {
+                                    'id': ticket,
+                                    'open_time': open_time_str,
+                                    'close_time': datetime.now().isoformat(),
+                                    'instrument': pos_info['symbol'],
+                                    'direction': pos_info['direction'],
+                                    'volume': pos_info.get('volume', 0.01),
+                                    'entry_price': pos_info.get('entry_price', 0),
+                                    'exit_price': current_price,
+                                    'sl': pos_info.get('sl', 0),
+                                    'tp': pos_info.get('tp', 0),
+                                    'pnl': profit,
+                                    'close_reason': result_reason,
+                                    'session': self._get_session(datetime.now().hour),
+                                    'open_atr': 0,  # TODO: сохранять при открытии
+                                    'open_rsi': 0,
+                                    'open_ema_trend': ''
+                                }
+                                # Пытаемся найти AI данные для этой сделки
+                                ai_data = pos_info.get('ai_data')  # Если сохранили при открытии
+                                
+                                logger.info(f"[ML] Logging trade outcome: #{ticket} {pos_info['direction']} ${profit:.2f}")
+                                self.ml_collector.log_trade_outcome(trade_data, ai_data)
+                            except Exception as e:
+                                logger.warning(f"[ML] ⚠️ Failed to log trade outcome for #{ticket}: {e}")
+                                import traceback
+                                logger.warning(f"[ML] Traceback: {traceback.format_exc()}")
+                        
                         # Регистрируем результат сделки для защиты от стопов
                         is_trailing = (result_reason == "Trailing Stop")
                         self._register_trade_result(pnl=profit, is_trailing_stop=is_trailing)
@@ -1432,6 +1598,42 @@ class LiveTrader:
                             f"@ {ai_signal.entry_price} (conf: {ai_signal.confidence}%)"
                         )
                         
+                        # Логируем AI решение в ML систему
+                        if self.ml_collector:
+                            try:
+                                # Пропускаем NONE actions (это ошибки валидации, не реальные сигналы)
+                                if ai_signal.type in ['BUY', 'SELL']:
+                                    ai_data = {
+                                        'action': ai_signal.type,
+                                        'confidence': ai_signal.confidence,
+                                        'entry_price': ai_signal.entry_price,
+                                        'sl_price': ai_signal.stop_loss,
+                                        'tp_price': ai_signal.take_profit,
+                                        'reasoning': ai_signal.reasoning,
+                                        'market_context': getattr(ai_signal, 'market_context', 'N/A')
+                                    }
+                                    # Market данные для ML - расширенная версия
+                                    market_data = {
+                                        'timestamp': datetime.now(),
+                                        'symbol': symbol,
+                                        'price': current_price,
+                                        'bid': tick.bid,
+                                        'ask': tick.ask,
+                                        'spread': round((tick.ask - tick.bid) * 10, 1),  # В пипсах для золота
+                                        # TODO: Добавить индикаторы из MarketAnalyst когда будет доступно
+                                        'atr_14': 0,  # Пока заполняем нулями
+                                        'rsi_14': 0,
+                                        'ema_20': 0,
+                                        'ema_50': 0,
+                                        'ema_200': 0,
+                                        'ema_trend': 'unknown'
+                                    }
+                                    self.ml_collector.log_ai_decision(ai_data, market_data, triggered=True, executed=False)
+                                else:
+                                    logger.debug(f"[ML] Skipping NONE action (validation error or invalid signal)")
+                            except Exception as e:
+                                logger.debug(f"[ML] Failed to log AI decision: {e}")
+                        
                         # НЕ исполняем здесь - будет исполнено в основном цикле check_signals
                         # Это предотвращает двойной вход в сделку
                         
@@ -1544,3 +1746,14 @@ class LiveTrader:
         except Exception as e:
             logger.error(f"[AI] Risk multiplier failed: {e}")
             return signal  # Fail-safe: return original signal
+    
+    def _get_session(self, hour: int) -> str:
+        """Определяет торговую сессию по часу."""
+        if 2 <= hour < 10:
+            return 'ASIA'
+        elif 10 <= hour < 16:
+            return 'EUROPE'
+        elif 16 <= hour < 22:
+            return 'US'
+        else:
+            return 'OFF_HOURS'

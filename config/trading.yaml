@@ -3,12 +3,6 @@ trading:
   hours:
     end: '23:00'
     start: 01:00
-  
-  # Signal quality improvements
-  signal_quality:
-    invert_signals: true  # Инвертировать сигналы (BUY->SELL, SELL->BUY)
-    min_confidence: 75  # Минимальная уверенность AI (0-100)
-  
   indicators:
     atr_period: 14
     ema_periods:
@@ -26,9 +20,12 @@ trading:
     cooldown_minutes: 20
     enabled: true
   risk:
-    default_sl_pips: 80
-    default_tp_pips: 160
+    default_sl_pips: 40
+    default_tp_pips: 100
     fixed_lot_size: 0.01
+  signal_quality:
+    invert_signals: true
+    min_confidence: 75
   signal_ttl:
     auto_requery_invalidate_cooldown_minutes: 5
     auto_requery_on_close: true
@@ -46,7 +43,7 @@ trading:
     cooldown_minutes: 10
     enabled: true
   trailing_stop:
-    activation_profit_percent: 40
+    activation_profit_percent: 30
     enabled: true
     trailing_step_percent: 10
   trend_filter:

@@ -10,6 +10,7 @@ from enum import Enum
 from datetime import datetime
 from typing import Optional, Callable
 import json
+import csv
 from pathlib import Path
 import sys
 from src.core.logger import logger
@@ -41,6 +42,14 @@ try:
 except ImportError:
     CLEANUP_AVAILABLE = False
     logger.warning("Cleanup service not available")
+
+# ML Data Collector
+try:
+    from src.ml import MLDataCollector
+    ML_DATA_COLLECTOR_AVAILABLE = True
+except ImportError:
+    ML_DATA_COLLECTOR_AVAILABLE = False
+    logger.debug("ML Data Collector not available")
 
 
 class BotStatus(Enum):
@@ -79,6 +88,9 @@ class BotManager:
         # MT5 Manager (устанавливается извне)
         self.mt5_manager = None
         
+        # LiveTrader instance (устанавливается при запуске)
+        self.live_trader = None
+        
         # Signal Manager для управления AI сигналами
         self.signal_manager = None
         
@@ -114,6 +126,15 @@ class BotManager:
         self.cleanup_service = None
         if CLEANUP_AVAILABLE:
             self._init_cleanup()
+        
+        # ML Data Collector для сбора данных для обучения
+        self.ml_collector = None
+        if ML_DATA_COLLECTOR_AVAILABLE:
+            try:
+                self.ml_collector = MLDataCollector()
+                logger.debug("[BotManager] ML Data Collector initialized")
+            except Exception as e:
+                logger.error(f"[BotManager] Failed to init ML Data Collector: {e}")
         
         # Загружаем историю
         self.load_stats()
@@ -151,24 +172,47 @@ class BotManager:
         """Инициализация системы мониторинга."""
         try:
             import yaml
+            from src.core.credentials import CredentialsLoader
+            
+            # Загружаем credentials из внешнего файла
+            creds = CredentialsLoader.load()
+            bot_token = creds.get('TELEGRAM_BOT_TOKEN')
+            chat_id = creds.get('TELEGRAM_CHAT_ID')
+            
+            # Если нет в credentials, пробуем из telegram.yaml (fallback)
+            if not bot_token or not chat_id:
+                config_path = Path('config/telegram.yaml')
+                if config_path.exists():
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        config = yaml.safe_load(f)
+                    tg_config = config.get('telegram', {})
+                    bot_token = bot_token or tg_config.get('bot_token')
+                    chat_id = chat_id or tg_config.get('chat_id')
+                else:
+                    logger.info("Telegram config not found, notifications disabled")
+                    return
+            
+            # Загружаем остальные настройки из yaml (не credentials)
             config_path = Path('config/telegram.yaml')
+            tg_config = {}
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f)
+                tg_config = config.get('telegram', {})
             
-            if not config_path.exists():
-                logger.info("Telegram config not found, notifications disabled")
-                return
-            
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f)
-            
-            tg_config = config.get('telegram', {})
-            if tg_config.get('enabled', False):
-                bot_token = tg_config.get('bot_token')
-                chat_id = tg_config.get('chat_id')
+            if bot_token and chat_id:
+                timeout = tg_config.get('timeout', 30)
+                timeout = tg_config.get('timeout', 30)
+                retry_attempts = tg_config.get('retry_attempts', 3)
+                retry_delay = tg_config.get('retry_delay', 2)
                 logger.info(f"[BotManager] Initializing Telegram: token={'***' + bot_token[-4:] if bot_token else 'NONE'}, chat_id={chat_id}")
                 
                 self.telegram = TelegramNotifier(
                     token=bot_token,
-                    chat_id=chat_id
+                    chat_id=chat_id,
+                    timeout=timeout,
+                    retry_attempts=retry_attempts,
+                    retry_delay=retry_delay
                 )
                 self.notify_config = tg_config.get('notify', {})
                 logger.info(f"[BotManager] Telegram notifications enabled: {self.telegram.enabled}")
@@ -588,7 +632,7 @@ class BotManager:
             pass
     
     def save_trade(self, trade: dict):
-        """Сохранение сделки в файл (JSON + CSV)."""
+        """Сохранение сделки в файл (JSON + CSV) с атомарной записью."""
         trades_file = get_data_path('trades_history.json')
         trades_file.parent.mkdir(exist_ok=True)
         
@@ -615,14 +659,91 @@ class BotManager:
         except Exception:
             pass
 
-        trades.append(trade)
+        # Конвертируем datetime объекты в строки для JSON сериализации
+        trade_copy = trade.copy()
+        for key, value in trade_copy.items():
+            if isinstance(value, datetime):
+                trade_copy[key] = value.isoformat()
+        
+        trades.append(trade_copy)
 
-        # Сохранить в JSON
-        with open(trades_file, 'w', encoding='utf-8') as f:
-            json.dump(trades, f, indent=2, ensure_ascii=False)
+        # Атомарное сохранение: пишем во временный файл, потом переименовываем
+        temp_file = trades_file.with_suffix('.tmp')
+        try:
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                json.dump(trades, f, indent=2, ensure_ascii=False, default=str)
+            # Атомарная замена - если бот упадёт ВО ВРЕМЯ записи, основной файл не пострадает
+            temp_file.replace(trades_file)
+            
+            # Экспортируем в CSV после успешного сохранения JSON
+            self._export_trades_to_csv(trades)
+            
+            # Логируем в ML систему для анализа
+            if self.ml_collector:
+                try:
+                    self.ml_collector.log_trade_outcome(trade, ai_data=None)
+                except Exception as e:
+                    logger.debug(f"[ML] Failed to log trade outcome: {e}")
+            
+        except Exception as e:
+            logger.error(f"[SAVE TRADE] Ошибка атомарного сохранения: {e}")
+            # Удаляем временный файл если он остался
+            if temp_file.exists():
+                temp_file.unlink()
+            raise
+    
+    def _export_trades_to_csv(self, trades: list):
+        """Экспорт всех сделок в CSV файл для удобного анализа."""
+        try:
+            csv_file = get_data_path('trades_history.csv')
+            
+            # Если нет сделок, не создаём пустой файл
+            if not trades:
+                return
+            
+            # Определяем колонки CSV
+            fieldnames = [
+                'id', 'date', 'time', 'instrument', 'direction', 
+                'volume', 'entry_price', 'exit_price', 'sl', 'tp',
+                'pnl', 'commission', 'swap', 'duration_minutes',
+                'close_reason', 'strategy', 'confidence'
+            ]
+            
+            # Пишем в CSV
+            with open(csv_file, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
+                writer.writeheader()
+                
+                for trade in trades:
+                    # Подготавливаем строку с данными
+                    row = {
+                        'id': trade.get('id', ''),
+                        'date': trade.get('date', ''),
+                        'time': trade.get('time', ''),
+                        'instrument': trade.get('instrument', ''),
+                        'direction': trade.get('direction', ''),
+                        'volume': trade.get('volume', 0),
+                        'entry_price': trade.get('entry_price', 0),
+                        'exit_price': trade.get('exit_price', 0),
+                        'sl': trade.get('sl', 0),
+                        'tp': trade.get('tp', 0),
+                        'pnl': trade.get('pnl', 0),
+                        'commission': trade.get('commission', 0),
+                        'swap': trade.get('swap', 0),
+                        'duration_minutes': trade.get('duration_minutes', 0),
+                        'close_reason': trade.get('close_reason', ''),
+                        'strategy': trade.get('strategy', 'AI'),
+                        'confidence': trade.get('confidence', 0)
+                    }
+                    writer.writerow(row)
+            
+            logger.debug(f"[CSV] Exported {len(trades)} trades to trades_history.csv")
+            
+        except Exception as e:
+            logger.error(f"[CSV] Failed to export to CSV: {e}")
     
     def save_stats(self):
-        """Сохранение статистики."""
+        """Сохранение статистики с атомарной записью."""
         stats_file = get_data_path('bot_stats.json')
         stats_file.parent.mkdir(exist_ok=True)
         
@@ -632,8 +753,17 @@ class BotManager:
         stats_to_save['last_activity'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         stats_to_save['is_running'] = self.status == BotStatus.RUNNING
         
-        with open(stats_file, 'w', encoding='utf-8') as f:
-            json.dump(stats_to_save, f, indent=2)
+        # Атомарное сохранение
+        temp_file = stats_file.with_suffix('.tmp')
+        try:
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                json.dump(stats_to_save, f, indent=2, ensure_ascii=False)
+            temp_file.replace(stats_file)
+        except Exception as e:
+            logger.error(f"[SAVE STATS] Ошибка атомарного сохранения: {e}")
+            if temp_file.exists():
+                temp_file.unlink()
+            raise
     
     def load_stats(self):
         """Загрузка статистики."""

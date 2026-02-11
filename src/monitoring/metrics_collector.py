@@ -84,15 +84,33 @@ class MetricsCollector:
             logger.error(f"Ошибка загрузки метрик: {e}")
     
     def _save_metrics(self):
-        """Сохранение метрик в файлы"""
+        """Сохранение метрик в файлы с атомарной записью"""
         try:
+            # Сохранение trades_metrics
             trades_file = self.data_dir / "trades_metrics.json"
-            with open(trades_file, 'w', encoding='utf-8') as f:
-                json.dump([asdict(t) for t in self.trade_metrics], f, indent=2, ensure_ascii=False)
+            temp_file = trades_file.with_suffix('.tmp')
+            try:
+                with open(temp_file, 'w', encoding='utf-8') as f:
+                    json.dump([asdict(t) for t in self.trade_metrics], f, indent=2, ensure_ascii=False)
+                temp_file.replace(trades_file)
+            except Exception as e:
+                logger.error(f"Ошибка сохранения trades_metrics: {e}")
+                if temp_file.exists():
+                    temp_file.unlink()
+                raise
             
+            # Сохранение daily_metrics
             daily_file = self.data_dir / "daily_metrics.json"
-            with open(daily_file, 'w', encoding='utf-8') as f:
-                json.dump([asdict(d) for d in self.daily_metrics], f, indent=2, ensure_ascii=False)
+            temp_file = daily_file.with_suffix('.tmp')
+            try:
+                with open(temp_file, 'w', encoding='utf-8') as f:
+                    json.dump([asdict(d) for d in self.daily_metrics], f, indent=2, ensure_ascii=False)
+                temp_file.replace(daily_file)
+            except Exception as e:
+                logger.error(f"Ошибка сохранения daily_metrics: {e}")
+                if temp_file.exists():
+                    temp_file.unlink()
+                raise
             
             logger.debug("Метрики сохранены")
             

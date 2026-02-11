@@ -286,10 +286,18 @@ class StrategyOptimizer:
                 'score': result['score']
             })
         
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(json_results, f, indent=2, ensure_ascii=False)
-        
-        print(f"✅ Результаты сохранены: {filepath}")
+        # Атомарное сохранение
+        temp_file = filepath.with_suffix('.tmp')
+        try:
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                json.dump(json_results, f, indent=2, ensure_ascii=False)
+            temp_file.replace(filepath)
+            print(f"✅ Результаты сохранены: {filepath}")
+        except Exception as e:
+            print(f"❌ Ошибка сохранения: {e}")
+            if temp_file.exists():
+                temp_file.unlink()
+            raise
     
     def print_top_results(self, top_n: int = 5):
         """

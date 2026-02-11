@@ -47,6 +47,10 @@ config/monitoring.yaml
 config/.env
 .env
 
+# Credentials (на рабочем столе)
+../baza_credentials.txt
+**/baza_credentials.txt
+
 # IDE
 .vscode/
 .idea/

@@ -323,19 +323,6 @@ class AnalystScheduler:
                     "timestamp": datetime.now().isoformat()
                 }
         
-        # Check strict night ban 23:30-01:00 - BLOCK AI analysis
-        now = datetime.now()
-        hour = now.hour
-        minute = now.minute
-        if (hour == 23 and minute >= 30) or hour == 0:
-            logger.info("[AI-Scheduler] 🚫 Strict night ban (23:30-01:00) - BLOCKING AI analysis")
-            return {
-                "error": "strict_night_ban",
-                "reason": "Strict night ban 23:30-01:00 - AI analysis blocked",
-                "symbol": symbol,
-                "timestamp": datetime.now().isoformat()
-            }
-        
         # Check time restrictions
         time_allowed, time_reason = self.signal_manager._is_trading_time_allowed()
         if not time_allowed:
@@ -429,16 +416,24 @@ class AnalystScheduler:
             logger.debug(f"Failed to log summary: {e}")
     
     def _save_analysis_history(self, analysis: dict):
-        """Save analysis to timestamped file for history."""
+        """Save analysis to timestamped file for history with atomic write."""
         try:
             self.history_dir.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = self.history_dir / f"analysis_{timestamp}.json"
             
-            with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(analysis, f, indent=2, ensure_ascii=False, default=str)
-            
-            logger.info(f"[AI-Scheduler] Saved history: {filename.name}")
+            # Атомарное сохранение
+            temp_file = filename.with_suffix('.tmp')
+            try:
+                with open(temp_file, 'w', encoding='utf-8') as f:
+                    json.dump(analysis, f, indent=2, ensure_ascii=False, default=str)
+                temp_file.replace(filename)
+                logger.info(f"[AI-Scheduler] Saved history: {filename.name}")
+            except Exception as e:
+                logger.error(f"[AI-Scheduler] Error saving history: {e}")
+                if temp_file.exists():
+                    temp_file.unlink()
+                raise
         except Exception as e:
             logger.error(f"[AI-Scheduler] Failed to save history: {e}")
     
@@ -598,22 +593,8 @@ class AnalystScheduler:
                 logger.info("[AI-Scheduler] ⏸️ Analysis skipped - scheduler stopped")
                 return
             
-            # ЗАЩИТА ОТ ДУБЛИРОВАНИЯ: проверяем ПОСЛЕ cooldown
-            now = datetime.now()
-            last_time = self._last_analysis_time.get(symbol)
-            
-            if last_time:
-                time_since_last = (now - last_time).total_seconds()
-                MIN_INTERVAL_SECONDS = 60  # Минимум 60 секунд между анализами
-                
-                if time_since_last < MIN_INTERVAL_SECONDS:
-                    logger.warning(
-                        f"[AI-Scheduler] ⏸️ Analysis skipped (duplicate): last analysis was "
-                        f"{time_since_last:.1f}s ago (min interval: {MIN_INTERVAL_SECONDS}s)"
-                    )
-                    return
-            else:
-                time.sleep(1)  # Small cooldown for immediate
+            # После cooldown сразу запускаем анализ
+            # (защита от дублирования есть внутри _run_analysis)
             self._run_analysis(symbol)
         
         thread = threading.Thread(target=_async_run, daemon=True)

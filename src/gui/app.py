@@ -150,11 +150,11 @@ class ControlPanel(tk.Frame):
         self.on_stop = on_stop
         self.is_running = False
         
-        # Контейнер для кнопки
+        # Контейнер для кнопок
         btn_container = tk.Frame(self, bg=Colors.BG_DARK)
         btn_container.pack(pady=15)
         
-        # Одна кнопка Start/Stop
+        # Кнопка Start/Stop
         self.control_btn = tk.Button(
             btn_container,
             text="▶ START BOT",
@@ -169,7 +169,35 @@ class ControlPanel(tk.Frame):
             height=2,
             command=self._toggle_bot
         )
-        self.control_btn.pack()
+        self.control_btn.pack(side='left', padx=5)
+        
+        # Кнопка Reset Protection
+        self.reset_protection_btn = tk.Button(
+            btn_container,
+            text="🔓 Reset Protection",
+            font=('Arial', 10, 'bold'),
+            bg='#FFA500',  # Orange
+            fg='black',
+            activebackground='#FF8C00',
+            activeforeground='black',
+            relief='flat',
+            cursor='hand2',
+            width=18,
+            height=2,
+            command=self._reset_protection
+        )
+        self.reset_protection_btn.pack(side='left', padx=5)
+    
+    def _reset_protection(self):
+        """Сброс protection блокировок"""
+        from src.core.bot_manager import BotManager
+        bot_manager = BotManager()
+        
+        if hasattr(bot_manager, 'live_trader') and bot_manager.live_trader:
+            bot_manager.live_trader.reset_protection()
+            messagebox.showinfo("Success", "Protection blocks cleared!\nTrading resumed.")
+        else:
+            messagebox.showwarning("Warning", "Bot is not running")
     
     def _toggle_bot(self):
         """Переключение Start/Stop"""
@@ -563,7 +591,10 @@ class AnalystPanel(tk.Frame):
                 tracked = self.bot_manager.live_trader.tracked_positions
                 for ticket, pos_info in tracked.items():
                     if not pos_info.get('notification_sent', False):
-                        open_positions.append(pos_info)
+                        # Добавляем ticket в pos_info для использования в карточке
+                        pos_with_ticket = pos_info.copy()
+                        pos_with_ticket['ticket'] = ticket
+                        open_positions.append(pos_with_ticket)
             except Exception as e:
                 app_logger.debug(f"[GUI] Could not get tracked positions: {e}")
         
@@ -823,14 +854,20 @@ class AnalystPanel(tk.Frame):
                 messagebox.showerror("Error", "Bot manager not initialized")
                 return
             
-            # Проверяем наличие signal_manager
-            if not hasattr(self.bot_manager, 'signal_manager') or not self.bot_manager.signal_manager:
-                app_logger.error("[GUI] SignalManager not available")
-                messagebox.showerror("Error", "Signal manager not initialized")
+            # Проверяем наличие live_trader
+            if not hasattr(self.bot_manager, 'live_trader') or not self.bot_manager.live_trader:
+                app_logger.error("[GUI] LiveTrader not available")
+                messagebox.showerror("Error", "LiveTrader not initialized")
                 return
             
-            # Получаем SignalManager из BotManager
-            signal_manager = self.bot_manager.signal_manager
+            # Проверяем наличие ai_signal_manager
+            if not hasattr(self.bot_manager.live_trader, 'ai_signal_manager') or not self.bot_manager.live_trader.ai_signal_manager:
+                app_logger.error("[GUI] AISignalManager not available")
+                messagebox.showerror("Error", "AI Signal manager not initialized")
+                return
+            
+            # Получаем AISignalManager из LiveTrader
+            signal_manager = self.bot_manager.live_trader.ai_signal_manager
             
             if signal_manager.cancel_signal(signal_id):
                 app_logger.info(f"[GUI] Signal {signal_id} cancelled successfully")
@@ -1557,21 +1594,33 @@ class BazaApp:
     def _init_mt5_manager(self):
         """Инициализация MT5"""
         try:
-            # Загрузить конфиг MT5
+            # Загружаем credentials из внешнего файла
+            from src.core.credentials import CredentialsLoader
+            creds = CredentialsLoader.load()
+            
+            # Берем MT5 данные из credentials файла, если есть
+            login = creds.get('MT5_LOGIN')
+            password = creds.get('MT5_PASSWORD')
+            server = creds.get('MT5_SERVER')
+            
+            # Если нет в credentials, пробуем из mt5.yaml (fallback)
+            if not all([login, password, server]):
+                config_path = Path('config') / 'mt5.yaml'
+                if config_path.exists():
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        mt5_config = yaml.safe_load(f)
+                    connection_config = mt5_config.get('mt5', {}).get('connection', {})
+                    login = login or connection_config.get('login')
+                    password = password or connection_config.get('password')
+                    server = server or connection_config.get('server')
+            
+            # Получаем path из mt5.yaml (технический параметр, не credential)
             config_path = Path('config') / 'mt5.yaml'
-            if not config_path.exists():
-                app_logger.warning("[MT5] Config file not found")
-                self.header.update_mt5_status(False)
-                return
-            
-            with open(config_path, 'r', encoding='utf-8') as f:
-                mt5_config = yaml.safe_load(f)
-            
-            connection_config = mt5_config.get('mt5', {}).get('connection', {})
-            login = connection_config.get('login')
-            password = connection_config.get('password')
-            server = connection_config.get('server')
-            path = connection_config.get('path')
+            path = None
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    mt5_config = yaml.safe_load(f)
+                path = mt5_config.get('mt5', {}).get('connection', {}).get('path')
             
             if not all([login, password, server]):
                 app_logger.warning("[MT5] Missing connection credentials in config")

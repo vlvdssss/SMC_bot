@@ -192,11 +192,19 @@ class CleanupService:
                             self.logger.debug(f"   Could not parse signal date: {e}")
                             stats['deleted_active'] += 1
                     
-                    # Сохраняем обратно
+                    # Сохраняем обратно с атомарной записью
                     if stats['deleted_active'] > 0:
-                        with open(active_file, 'w', encoding='utf-8') as f:
-                            json.dump(filtered_signals, f, indent=2, ensure_ascii=False)
-                        self.logger.info(f"   ✅ Deleted {stats['deleted_active']} active signals ({original_count} → {len(filtered_signals)})")
+                        temp_file = active_file.with_suffix('.tmp')
+                        try:
+                            with open(temp_file, 'w', encoding='utf-8') as f:
+                                json.dump(filtered_signals, f, indent=2, ensure_ascii=False)
+                            temp_file.replace(active_file)
+                            self.logger.info(f"   ✅ Deleted {stats['deleted_active']} active signals ({original_count} → {len(filtered_signals)})")
+                        except Exception as e:
+                            self.logger.error(f"   ❌ Error saving active_signals.json: {e}")
+                            if temp_file.exists():
+                                temp_file.unlink()
+                            raise
                     
                 except Exception as e:
                     error_msg = f"Error cleaning active_signals.json: {e}"
@@ -231,12 +239,20 @@ class CleanupService:
                                     self.logger.debug(f"   Could not parse history timestamp: {e}")
                                     stats['deleted_history'] += 1
                             
-                            # Если удалили что-то - перезаписываем файл
+                            # Если удалили что-то - перезаписываем файл атомарно
                             if len(filtered_history) < original_count:
-                                with open(json_file, 'w', encoding='utf-8') as f:
-                                    json.dump(filtered_history, f, indent=2, ensure_ascii=False)
-                                deleted = original_count - len(filtered_history)
-                                self.logger.info(f"   ✅ Deleted {deleted} entries from {json_file.name}")
+                                temp_file = json_file.with_suffix('.tmp')
+                                try:
+                                    with open(temp_file, 'w', encoding='utf-8') as f:
+                                        json.dump(filtered_history, f, indent=2, ensure_ascii=False)
+                                    temp_file.replace(json_file)
+                                    deleted = original_count - len(filtered_history)
+                                    self.logger.info(f"   ✅ Deleted {deleted} entries from {json_file.name}")
+                                except Exception as e:
+                                    self.logger.error(f"   ❌ Error saving {json_file.name}: {e}")
+                                    if temp_file.exists():
+                                        temp_file.unlink()
+                                    raise
                             
                             # Если файл пустой - удаляем его
                             if len(filtered_history) == 0:

@@ -37,6 +37,17 @@ class MarketAnalystService:
     
     def __init__(self, api_key: str = None):
         """Initialize Market Analyst Service v2.0."""
+        # Пробуем загрузить API ключ в порядке приоритета:
+        # 1. Параметр api_key  
+        # 2. Credentials файл на рабочем столе
+        # 3. .env файл
+        if not api_key:
+            try:
+                from src.core.credentials import get_credential
+                api_key = get_credential('OPENAI_API_KEY')
+            except Exception:
+                pass
+        
         self.api_key = api_key or os.getenv('OPENAI_API_KEY')
         
         # GPT Connection Recovery State
@@ -66,8 +77,9 @@ class MarketAnalystService:
         logger.info(f"[AI] ✅ API Key validated: {self.api_key[:15]}...{self.api_key[-4:]}")
         
         try:
-            self.client = OpenAI(api_key=self.api_key)
-            logger.info("[AI] ✅ OpenAI client initialized successfully")
+            # Увеличенный timeout для медленного интернета
+            self.client = OpenAI(api_key=self.api_key, timeout=60.0)  # 60 секунд для OpenAI
+            logger.info("[AI] ✅ OpenAI client initialized successfully (timeout=60s)")
             
             # Test connection with a minimal request
             try:
@@ -152,11 +164,10 @@ class MarketAnalystService:
             # 6. Validate and add metadata (pass metrics for entry validation)
             validated = self._validate_analysis(analysis, metrics)
             
-            # Log completion with correct field
+            # Log completion
             decision = validated.get('decision', {})
-            action = decision.get('action', 'NONE')
-            confidence = decision.get('confidence', 0)
-            logger.info(f"[AI] Analysis completed: {action} (confidence: {confidence}%)")
+            action = decision.get('action', 'BUY')
+            logger.info(f"[AI] ✅ Analysis completed: {action} (always trade mode)")
             return validated
             
         except Exception as e:
@@ -294,34 +305,31 @@ You will receive ONE screenshot of M5 timeframe (last 200 candles = ~16 hours).
         prompt += """
 
 **YOUR TASK:**
-Look at the LAST 20-30 M5 candles. Find quick scalping setups based on:
-- Recent support/resistance bounces
-- 2-3 candle reversal patterns
-- EMA crossovers
-- Quick momentum shifts
+Look at the LAST 20-30 M5 candles and pick the BEST direction (BUY or SELL).
 
-**TRADING RULES (V4 M5 SCALPING - FIXED SL/TP FROM CONFIG):**
+**ALWAYS TRADE - NO SKIPPING:**
+- **MUST return either BUY or SELL** - no exceptions, no NONE
+- Pick the direction with higher probability based on chart
+- If uncertain, pick based on recent momentum/trend
 - **SL/TP are FIXED** by user config (you don't set them)
-- **BUY ONLY if**: 
-  - Strong bounce from recent low with 2-3 solid green candles
-  - Clear upward momentum on M5 (not just single spike)
-  - Price structure shows higher lows forming
-- **SELL ONLY if**: 
-  - Clear rejection at recent high with 2-3 solid red candles
-  - Clear downward momentum on M5 (not just single drop)
-  - Price structure shows lower highs forming
-- **WAIT if**: 
-  - Choppy/overlapping candles (consolidation)
-  - No clear direction in last 10 candles
-  - Price ping-ponging in tight range
 
-**CRITICAL IMPROVEMENTS:**
-1. **M5 MOMENTUM FOCUS**: Only trade when last 5-10 candles show clear direction
-2. **AVOID CHOPPY MARKETS**: Skip if candles overlap/indecisive
-3. **VOLATILITY CHECK**: Skip if ATR too high (>$7) - volatile spikes can hit stop then reverse
-4. **STRUCTURE MATTERS**: Look for higher lows (BUY) or lower highs (SELL)
-5. **PATIENCE**: Better to miss trade than force entry in unclear market
-6. Entry quality MUST be "optimal" - skip "fair" or "good" setups
+**BUY signals when:**
+- Bullish momentum visible (more green candles)
+- Price near recent lows/support areas
+- EMA trending up or crossing bullish
+- Recent bounce pattern forming
+
+**SELL signals when:**
+- Bearish momentum visible (more red candles)
+- Price near recent highs/resistance areas  
+- EMA trending down or crossing bearish
+- Recent rejection pattern forming
+
+**When market is unclear:**
+- Pick direction based on dominant EMA trend
+- Or pick based on which side has more recent candles
+- Or pick based on premium/discount (discount=BUY, premium=SELL)
+- NEVER skip - always choose one direction
 
 **RESPONSE FORMAT (JSON ONLY):**
 
@@ -329,9 +337,7 @@ Look at the LAST 20-30 M5 candles. Find quick scalping setups based on:
   "timestamp": "2026-01-27T12:00:00",
   "symbol": "XAUUSD",
   "decision": {
-    "action": "BUY|SELL|NONE",
-    "confidence": 75,
-    "block": "NONE",
+    "action": "BUY|SELL",
     "reasoning": "Brief explanation (1-2 sentences max)"
   },
   "trade": {
@@ -341,18 +347,18 @@ Look at the LAST 20-30 M5 candles. Find quick scalping setups based on:
     "risk_reward": 2.0
   },
   "analysis": {
-    "trend": "bullish|bearish|neutral",
+    "trend": "bullish|bearish",
     "key_level": "Support $2660 / Resistance $2670",
     "entry_quality": "optimal|good|fair"
   }
 }
 
-**CRITICAL (V4 REQUIREMENTS):**
-1. **SL/TP will be calculated by system** - just provide entry price and direction
-2. Entry must be close to current price (within $1)
-3. **ALWAYS return BUY or SELL** - even in uncertain conditions, pick the most likely direction
-4. Focus on LAST 20-30 candles only (not full chart history)
-5. Look for quick reversals and momentum - this is scalping!
+**CRITICAL REQUIREMENTS:**
+1. **MUST return either BUY or SELL** - no NONE allowed
+2. Pick the direction with higher probability based on chart
+3. **SL/TP will be calculated by system** - just provide entry price and direction
+4. Entry must be close to current price (within $1)
+5. Focus on LAST 20-30 candles for scalping setup
 6. Return ONLY valid JSON, no extra text
 
 **EXAMPLES OF GOOD M5 SETUPS:**
@@ -423,11 +429,13 @@ Analyze the M5 chart NOW and give your decision!
                     temperature = gpt_config.get('temperature', 0.4)
                     model = gpt_config.get('model', 'gpt-4o')
                     
+                    # Добавлен timeout для медленного интернета
                     response = self.client.chat.completions.create(
                         model=model,
                         messages=messages,
                         max_tokens=max_tokens,
-                        temperature=temperature
+                        temperature=temperature,
+                        timeout=60.0  # 60 секунд на ответ
                     )
                     
                     logger.info("[AI] ✅ Received response from OpenAI")
@@ -548,29 +556,20 @@ Analyze the M5 chart NOW and give your decision!
             # Validate decision structure
             if "decision" in analysis:
                 decision = analysis["decision"]
-                required_decision_fields = ["action", "confidence", "block"]
+                required_decision_fields = ["action", "reasoning"]
                 for field in required_decision_fields:
                     if field not in decision:
                         logger.warning(f"[AI] Decision missing field: {field}")
-                        decision[field] = "NONE" if field in ["action", "block"] else 0
+                        decision[field] = "BUY" if field == "action" else "No reasoning provided"
                 
-                # Validate action
-                if decision.get("action") not in ["BUY", "SELL", "NONE"]:
-                    logger.warning(f"[AI] Invalid action: {decision.get('action')}, defaulting to NONE")
-                    decision["action"] = "NONE"
+                # Validate action - only BUY or SELL allowed
+                if decision.get("action") not in ["BUY", "SELL"]:
+                    logger.warning(f"[AI] Invalid action: {decision.get('action')}, forcing to BUY")
+                    decision["action"] = "BUY"
                 
-                # Validate block
-                if decision.get("block") not in ["NONE", "SOFT", "HARD"]:
-                    logger.warning(f"[AI] Invalid block: {decision.get('block')}, defaulting to NONE")
-                    decision["block"] = "NONE"
-                
-                # Validate confidence
-                try:
-                    conf = float(decision.get("confidence", 0))
-                    decision["confidence"] = max(0, min(100, conf))
-                except (ValueError, TypeError):
-                    decision["confidence"] = 0
-                    logger.warning("[AI] Invalid confidence value, set to 0")
+                # Set defaults for compatibility (not used)
+                decision["confidence"] = 100  # Always 100%
+                decision["block"] = "NONE"  # No blocks
             
             # Validate trade data if action is not NONE
             if analysis.get("decision", {}).get("action") in ["BUY", "SELL"]:
@@ -661,8 +660,7 @@ Analyze the M5 chart NOW and give your decision!
             analysis["prompt_version"] = "2026-01-V4"
             
             logger.info(f"[AI] ✅ V4 Validated decision: {analysis.get('decision', {}).get('action')} "
-                       f"(confidence: {analysis.get('decision', {}).get('confidence')}%, "
-                       f"block: {analysis.get('decision', {}).get('block')})")
+                       f"(always trade - no filters)")
             
             return analysis
             

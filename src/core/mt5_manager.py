@@ -256,8 +256,12 @@ class MT5Manager:
                 return result
 
             for deal in deals:
-                # Учтём только торговые сделки (buy/sell)
-                if deal.type in [self.mt5.DEAL_TYPE_BUY, self.mt5.DEAL_TYPE_SELL]:
+                # Учтём только торговые сделки (buy/sell) И ТОЛЬКО ЗАКРЫТЫЕ (entry=1)
+                # entry=0 - открытие позиции, entry=1 - закрытие позиции (OUT)
+                is_trade = deal.type in [self.mt5.DEAL_TYPE_BUY, self.mt5.DEAL_TYPE_SELL]
+                is_closed = deal.entry == 1 if hasattr(deal, 'entry') else True  # если нет entry, считаем что закрыта
+                
+                if is_trade and is_closed:
                     pnl = float(deal.profit) if deal.profit is not None else 0.0
 
                     # deal.time can be datetime or int timestamp depending on MT5 bindings
