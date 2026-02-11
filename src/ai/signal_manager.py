@@ -279,17 +279,16 @@ class AISignalManager:
                 
                 # Extract decision data
                 decision = analysis.get("decision", {})
-                action = decision.get("action", "NONE").upper()
-                confidence = decision.get("confidence", 0)
+                action = decision.get("action", "BUY").upper()  # Default to BUY
+                confidence = decision.get("confidence", 100)  # Always 100%
                 block_level = decision.get("block", "NONE").upper()
-                reasoning = decision.get("reasoning", f"{action} @ {confidence}% confidence")  # Берём из GPT
+                reasoning = decision.get("reasoning", f"{action} - always trade mode")  # Берём из GPT
                 
                 summary["decision_action"] = action
                 summary["block_type"] = block_level.lower()
                 
                 logger.info(
-                    f"[AI-Signal] 📊 Decision received: {action} "
-                    f"(confidence: {confidence}%, block: {block_level}, symbol: {symbol})"
+                    f"[AI-Signal] 📊 Decision received: {action} (aggressive mode, symbol: {symbol})"
                 )
                 
                 # 1. Process block level first (affects risk multiplier)
@@ -347,6 +346,26 @@ class AISignalManager:
                         logger.warning(f"[AI-Signal] ❌ Signal validation failed for {action} decision")
                         summary["block_reason"] = "validation_failed"
                         return summary
+                    
+                    # Check if signal inversion is enabled
+                    try:
+                        import yaml
+                        config_path = Path("config/trading.yaml")
+                        if config_path.exists():
+                            with open(config_path, 'r', encoding='utf-8') as f:
+                                trading_config = yaml.safe_load(f) or {}
+                        else:
+                            trading_config = {}
+                    except Exception as e:
+                        logger.warning(f"[AI-Signal] Failed to load trading config: {e}")
+                        trading_config = {}
+                    
+                    signal_quality = trading_config.get('trading', {}).get('signal_quality', {})
+                    invert_signals = signal_quality.get('invert_signals', False)
+                    
+                    # Apply signal inversion if enabled
+                    if invert_signals:
+                        signal_data = self._invert_signal(signal_data)
                     
                     # Create signal with TTL
                     signal = self._create_signal(
@@ -496,18 +515,77 @@ class AISignalManager:
         else:
             logger.info("[AI-Signal] No trading restrictions")
     
+    def _invert_signal(self, signal_data: Dict) -> Dict:
+        """Инвертировать сигнал (BUY->SELL, SELL->BUY) и поменять SL/TP местами.
+        
+        Args:
+            signal_data: Исходный сигнал
+            
+        Returns:
+            Инвертированный сигнал
+        """
+        inverted = signal_data.copy()
+        
+        # Инвертируем направление
+        if signal_data["type"] == "BUY":
+            inverted["type"] = "SELL"
+        elif signal_data["type"] == "SELL":
+            inverted["type"] = "BUY"
+        
+        # Меняем SL и TP местами
+        inverted["stop_loss"] = signal_data["take_profit"]
+        inverted["take_profit"] = signal_data["stop_loss"]
+        
+        # Пересчитываем R:R (остается тем же)
+        entry = inverted["entry_price"]
+        new_sl = inverted["stop_loss"]
+        new_tp = inverted["take_profit"]
+        
+        risk = abs(entry - new_sl)
+        reward = abs(new_tp - entry)
+        
+        if risk > 0:
+            inverted["risk_reward"] = reward / risk
+        
+        logger.info(
+            f"[AI-Signal] 🔄 Signal INVERTED: {signal_data['type']}->{inverted['type']} | "
+            f"Entry: {entry:.5f} | Old SL/TP: {signal_data['stop_loss']:.5f}/{signal_data['take_profit']:.5f} | "
+            f"New SL/TP: {new_sl:.5f}/{new_tp:.5f}"
+        )
+        
+        return inverted
+    
     def _validate_signal(self, signal_data: Dict) -> bool:
-        """Validate signal has required fields and meets quality criteria (V4: 70% confidence)."""
+        """Validate signal has required fields and meets quality criteria."""
         required = ["type", "entry_price", "stop_loss", "take_profit", "confidence"]
         for field in required:
             if field not in signal_data or signal_data[field] is None:
                 logger.warning(f"[AI-Signal] Invalid signal - missing {field}")
                 return False
         
-        # V4: Higher confidence threshold for M5 scalping
-        MIN_CONFIDENCE_V4 = 70  # Increased from 50 to 70
-        if signal_data["confidence"] < MIN_CONFIDENCE_V4:
-            logger.info(f"[AI-Signal] V4: Skipped low confidence: {signal_data['confidence']}% (required: {MIN_CONFIDENCE_V4}%)")
+        # Load trading config for quality thresholds
+        try:
+            import yaml
+            config_path = Path("config/trading.yaml")
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    trading_config = yaml.safe_load(f) or {}
+            else:
+                trading_config = {}
+        except Exception as e:
+            logger.warning(f"[AI-Signal] Failed to load trading config: {e}")
+            trading_config = {}
+        
+        signal_quality = trading_config.get('trading', {}).get('signal_quality', {})
+        min_confidence = signal_quality.get('min_confidence', 75)
+        min_risk_reward = signal_quality.get('min_risk_reward', 1.5)
+        
+        # Confidence check
+        confidence = signal_data["confidence"]
+        if confidence < min_confidence:
+            logger.info(
+                f"[AI-Signal] ❌ Rejected low confidence: {confidence}% < {min_confidence}%"
+            )
             return False
         
         # Risk/Reward ratio check
@@ -524,14 +602,16 @@ class AISignalManager:
         
         rr_ratio = reward / risk
         
-        # V4: Updated for SL=$8 / TP=$15 (1.875 ratio)
-        min_rr_threshold = 1.8  # Accept 1.8+ for wider SL
-
-        if rr_ratio < min_rr_threshold:
-            logger.info(f"[AI-Signal] Rejected poor RR ratio: {rr_ratio:.2f} < {min_rr_threshold} (risk: ${risk:.2f}, reward: ${reward:.2f})")
+        if rr_ratio < min_risk_reward:
+            logger.info(
+                f"[AI-Signal] ❌ Rejected poor R:R: {rr_ratio:.2f} < {min_risk_reward} "
+                f"(risk: ${risk:.2f}, reward: ${reward:.2f})"
+            )
             return False
 
-        logger.info(f"[AI-Signal] V4 Signal validated: RR={rr_ratio:.2f}, confidence={signal_data['confidence']}%")
+        logger.info(
+            f"[AI-Signal] ✅ Signal validated: confidence={confidence}%, R:R={rr_ratio:.2f}"
+        )
         return True
     
     def is_duplicate_signal(
@@ -889,18 +969,22 @@ class AISignalManager:
         Check if price REACHED entry level (touched or passed through).
         
         КРИТИЧНО: Entry - это ЦЕЛЕВАЯ ЦЕНА для входа.
-        Цена должна ПРИЙТИ к entry, независимо от направления.
         
-        BUY @ 4930: если price сейчас 4935 → ждем опустится к 4930 → trigger when <= 4930.50
-        SELL @ 4926: если price сейчас 4927 → ждем опустится к 4926 → trigger when <= 4926.50
+        BUY: открываем когда цена ПОДНЯЛАСЬ до/выше entry
+        SELL: открываем когда цена ОПУСТИЛАСЬ до/ниже entry
         
-        ДЛЯ ОБОИХ: цена должна достичь entry (price <= entry + tolerance)
+        Примеры:
+        - BUY @ $5000: trigger when price >= $4999.50 (поднялась и достигла entry)
+        - SELL @ $5000: trigger when price <= $5000.50 (опустилась и достигла entry)
         """
         tolerance = 0.50  # $0.50 tolerance for spread/slippage
         
-        # Для ОБОИХ направлений: цена должна прийти к entry
-        # Entry - это ЦЕЛЕВАЯ ЦЕНА входа
-        triggered = current_price <= (signal.entry_price + tolerance)
+        if signal.type == "BUY":
+            # BUY: триггер когда цена поднялась до entry
+            triggered = current_price >= (signal.entry_price - tolerance)
+        else:  # SELL
+            # SELL: триггер когда цена опустилась до entry
+            triggered = current_price <= (signal.entry_price + tolerance)
         
         return triggered
     
@@ -1183,9 +1267,18 @@ class AISignalManager:
                 "updated_at": datetime.now().isoformat()
             }
             
+            # Атомарное сохранение
             filepath = self.signals_dir / "active_signals.json"
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(state, f, indent=2, ensure_ascii=False)
+            temp_file = filepath.with_suffix('.tmp')
+            try:
+                with open(temp_file, 'w', encoding='utf-8') as f:
+                    json.dump(state, f, indent=2, ensure_ascii=False)
+                temp_file.replace(filepath)
+            except Exception as e:
+                logger.error(f"[AI-Signal] Ошибка атомарного сохранения: {e}")
+                if temp_file.exists():
+                    temp_file.unlink()
+                raise
                 
         except Exception as e:
             logger.error(f"[AI-Signal] Failed to save state: {e}")

@@ -1,7 +1,15 @@
 trading:
+  check_interval_seconds: 1
   hours:
     end: '23:00'
     start: 01:00
+  
+  # Signal quality improvements
+  signal_quality:
+    invert_signals: false  # Инвертировать сигналы (BUY->SELL, SELL->BUY)
+    min_confidence: 75  # Минимальная уверенность AI (0-100)
+    min_risk_reward: 1.5  # Минимальное соотношение R:R
+  
   indicators:
     atr_period: 14
     ema_periods:
@@ -14,6 +22,10 @@ trading:
     - M30
     - H1
     - H4
+  profit_protection:
+    consecutive_wins: 3
+    cooldown_minutes: 20
+    enabled: true
   risk:
     default_sl_pips: 80
     default_tp_pips: 160
@@ -24,24 +36,19 @@ trading:
     auto_requery_on_expire: true
     auto_requery_on_invalidate: true
     enabled: true
-    requery_cooldown_minutes: 5
-    ttl_minutes: 30
+    requery_cooldown_minutes: 15
+    ttl_minutes: 10
   smc:
     enabled: true
     fair_value_gaps: true
     order_blocks: true
-  check_interval_seconds: 1  # Интервал проверки сигналов (1-5 сек рекомендуется)
   stop_loss_protection:
+    consecutive_stops: 2
+    cooldown_minutes: 10
     enabled: true
-    consecutive_stops: 2  # Количество последовательных стопов для блокировки
-    cooldown_minutes: 15  # Время блокировки торговли после стопов (в минутах)
-  profit_protection:
-    enabled: true
-    consecutive_wins: 3  # Количество последовательных прибыльных сделок для блокировки
-    cooldown_minutes: 10  # Время блокировки торговли после серии профитов (в минутах)
   trailing_stop:
+    activation_profit_percent: 40
     enabled: true
-    activation_profit_percent: 40  # При каком % от TP активировать trailing
-    trailing_step_percent: 10      # С каким шагом (в % от TP) двигать SL
+    trailing_step_percent: 10
   trend_filter:
     enabled: true
