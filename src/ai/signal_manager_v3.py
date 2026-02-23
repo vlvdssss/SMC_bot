@@ -263,6 +263,26 @@ def patch_signal_manager(signal_manager, news_fetcher=None):
             summary["signals_created"] = 1
             summary["signal_id"] = signal.id
             
+            # STATECORE: Set active signal so Gate check passes in execute_trade()
+            from src.core.state_core import ActiveSignal as ActiveSignalState
+            active_signal_obj = ActiveSignalState(
+                signal_id=signal.id,
+                symbol=symbol,
+                action=signal.type,  # BUY or SELL
+                confidence=int(signal.confidence),
+                entry=signal.entry_price,
+                sl=signal.stop_loss,
+                tp=signal.take_profit,
+                reasoning=signal_data.get("reasoning", ""),
+                timestamp=signal.created_at,
+                setup_score=0,
+                expires_at=signal.expires_at
+            )
+            if not self.state_core.set_active_signal(active_signal_obj):
+                logger.warning(f"[AI-Signal V3] Could not set active_signal in StateCore (duplicate?). Gate check may fail.")
+            else:
+                logger.info(f"[AI-Signal V3] StateCore active_signal set: {signal.type} {symbol}")
+            
             # Логируем
             ttl_minutes = self.config.get('trading', {}).get('signal_ttl', {}).get('ttl_minutes', 60)
             
