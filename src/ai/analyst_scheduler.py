@@ -371,7 +371,11 @@ class AnalystScheduler:
                     logger.debug(f"[AI-Scheduler] ✅ No position for {symbol} - analysis allowed")
             
             # Check time restrictions
-            time_allowed, time_reason = self.signal_manager._is_trading_time_allowed()
+            try:
+                time_allowed, time_reason = self.signal_manager._is_trading_time_allowed()
+            except Exception as te:
+                logger.error(f"[AI-Scheduler] ❌ Time restriction check failed: {te} - allowing analysis")
+                time_allowed, time_reason = True, "check_error"
             if not time_allowed:
                 logger.warning(f"[AI-Scheduler] ⏸️ Analysis blocked: {time_reason}")
                 
@@ -672,7 +676,10 @@ class AnalystScheduler:
             
             # После cooldown сразу запускаем анализ
             # (защита от дублирования есть внутри _run_analysis)
-            self._run_analysis(symbol)
+            try:
+                self._run_analysis(symbol)
+            except Exception as e:
+                logger.error(f"[AI-Scheduler] ❌ _run_analysis crashed: {type(e).__name__}: {e}", exc_info=True)
         
         thread = threading.Thread(target=_async_run, daemon=True)
         thread.start()
