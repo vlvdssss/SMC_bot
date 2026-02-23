@@ -482,6 +482,25 @@ class AISignalManager:
                     self.active_signals.append(signal)
                     summary["signals_created"] = 1
                     
+                    # STATECORE: Set active signal so Gate check passes in execute_trade()
+                    active_signal_obj = ActiveSignal(
+                        signal_id=signal.id,
+                        symbol=symbol,
+                        action=signal.type,  # BUY or SELL
+                        confidence=signal.confidence,
+                        entry=signal.entry_price,
+                        sl=signal.stop_loss,
+                        tp=signal.take_profit,
+                        reasoning=signal.reasoning,
+                        timestamp=signal.created_at,
+                        setup_score=0,
+                        expires_at=signal.expires_at
+                    )
+                    if not self.state_core.set_active_signal(active_signal_obj):
+                        logger.warning(f"[AI-Signal] Could not set active_signal in StateCore (duplicate?). Gate check may fail.")
+                    else:
+                        logger.info(f"[AI-Signal] StateCore active_signal set: {signal.type} {symbol}")
+                    
                     # КРИТИЧНО: Сохранить сразу после создания
                     self._save_state()
                     
