@@ -28,6 +28,13 @@
 - **Решение**: Добавлено `'connected': terminal.connected` в возвращаемый словарь
 - **Коммит**: 0bc6f56
 
+### 6. is_connected() проверял флаг вместо реального состояния ⚡⚡ КРИТИЧЕСКОЕ
+- **Проблема**: `is_connected()` проверял флаг `self.connected`, который устанавливался только в `connect()`
+- **Следствие**: После `initialize()` флаг оставался False, `is_connected()` возвращал False, `get_terminal_info()` возвращал пустой `{}`
+- **Результат**: Pre-Flight падал с "Failed to get MT5 info" даже при запущенном и подключённом MT5
+- **Решение**: `is_connected()` теперь проверяет реальное состояние MT5 через `terminal_info()`, а не флаг
+- **Коммит**: 5b62adf
+
 ---
 
 ## 🎯 СЛЕДУЮЩИЕ ШАГИ
@@ -141,6 +148,8 @@ OPENAI_API_KEY=sk-proj-ваш_ключ_здесь
 ## 📊 GitHub Коммиты
 
 ```
+5b62adf - Fix: is_connected() checks MT5 state, not flag ⚡⚡ ГЛАВНОЕ ИСПРАВЛЕНИЕ
+d7491fa - Update: FIXES_APPLIED.md with MT5 connected field fix
 0bc6f56 - Fix: Add 'connected' field to get_terminal_info() ⚡ КРИТИЧЕСКОЕ
 bd82bdc - Add: Summary of all fixes applied
 ec09bec - Add: MT5 connection diagnostic tool and updated setup guide
@@ -177,5 +186,5 @@ c4c1222 - Fix: Added missing get_config() method to ConfigManager
 ---
 
 **Дата**: 23.02.2026  
-**Версия**: 2.2  
-**Статус**: ✅ Критическая ошибка MT5 disconnected исправлена (коммит 0bc6f56)
+**Версия**: 2.3  
+**Статус**: ✅ Корневая причина MT5 ошибок найдена и исправлена (коммит 5b62adf)
