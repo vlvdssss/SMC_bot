@@ -11,7 +11,7 @@ trading:
     htf_ema_fast: 50
     htf_ema_slow: 200
     htf_timeframe: M15
-    max_spread_pips: 1.5
+    max_spread_pips: 5.0
     min_confidence: 75
     min_rr: 1.2
     min_setup_score: 70
@@ -39,7 +39,7 @@ trading:
     default_sl_pips: 40
     default_tp_pips: 100
     fixed_lot_size: 0.01
-    max_spread_pips: 1.5
+    max_spread_pips: 5.0
   signal_quality:
     invert_signals: false
   signal_ttl:
