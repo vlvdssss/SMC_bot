@@ -341,13 +341,18 @@ class MT5Manager:
 
     def is_connected(self) -> bool:
         """Проверка подключения."""
-        if not self.mt5 or not self.connected:
+        if not self.mt5:
             return False
 
         try:
-            # Проверяем соединение через ping
+            # Проверяем реальное состояние MT5, а не флаг
             terminal_info = self.mt5.terminal_info()
-            return terminal_info is not None
+            if terminal_info is None:
+                self.connected = False
+                return False
+            
+            # MT5 инициализирован - это уже достаточно для чтения данных
+            return True
         except Exception as e:
             self.logger.debug(f"Connection check failed: {e}")
             self.connected = False
