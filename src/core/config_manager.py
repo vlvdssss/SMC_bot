@@ -80,6 +80,22 @@ class ConfigManager:
         
         return value.get(key, default)
     
+    def get_config(self, config_name: str, force_reload: bool = False) -> Dict:
+        """
+        Получить конфиг файл (алиас для load_config).
+        
+        Args:
+            config_name: Имя файла без .yaml (ai, trading, mt5 и т.д.) или с расширением (ai.yaml)
+            force_reload: Принудительная перезагрузка (игнорировать кеш)
+        
+        Returns:
+            Dictionary с конфигом или {}
+        """
+        # Добавление расширения если нужно
+        if not config_name.endswith('.yaml'):
+            config_name = f"{config_name}.yaml"
+        return self.load_config(config_name, force_reload)
+    
     def load_config(self, config_name: str, force_reload: bool = False) -> Dict:
         """
         Загрузить конфиг файл с кешированием.
