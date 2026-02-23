@@ -3251,6 +3251,13 @@ class BazaAppV2:
                     for remaining in range(check_interval, 0, -1):
                         if self.trading_stop_event.is_set():
                             break
+                        # While a trade is open (TRADING status), hide re-analysis countdown.
+                        # The countdown only makes sense when waiting to re-analyze after close.
+                        _trading = self.bot_state.get('status') == 'TRADING'
+                        if _trading:
+                            self.bot_queue.put({'type': 'timer', 'seconds': 0})
+                            time.sleep(1)
+                            continue
                         # Prefer showing the longer AI-Scheduler countdown over the short main-loop tick
                         try:
                             _sched = get_scheduler()
@@ -4137,6 +4144,9 @@ class BazaAppV2:
             else:
                 text = f"{seconds}s"
             self.bot_timer_label.configure(text=text)
+        else:
+            # 0 seconds = either in a trade or no countdown active → hide the timer
+            self.bot_timer_label.configure(text="-")
 
     def _bot_gpt_request_started(self, event: dict):
         """Handle GPT request started event"""

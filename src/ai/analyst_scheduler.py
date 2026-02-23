@@ -175,6 +175,22 @@ class AnalystScheduler:
                 
                 # INTERVAL MODE: каждые N минут с момента запуска или последнего анализа
                 if self.mode == 'interval':
+                    # POSITION GUARD: if a position is open, suppress interval analysis entirely.
+                    # Post-close analysis is handled by trigger_immediate_analysis (position_closed reason).
+                    _has_open_pos = False
+                    if self.executor and hasattr(self.executor, 'has_position'):
+                        try:
+                            _has_open_pos = self.executor.has_position(symbol="XAUUSD")
+                        except Exception:
+                            pass
+                    if _has_open_pos:
+                        # Reset interval timer so we don't accumulate debt
+                        self.last_run = now
+                        self._countdown_remaining = 0  # hide GUI countdown while in trade
+                        logger.debug("[AI-Scheduler] Position open — interval suppressed, waiting for position_closed trigger")
+                        time.sleep(60)
+                        continue
+
                     should_run = False
                     
                     if self.last_run is None:
