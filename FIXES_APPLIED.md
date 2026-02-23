@@ -22,6 +22,12 @@
 - **Функции**: Проверяет подключение, показывает статус терминала, аккаунта, символов
 - **Коммит**: ec09bec
 
+### 5. MT5 Connected field отсутствовал ⚡ КРИТИЧЕСКОЕ
+- **Проблема**: `get_terminal_info()` НЕ возвращал поле `'connected'`
+- **Следствие**: Pre-Flight проверка всегда падала с ошибкой "MT5 disconnected" даже когда MT5 был подключён
+- **Решение**: Добавлено `'connected': terminal.connected` в возвращаемый словарь
+- **Коммит**: 0bc6f56
+
 ---
 
 ## 🎯 СЛЕДУЮЩИЕ ШАГИ
@@ -135,6 +141,8 @@ OPENAI_API_KEY=sk-proj-ваш_ключ_здесь
 ## 📊 GitHub Коммиты
 
 ```
+0bc6f56 - Fix: Add 'connected' field to get_terminal_info() ⚡ КРИТИЧЕСКОЕ
+bd82bdc - Add: Summary of all fixes applied
 ec09bec - Add: MT5 connection diagnostic tool and updated setup guide
 43c1631 - Fix: Correct API key path in preflight checks  
 2ef6930 - Add: Complete setup guide with error fixes
@@ -169,5 +177,5 @@ c4c1222 - Fix: Added missing get_config() method to ConfigManager
 ---
 
 **Дата**: 23.02.2026  
-**Версия**: 2.1  
-**Статус**: ✅ Все известные ошибки исправлены
+**Версия**: 2.2  
+**Статус**: ✅ Критическая ошибка MT5 disconnected исправлена (коммит 0bc6f56)
