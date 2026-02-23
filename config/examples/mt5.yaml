@@ -1,0 +1,35 @@
+# ========================================================================
+# MT5 Configuration Template
+# ========================================================================
+# Copy this file to config/mt5.yaml and configure your MT5 credentials
+# ⚠️ Edit in GUI instead: Settings → MT5 Settings
+# ========================================================================
+
+mt5:
+  connection:
+    # MT5 Account Credentials (⚠️ Configure in GUI!)
+    login: 0                # Your MT5 account number
+    password: ''            # Your MT5 password
+    server: ''              # Your broker server (e.g., "MetaQuotes-Demo")
+    
+    # MT5 Terminal Path
+    path: "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
+    
+    # Connection Timeout
+    timeout: 60000  # milliseconds
+
+# ========================================================================
+# SETUP INSTRUCTIONS
+# ========================================================================
+# 1. Install MetaTrader 5 from: https://www.metatrader5.com/en/download
+# 2. Create a demo account or use your live account
+# 3. Open GUI → Settings → MT5 Settings
+# 4. Enter your credentials:
+#    - Login: Your account number
+#    - Password: Your account password
+#    - Server: Your broker server name
+# 5. Click "Test Connection" to verify
+# 6. Click "Save" - settings auto-save to this file
+#
+# Note: All settings are encrypted when saved
+# ========================================================================

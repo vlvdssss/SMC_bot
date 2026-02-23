@@ -34,7 +34,7 @@ class Position:
 class Executor:
     """Execute and manage trades."""
 
-    def __init__(self, broker_sim=None, mt5_connector=None, contract_size: int = 100, magic_number: int = 123456):
+    def __init__(self, broker_sim=None, mt5_connector=None, contract_size: int = 100, magic_number: int = 123456, bot_queue=None):
         if broker_sim is not None:
             self.broker = broker_sim
             self.is_live = False
@@ -48,23 +48,63 @@ class Executor:
         self.magic_number = magic_number
         self.position = None
         self.last_closed_position = None
+        
+        # Bot queue for event-driven UI updates
+        self.bot_queue = bot_queue
 
-    def has_position(self) -> bool:
-        """Check if position is open."""
+    def has_position(self, symbol: str = None) -> bool:
+        """
+        Check if position is open.
+        
+        Args:
+            symbol: Optional symbol to check. If None, checks for any open position.
+        
+        Returns:
+            True if position exists (for symbol or any), False otherwise
+        """
         # Для live режима проверяем реальные позиции в MT5
         if self.is_live and hasattr(self, 'mt5'):
             try:
-                positions = self.mt5.positions_total()
-                has_pos = positions > 0
-                if has_pos:
-                    logger.debug(f"[Executor] Live MT5 positions: {positions}")
-                return has_pos
+                if symbol:
+                    # Проверяем позицию по конкретному символу
+                    positions = self.mt5.positions_get(symbol=symbol)
+                    
+                    # DETAILED DEBUG: Log what MT5 returned
+                    logger.debug(f"[Executor] positions_get({symbol}) returned: {positions}")
+                    logger.debug(f"[Executor] Type: {type(positions)}, Is None: {positions is None}, Len: {len(positions) if positions else 0}")
+                    
+                    # CRITICAL FIX: Filter out invalid/closed positions
+                    # positions_get() can return empty tuple or positions with volume=0 (phantom positions)
+                    if positions is not None and len(positions) > 0:
+                        # Only count positions with actual volume (open positions)
+                        real_positions = [pos for pos in positions if hasattr(pos, 'volume') and pos.volume > 0]
+                        
+                        if real_positions:
+                            logger.info(f"[Executor] ✅ Found {len(real_positions)} REAL position(s) for {symbol}")
+                            for pos in real_positions:
+                                logger.debug(f"[Executor]    Position: ticket={pos.ticket}, volume={pos.volume}, profit={pos.profit}")
+                            return True
+                        else:
+                            logger.debug(f"[Executor] ❌ No REAL positions for {symbol} (found {len(positions)} phantom/closed)")
+                            return False
+                    else:
+                        logger.debug(f"[Executor] ❌ No positions for {symbol}")
+                        return False
+                else:
+                    # Проверяем любую позицию
+                    positions = self.mt5.positions_total()
+                    has_pos = positions > 0
+                    if has_pos:
+                        logger.debug(f"[Executor] Live MT5 positions: {positions}")
+                    return has_pos
             except Exception as e:
-                logger.warning(f"[Executor] Failed to check MT5 positions: {e}")
+                logger.error(f"[Executor] ❌ Failed to check MT5 positions: {e}")
+                logger.exception(e)
                 # Fallback to self.position
                 return self.position is not None
         
         # Для backtest режима используем self.position
+        # В backtest нет multi-symbol поддержки, поэтому игнорируем symbol
         return self.position is not None
 
     def execute_signal(self, symbol: str, signal: dict) -> bool:
@@ -103,10 +143,37 @@ class Executor:
                 logger.error(f"[Executor] Invalid direction: {signal.get('direction')}")
                 return False
 
-            # Get current price
+            # Get current price and check spread
             tick = self.mt5.symbol_info_tick(symbol)
             if not tick:
+                logger.error(f"[Executor] ❌ Cannot get tick data for {symbol} - [NO PRICES]")
+                logger.error(f"[Executor]    Possible reasons: market closed, symbol unavailable, or no connection")
                 return False
+            
+            # Validate prices are available
+            if tick.bid <= 0 or tick.ask <= 0:
+                logger.error(f"[Executor] ❌ Invalid prices for {symbol}: bid={tick.bid}, ask={tick.ask} - [NO PRICES]")
+                logger.error(f"[Executor]    Market may be closed or symbol not available")
+                return False
+
+            # NEW: Spread filter (symbol-specific pip calculation)
+            # Determine pip value based on symbol
+            if 'XAU' in symbol or 'GOLD' in symbol:
+                pip_multiplier = 10  # Gold: 1 pip = $0.1
+            elif 'JPY' in symbol:
+                pip_multiplier = 100  # JPY pairs: 1 pip = 0.01
+            else:
+                pip_multiplier = 10000  # Most pairs: 1 pip = 0.0001
+            
+            spread_pips = (tick.ask - tick.bid) * pip_multiplier
+            MAX_SPREAD_PIPS = signal.get('max_spread_pips', 3.0)  # Default 3 pips
+            
+            if spread_pips > MAX_SPREAD_PIPS:
+                logger.warning(f"[Executor] ❌ SPREAD TOO HIGH: {spread_pips:.1f} pips > {MAX_SPREAD_PIPS} pips - SKIPPING TRADE")
+                logger.warning(f"[Executor]    Symbol: {symbol}, Bid: {tick.bid:.5f}, Ask: {tick.ask:.5f}")
+                return False
+            
+            logger.info(f"[Executor] ✅ Spread OK: {spread_pips:.1f} pips <= {MAX_SPREAD_PIPS} pips")
 
             price = tick.ask if direction == 'BUY' else tick.bid
 
@@ -114,6 +181,149 @@ class Executor:
             order_type = self.mt5.ORDER_TYPE_BUY if direction == 'BUY' else self.mt5.ORDER_TYPE_SELL
             sl_price = sl if sl else 0
             tp_price = tp if tp else 0
+            
+            # ✅ CRITICAL FIX: Recalculate SL/TP from CURRENT price instead of stale entry price
+            # AI calculates SL/TP from entry_price, but by the time we execute, market may have moved
+            # This can cause "invalid stops" if price moved too much
+            if sl_price > 0 and tp_price > 0:
+                # Get original entry price from signal for comparison
+                entry_from_ai = signal.get('entry', price)
+                
+                # Calculate intended distances from AI
+                if direction == 'BUY':
+                    intended_sl_distance = entry_from_ai - sl_price
+                    intended_tp_distance = tp_price - entry_from_ai
+                else:  # SELL
+                    intended_sl_distance = sl_price - entry_from_ai
+                    intended_tp_distance = entry_from_ai - tp_price
+                
+                # Check if entry price is stale (moved more than 10 pips from current)
+                entry_drift = abs(price - entry_from_ai)
+                drift_pips = entry_drift * 10000 if 'EUR' in symbol else entry_drift
+                
+                if drift_pips > 5.0:  # More than 5 pips drift
+                    logger.warning(f"[Executor] ⚠️ Entry price drifted {drift_pips:.1f} pips (AI: {entry_from_ai:.5f} → Current: {price:.5f})")
+                    logger.warning(f"[Executor] Recalculating SL/TP from current price to preserve distances")
+                    
+                    # Recalculate SL/TP from CURRENT price using AI's intended distances
+                    if direction == 'BUY':
+                        sl_price = price - intended_sl_distance
+                        tp_price = price + intended_tp_distance
+                    else:  # SELL
+                        sl_price = price + intended_sl_distance
+                        tp_price = price - intended_tp_distance
+                    
+                    logger.info(f"[Executor] Adjusted SL/TP: SL={sl_price:.5f}, TP={tp_price:.5f}")
+            
+            # Determine supported filling mode for this symbol
+            symbol_info = self.mt5.symbol_info(symbol)
+            if symbol_info:
+                filling_mode = symbol_info.filling_mode
+                # Try FOK first (most common), then IOC, then RETURN
+                if filling_mode & 0x01:  # FOK supported
+                    type_filling = self.mt5.ORDER_FILLING_FOK
+                elif filling_mode & 0x02:  # IOC supported
+                    type_filling = self.mt5.ORDER_FILLING_IOC
+                else:  # RETURN
+                    type_filling = self.mt5.ORDER_FILLING_RETURN
+            else:
+                type_filling = self.mt5.ORDER_FILLING_FOK  # Default
+            
+            # ✅ CHECK MARGIN: Ensure we have enough money for this lot size
+            account_info = self.mt5.account_info()
+            if account_info:
+                free_margin = account_info.margin_free
+                
+                # Calculate required margin for this trade
+                required_margin = self.mt5.order_calc_margin(order_type, symbol, lot_size, price)
+                
+                if required_margin is not None and required_margin > free_margin:
+                    # Not enough margin - try to reduce lot size
+                    logger.warning(f"[Executor] ⚠️ Insufficient margin: need ${required_margin:.2f}, have ${free_margin:.2f}")
+                    
+                    # Calculate maximum affordable lot size
+                    max_lot = (free_margin * lot_size) / required_margin
+                    max_lot = round(max_lot * 0.95, 2)  # Use 95% for safety margin
+                    
+                    # Get symbol's minimum lot
+                    min_lot = symbol_info.volume_min if symbol_info else 0.01
+                    
+                    if max_lot >= min_lot:
+                        lot_size = max_lot
+                        logger.info(f"[Executor] 💡 Adjusted lot size to {lot_size:.2f} (max affordable)")
+                    else:
+                        logger.error(f"[Executor] ❌ Insufficient funds: cannot even trade minimum lot {min_lot:.2f}")
+                        logger.error(f"[Executor] Required: ${required_margin:.2f}, Available: ${free_margin:.2f}")
+                        return False
+                else:
+                    logger.debug(f"[Executor] Margin OK: need ${required_margin:.2f}, have ${free_margin:.2f}")
+            else:
+                logger.warning("[Executor] Could not get account info for margin check")
+
+            # ✅ CRITICAL: Validate and adjust SL/TP to meet broker's STOPS_LEVEL requirement
+            if symbol_info and sl_price > 0 and tp_price > 0:
+                stops_level = symbol_info.trade_stops_level  # Minimum distance in points
+                point = symbol_info.point  # Point size (0.00001 for EURUSD)
+                
+                # Convert stops_level to price distance
+                min_distance = stops_level * point
+                
+                # FALLBACK: If broker returns 0 stops_level, use safe defaults
+                if min_distance < 0.00001:  # Less than 0.1 pip
+                    # Set minimum based on instrument type
+                    if 'XAU' in symbol or 'GOLD' in symbol:
+                        min_distance = 3.0  # $3 for gold
+                    else:  # Forex
+                        min_distance = 0.00025  # 25 pips for forex
+                    logger.warning(f"[Executor] Broker stops_level=0, using fallback: {min_distance:.5f}")
+                
+                logger.debug(f"[Executor] Broker stops_level: {stops_level} points = {min_distance:.5f} price distance")
+                logger.debug(f"[Executor] Current price: {price:.5f}, SL: {sl_price:.5f}, TP: {tp_price:.5f}")
+                
+                # Check and adjust SL distance
+                if direction == 'BUY':
+                    # For BUY: SL must be < price, TP must be > price
+                    sl_distance = price - sl_price
+                    tp_distance = tp_price - price
+                    
+                    logger.debug(f"[Executor] BUY distances - SL: {sl_distance:.5f}, TP: {tp_distance:.5f}, Min: {min_distance:.5f}")
+                    
+                    if sl_distance < min_distance:
+                        old_sl = sl_price
+                        sl_price = price - min_distance
+                        logger.warning(f"[Executor] ⚠️ SL too close! Adjusted: {old_sl:.5f} → {sl_price:.5f} (min distance: {min_distance:.5f})")
+                    
+                    if tp_distance < min_distance:
+                        old_tp = tp_price
+                        tp_price = price + min_distance
+                        logger.warning(f"[Executor] ⚠️ TP too close! Adjusted: {old_tp:.5f} → {tp_price:.5f} (min distance: {min_distance:.5f})")
+                else:  # SELL
+                    # For SELL: SL must be > price, TP must be < price
+                    sl_distance = sl_price - price
+                    tp_distance = price - tp_price
+                    
+                    logger.debug(f"[Executor] SELL distances - SL: {sl_distance:.5f}, TP: {tp_distance:.5f}, Min: {min_distance:.5f}")
+                    
+                    if sl_distance < min_distance:
+                        old_sl = sl_price
+                        sl_price = price + min_distance
+                        logger.warning(f"[Executor] ⚠️ SL too close! Adjusted: {old_sl:.5f} → {sl_price:.5f} (min distance: {min_distance:.5f})")
+                    
+                    if tp_distance < min_distance:
+                        old_tp = tp_price
+                        tp_price = price - min_distance
+                        logger.warning(f"[Executor] ⚠️ TP too close! Adjusted: {old_tp:.5f} → {tp_price:.5f} (min distance: {min_distance:.5f})")
+                
+                logger.info(f"[Executor] ✅ Stops validated: SL={sl_price:.5f}, TP={tp_price:.5f}")
+            else:
+                if not symbol_info:
+                    logger.warning("[Executor] No symbol_info - cannot validate stops")
+                elif sl_price == 0 or tp_price == 0:
+                    logger.warning("[Executor] SL or TP is 0 - skipping stops validation")
+
+            # FINAL LOG: Show exactly what we're sending to MT5
+            logger.info(f"[Executor] 📤 Sending order: {symbol} {direction} {lot_size} lots")
+            logger.info(f"[Executor]    Price: {price:.5f}, SL: {sl_price:.5f}, TP: {tp_price:.5f}")
 
             request = {
                 "action": self.mt5.TRADE_ACTION_DEAL,
@@ -127,8 +337,26 @@ class Executor:
                 "magic": self.magic_number,
                 "comment": "BAZA Live Trade",
                 "type_time": self.mt5.ORDER_TIME_GTC,
-                "type_filling": self.mt5.ORDER_FILLING_IOC,
+                "type_filling": type_filling,
             }
+
+            # Emit order_sent event
+            signal_id = signal.get('ai_signal_id')
+            if hasattr(self, 'bot_queue') and self.bot_queue and signal_id:
+                try:
+                    signal_id_short = signal_id[-6:] if len(signal_id) >= 6 else signal_id
+                    self.bot_queue.put({
+                        'type': 'order_sent',
+                        'signal_id': signal_id,
+                        'signal_id_short': signal_id_short,
+                        'symbol': symbol,
+                        'direction': direction,
+                        'lot_size': lot_size,
+                        'price': price
+                    })
+                    logger.debug(f"[Executor] Event emitted: order_sent (ID: {signal_id_short})")
+                except Exception as e:
+                    logger.error(f"[Executor] Failed to emit order_sent event: {e}")
 
             # Отправляем ордер и проверяем результат
             result = self.mt5.order_send(request)
@@ -140,6 +368,44 @@ class Executor:
             # Проверяем код возврата
             if result.retcode == self.mt5.TRADE_RETCODE_DONE:
                 logger.info(f"[Executor] Order executed: {symbol} {direction} {lot_size} lots at {price}")
+                
+                # Emit order_filled event
+                if hasattr(self, 'bot_queue') and self.bot_queue and signal_id:
+                    try:
+                        signal_id_short = signal_id[-6:] if len(signal_id) >= 6 else signal_id
+                        # Get ticket from result
+                        ticket = result.order if hasattr(result, 'order') else None
+                        self.bot_queue.put({
+                            'type': 'order_filled',
+                            'signal_id': signal_id,
+                            'signal_id_short': signal_id_short,
+                            'symbol': symbol,
+                            'ticket': ticket,
+                            'filled_price': price
+                        })
+                        logger.debug(f"[Executor] Event emitted: order_filled (ID: {signal_id_short}, Ticket: {ticket})")
+                    except Exception as e:
+                        logger.error(f"[Executor] Failed to emit order_filled event: {e}")
+                
+                # Emit position_opened event
+                if hasattr(self, 'bot_queue') and self.bot_queue and signal_id:
+                    try:
+                        signal_id_short = signal_id[-6:] if len(signal_id) >= 6 else signal_id
+                        ticket = result.order if hasattr(result, 'order') else None
+                        self.bot_queue.put({
+                            'type': 'position_opened',
+                            'signal_id': signal_id,
+                            'signal_id_short': signal_id_short,
+                            'symbol': symbol,
+                            'ticket': ticket,
+                            'direction': direction,
+                            'lot_size': lot_size,
+                            'entry_price': price
+                        })
+                        logger.debug(f"[Executor] Event emitted: position_opened (ID: {signal_id_short}, Ticket: {ticket})")
+                    except Exception as e:
+                        logger.error(f"[Executor] Failed to emit position_opened event: {e}")
+                
                 return True
             else:
                 # Логируем детали ошибки
@@ -152,7 +418,43 @@ class Executor:
                     self.mt5.TRADE_RETCODE_NO_MONEY: "Not enough money",
                 }.get(result.retcode, f"Unknown error code: {result.retcode}")
                 
-                logger.error(f"[Executor] Order failed: {error_desc}. Comment: {result.comment}")
+                # Emit order_failed event
+                if hasattr(self, 'bot_queue') and self.bot_queue and signal_id:
+                    try:
+                        signal_id_short = signal_id[-6:] if len(signal_id) >= 6 else signal_id
+                        self.bot_queue.put({
+                            'type': 'order_failed',
+                            'signal_id': signal_id,
+                            'signal_id_short': signal_id_short,
+                            'symbol': symbol,
+                            'reason': f"{error_desc}: {result.comment}",
+                            'retcode': result.retcode
+                        })
+                        logger.debug(f"[Executor] Event emitted: order_failed (ID: {signal_id_short})")
+                    except Exception as e:
+                        logger.error(f"[Executor] Failed to emit order_failed event: {e}")
+                
+                logger.error(f"[Executor] ❌ Order failed: {error_desc}")
+                logger.error(f"[Executor]    Comment: {result.comment}")
+                logger.error(f"[Executor]    Symbol: {symbol}, Direction: {direction}, Lot: {lot_size}")
+                logger.error(f"[Executor]    Request Price: {price:.5f}, SL: {sl_price:.5f}, TP: {tp_price:.5f}")
+                
+                # Special handling for Invalid stops error
+                if "invalid stops" in result.comment.lower():
+                    if symbol_info:
+                        stops_level = symbol_info.trade_stops_level
+                        point = symbol_info.point
+                        logger.error(f"[Executor]    Broker stops_level: {stops_level} points ({stops_level * point:.5f} price)")
+                        
+                        if direction == 'SELL':
+                            sl_dist = sl_price - price
+                            tp_dist = price - tp_price
+                            logger.error(f"[Executor]    SELL distances: SL={sl_dist:.5f} ({sl_dist/point:.0f} points), TP={tp_dist:.5f} ({tp_dist/point:.0f} points)")
+                        else:
+                            sl_dist = price - sl_price
+                            tp_dist = tp_price - price
+                            logger.error(f"[Executor]    BUY distances: SL={sl_dist:.5f} ({sl_dist/point:.0f} points), TP={tp_dist:.5f} ({tp_dist/point:.0f} points)")
+                
                 return False
 
         except AttributeError as e:
@@ -452,11 +754,11 @@ class Executor:
                     error_message="Only manual trades can be executed through this method"
                 )
 
-            # Проверяем, что нет открытой позиции
-            if self.has_position():
+            # Проверяем, что нет открытой позиции ДЛЯ ЭТОГО СИМВОЛА
+            if self.has_position(symbol=trade_request.symbol):
                 return TradeResult(
                     success=False,
-                    error_message="Cannot open manual trade: position already exists"
+                    error_message=f"Cannot open manual trade for {trade_request.symbol}: position already exists"
                 )
 
             if self.is_live:

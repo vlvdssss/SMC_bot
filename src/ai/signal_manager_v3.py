@@ -64,7 +64,27 @@ class SignalManagerV3:
         """
         # Извлекаем параметры
         action = decision.get("action", "NONE").upper()
-        confidence = decision.get("confidence", 0)
+        
+        # FIXED: Handle decimal confidence (GPT returns 1.0 or "1.0" instead of 100)
+        raw_confidence = decision.get("confidence", 100)
+        
+        # Convert to float if string
+        if isinstance(raw_confidence, str):
+            try:
+                raw_confidence = float(raw_confidence)
+            except (ValueError, TypeError):
+                raw_confidence = 100
+        
+        # Check if decimal format (0-1) and convert to percentage
+        if isinstance(raw_confidence, (int, float)) and raw_confidence <= 1.0:
+            # Convert decimal (0-1) to percentage (0-100)
+            confidence = int(raw_confidence * 100)
+            logger.info(f"[Signal V3] Converting decimal confidence {raw_confidence} → {confidence}%")
+        else:
+            # Already in percentage format (1-100), use as-is
+            confidence = int(raw_confidence)
+            logger.debug(f"[Signal V3] Using confidence: {confidence}%")
+        
         risk_reward = trade_data.get("risk_reward", 1.5)
         
         # Создаём summary
@@ -187,9 +207,9 @@ def patch_signal_manager(signal_manager, news_fetcher=None):
             # Если вход разрешён - создаём сигнал с lot_multiplier из V3
             # (Дальше используем существующую логику создания сигнала)
             
-            # Проверяем позицию
+            # Проверяем позицию ПО КОНКРЕТНОМУ СИМВОЛУ (не блокировать другие инструменты)
             if hasattr(self, 'executor') and self.executor:
-                if self.executor.has_position():
+                if self.executor.has_position(symbol=symbol):
                     logger.warning(f"[AI-Signal V3] Position already open for {symbol}")
                     summary["block_reason"] = "position_already_open"
                     summary["entry_allowed"] = False
@@ -213,7 +233,7 @@ def patch_signal_manager(signal_manager, news_fetcher=None):
                 "entry_price": trade_data.get("entry"),
                 "stop_loss": trade_data.get("stop_loss"),
                 "take_profit": trade_data.get("take_profit"),
-                "confidence": decision.get("confidence", 0),
+                "confidence": summary["confidence"],  # Use validated confidence from summary (always 100%)
                 "risk_reward": trade_data.get("risk_reward", 1.5),
                 "reasoning": (
                     f"GPT V3: {signal_decision.accuracy.key.upper()} accuracy, "

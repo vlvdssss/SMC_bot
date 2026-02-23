@@ -21,6 +21,7 @@ from typing import Callable, Optional
 import json
 
 from src.core.logger import logger
+from src.core.state_core import get_state_core, BotStatus
 from src.ai.market_analyst import MarketAnalystService
 from src.ai.signal_manager import AISignalManager
 
@@ -42,13 +43,18 @@ class AnalystScheduler:
         analyst: Optional[MarketAnalystService] = None,
         signal_manager: Optional[AISignalManager] = None,
         callback: Optional[Callable] = None,
-        executor: Optional[object] = None
+        executor: Optional[object] = None,
+        rejected_logger: Optional[object] = None
     ):
         """Initialize scheduler v2.0."""
         self.analyst = analyst or MarketAnalystService()
         self.signal_manager = signal_manager or AISignalManager()
         self.callback = callback
         self.executor = executor  # For position checking
+        self.rejected_logger = rejected_logger  # For logging rejected signals
+        
+        # StateCore integration
+        self.state_core = get_state_core()
         
         # Load config
         self.config = self._load_config()
@@ -182,8 +188,13 @@ class AnalystScheduler:
                             logger.info(f"[AI-Scheduler] ⏰ Interval trigger: {int(time_since_last)}min passed (target: {self.interval_minutes}min)")
                     
                     if should_run:
-                        # Анализируем инструменты
+                        # КРИТИЧНО: Обновляем last_run СРАЗУ чтобы избежать петли
+                        self.last_run = now
+                        
+                        # Анализируем все активные инструменты
                         analysis_ran = False
+                        
+                        # XAUUSD
                         if self._is_instrument_analysis_enabled("XAUUSD"):
                             result = self._run_analysis("XAUUSD")
                             # Проверяем что анализ прошел успешно (не был заблокирован)
@@ -191,17 +202,25 @@ class AnalystScheduler:
                                 analysis_ran = True
                             else:
                                 error_type = result.get("error", "unknown") if result else "unknown"
-                                logger.debug(f"[AI-Scheduler] Analysis returned error: {error_type}")
+                                logger.debug(f"[AI-Scheduler] XAUUSD analysis returned error: {error_type}")
                         else:
                             logger.info("[AI-Scheduler] XAUUSD analysis disabled in config")
                         
-                        # Note: Only XAUUSD is analyzed, EURUSD disabled
+                        # EURUSD
+                        if self._is_instrument_analysis_enabled("EURUSD"):
+                            result = self._run_analysis("EURUSD")
+                            if result and "error" not in result:
+                                analysis_ran = True
+                            else:
+                                error_type = result.get("error", "unknown") if result else "unknown"
+                                logger.debug(f"[AI-Scheduler] EURUSD analysis returned error: {error_type}")
+                        else:
+                            logger.info("[AI-Scheduler] EURUSD analysis disabled in config")
                         
                         if analysis_ran:
-                            self.last_run = now
                             logger.info(f"[AI-Scheduler] ✅ Analysis completed, next run in {self.interval_minutes} minutes")
                         else:
-                            logger.debug(f"[AI-Scheduler] Analysis did not run, will retry in 60s")
+                            logger.info(f"[AI-Scheduler] ⚠️ Analysis blocked/failed, but timer reset - next run in {self.interval_minutes} minutes")
                 
                 # SCHEDULE MODE: по фиксированному расписанию
                 elif self.mode == 'schedule' and self.schedule_times:
@@ -210,10 +229,15 @@ class AnalystScheduler:
                         if self._should_run(current_time, schedule_time):
                             logger.info(f"[AI-Scheduler] ⏰ Schedule trigger: {current_time.strftime('%H:%M')}")
                             
-                            # Анализируем только XAUUSD
+                            # Анализируем все активные инструменты
                             analysis_ran = False
+                            
                             if self._is_instrument_analysis_enabled("XAUUSD"):
                                 self._run_analysis("XAUUSD")
+                                analysis_ran = True
+                            
+                            if self._is_instrument_analysis_enabled("EURUSD"):
+                                self._run_analysis("EURUSD")
                                 analysis_ran = True
                             
                             if analysis_ran:
@@ -281,120 +305,173 @@ class AnalystScheduler:
         7. Execute callback
         8. Return results
         """
-        # ЗАЩИТА ОТ ДУБЛИРОВАНИЯ с использованием lock
-        with self._analysis_lock:
-            now = datetime.now()
-            last_time = self._last_analysis_time.get(symbol)
+        # STATECORE: Acquire analysis lock (защита от двойного GPT вызова)
+        if not self.state_core.acquire_analysis_lock():
+            logger.warning("[AI-Scheduler] ⚠️ Analysis lock already held - skipping duplicate analysis")
+            return {
+                "error": "analysis_locked",
+                "reason": "Another analysis already in progress",
+                "symbol": symbol,
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        try:
+            # STATECORE: Update status to ANALYZING
+            self.state_core.set_status(BotStatus.ANALYZING)
             
-            if last_time:
-                time_since_last = (now - last_time).total_seconds()
-                MIN_INTERVAL_SECONDS = 60  # Минимум 60 секунд между анализами
+            # ЗАЩИТА ОТ ДУБЛИРОВАНИЯ с использованием internal lock
+            with self._analysis_lock:
+                now = datetime.now()
+                last_time = self._last_analysis_time.get(symbol)
                 
-                if time_since_last < MIN_INTERVAL_SECONDS:
-                    logger.warning(
-                        f"[AI-Scheduler] ⏸️ Duplicate analysis blocked: last run was "
-                        f"{time_since_last:.1f}s ago (min interval: {MIN_INTERVAL_SECONDS}s)"
-                    )
-                    return {
-                        "error": "duplicate_blocked",
-                        "reason": f"Analysis ran {time_since_last:.1f}s ago (< {MIN_INTERVAL_SECONDS}s)",
-                        "symbol": symbol,
-                        "timestamp": now.isoformat()
-                    }
+                if last_time:
+                    time_since_last = (now - last_time).total_seconds()
+                    MIN_INTERVAL_SECONDS = 60  # Минимум 60 секунд между анализами
+                    
+                    if time_since_last < MIN_INTERVAL_SECONDS:
+                        logger.warning(
+                            f"[AI-Scheduler] ⏸️ Duplicate analysis blocked: last run was "
+                            f"{time_since_last:.1f}s ago (min interval: {MIN_INTERVAL_SECONDS}s)"
+                        )
+                        # STATECORE: Set back to WAITING
+                        self.state_core.set_status(BotStatus.WAITING)
+                        return {
+                            "error": "duplicate_blocked",
+                            "reason": f"Analysis ran {time_since_last:.1f}s ago (< {MIN_INTERVAL_SECONDS}s)",
+                            "symbol": symbol,
+                            "timestamp": now.isoformat()
+                        }
+                
+                # Обновляем время ВНУТРИ lock - защита от race condition
+                self._last_analysis_time[symbol] = now
+                logger.debug(f"[AI-Scheduler] Analysis timestamp set for {symbol}: {now.isoformat()}")
             
-            # Обновляем время ВНУТРИ lock - защита от race condition
-            self._last_analysis_time[symbol] = now
-            logger.debug(f"[AI-Scheduler] Analysis timestamp set for {symbol}: {now.isoformat()}")
-        
-        # Quick checks BEFORE acquiring lock for actual analysis
-        # Check kill-switch
-        if not self.is_ai_enabled():
-            logger.warning("[AI-Scheduler] AI disabled, using fallback")
-            return self._get_fallback_analysis(symbol)
-        
-        # Check if position already open - BLOCK AI analysis (v2.0 logic)
-        if self.executor and hasattr(self.executor, 'has_position'):
-            if self.executor.has_position():
-                logger.info("[AI-Scheduler] 🚫 Position open - BLOCKING AI analysis (v2.0 rule)")
+            # Quick checks BEFORE acquiring lock for actual analysis
+            # Check kill-switch
+            if not self.is_ai_enabled():
+                logger.warning("[AI-Scheduler] AI disabled, using fallback")
+                self.state_core.set_status(BotStatus.WAITING)
+                return self._get_fallback_analysis(symbol)
+            
+            # Check if position already open FOR THIS SYMBOL - BLOCK AI analysis to save API calls
+            if self.executor and hasattr(self.executor, 'has_position'):
+                has_pos = self.executor.has_position(symbol=symbol)
+                logger.debug(f"[AI-Scheduler] Position check for {symbol}: {has_pos}")
+                
+                if has_pos:
+                    logger.info(f"[AI-Scheduler] 🚫 Position open for {symbol} - BLOCKING AI analysis (save API calls)")
+                    self.state_core.set_status(BotStatus.BLOCKED, reason=f"Position open for {symbol}")
+                    return {
+                        "error": "position_open",
+                        "reason": f"Position open for {symbol} - AI analysis blocked until close",
+                        "symbol": symbol,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                else:
+                    logger.debug(f"[AI-Scheduler] ✅ No position for {symbol} - analysis allowed")
+            
+            # Check time restrictions
+            time_allowed, time_reason = self.signal_manager._is_trading_time_allowed()
+            if not time_allowed:
+                logger.warning(f"[AI-Scheduler] ⏸️ Analysis blocked: {time_reason}")
+                
+                # Log rejection for time restriction (for analytics)
+                if hasattr(self, 'rejected_logger') and self.rejected_logger:
+                    self.rejected_logger.log_rejection(
+                        symbol=symbol,
+                        direction='N/A',
+                        confidence=0.0,
+                        entry=0.0,
+                        sl=0.0,
+                        tp=0.0,
+                        reason=time_reason,
+                        filter_type='time_restriction'
+                    )
+                
+                self.state_core.set_status(BotStatus.BLOCKED, reason=time_reason)
                 return {
-                    "error": "position_open",
-                    "reason": "Position open - AI analysis blocked until close",
+                    "error": "time_restriction",
+                    "reason": time_reason,
                     "symbol": symbol,
                     "timestamp": datetime.now().isoformat()
                 }
-        
-        # Check time restrictions
-        time_allowed, time_reason = self.signal_manager._is_trading_time_allowed()
-        if not time_allowed:
-            logger.warning(f"[AI-Scheduler] Analysis blocked: {time_reason}")
-            return {
-                "error": "time_restriction",
-                "reason": time_reason,
-                "symbol": symbol,
-                "timestamp": datetime.now().isoformat()
-            }
-        
-        # Check volatility pre-filter (skip GPT if market too quiet)
-        vol_passed, vol_reason = self.signal_manager.check_volatility_filter(symbol)
-        if not vol_passed:
-            logger.warning(f"[AI-Scheduler] Analysis skipped: {vol_reason}")
-            return {
-                "error": "volatility_filter",
-                "reason": vol_reason,
-                "symbol": symbol,
-                "timestamp": datetime.now().isoformat()
-            }
-        
-        # NOW acquire lock for actual analysis
-        try:
-            with self._analysis_lock:
-                logger.ai(f"Starting analysis for {symbol} ({vol_reason})")
+            
+            # Check volatility pre-filter (skip GPT if market too quiet)
+            vol_passed, vol_reason = self.signal_manager.check_volatility_filter(symbol)
+            if not vol_passed:
+                logger.warning(f"[AI-Scheduler] Analysis skipped: {vol_reason}")
+                self.state_core.set_status(BotStatus.BLOCKED, reason=vol_reason)
+                return {
+                    "error": "volatility_filter",
+                    "reason": vol_reason,
+                    "symbol": symbol,
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+            # NOW run actual GPT analysis
+            logger.ai(f"Starting analysis for {symbol} ({vol_reason})")
+            
+            # Step 1: Run analysis with fallback on error
+            try:
+                analysis = self.analyst.analyze_market(symbol)
+            except ValueError as e:
+                # Configuration errors (invalid API key, missing config)
+                logger.error(f"[AI-Scheduler] ❌ CONFIGURATION ERROR: {e}")
+                logger.error("[AI-Scheduler] 💡 Исправь конфигурацию и перезапусти бота")
+                analysis = self._get_fallback_analysis(symbol, error=f"Config error: {e}")
+                self.state_core.set_status(BotStatus.ERROR, reason=f"Config error: {e}")
+            except Exception as e:
+                # All other errors (API errors, network, etc.)
+                error_type = type(e).__name__
+                logger.error(f"[AI-Scheduler] ❌ ANALYSIS FAILED: {error_type}")
+                logger.error(f"[AI-Scheduler] Детали: {e}")
+                logger.error("[AI-Scheduler] 💡 Используется fallback анализ (безопасный режим)")
+                analysis = self._get_fallback_analysis(symbol, error=f"{error_type}: {e}")
+                self.state_core.set_status(BotStatus.ERROR, reason=f"{error_type}")
+            
+            # Step 2: Process signals
+            if "error" not in analysis:
+                signal_summary = self.signal_manager.process_analysis(analysis)
+                analysis["signal_processing"] = signal_summary
                 
-                # Step 1: Run analysis with fallback on error
+                # Save history
+                self._save_analysis_history(analysis)
+                self.last_analysis = analysis
+                
+                # STATECORE: Analysis success - back to WAITING (SignalManager will update status if signal created)
+                if not self.state_core.active_signal:
+                    self.state_core.set_status(BotStatus.WAITING)
+            
+            # Step 3: Callback
+            if self.callback:
                 try:
-                    analysis = self.analyst.analyze_market(symbol)
-                except ValueError as e:
-                    # Configuration errors (invalid API key, missing config)
-                    logger.error(f"[AI-Scheduler] ❌ CONFIGURATION ERROR: {e}")
-                    logger.error("[AI-Scheduler] 💡 Исправь конфигурацию и перезапусти бота")
-                    analysis = self._get_fallback_analysis(symbol, error=f"Config error: {e}")
+                    self.callback(analysis)
                 except Exception as e:
-                    # All other errors (API errors, network, etc.)
-                    error_type = type(e).__name__
-                    logger.error(f"[AI-Scheduler] ❌ ANALYSIS FAILED: {error_type}")
-                    logger.error(f"[AI-Scheduler] Детали: {e}")
-                    logger.error("[AI-Scheduler] 💡 Используется fallback анализ (безопасный режим)")
-                    analysis = self._get_fallback_analysis(symbol, error=f"{error_type}: {e}")
-                
-                # Step 2: Process signals
-                if "error" not in analysis:
-                    signal_summary = self.signal_manager.process_analysis(analysis)
-                    analysis["signal_processing"] = signal_summary
-                    
-                    # Save history
-                    self._save_analysis_history(analysis)
-                    self.last_analysis = analysis
-                
-                # Step 3: Callback
-                if self.callback:
-                    try:
-                        self.callback(analysis)
-                    except Exception as e:
-                        logger.error(f"[AI-Scheduler] Callback failed: {e}")
-                
-                # Log summary
-                self._log_analysis_summary(analysis)
-                
-                return analysis
+                    logger.error(f"[AI-Scheduler] Callback failed: {e}")
+            
+            # Log summary
+            self._log_analysis_summary(analysis)
+            
+            return analysis
         
         except Exception as e:
             logger.error(f"[AI-Scheduler] Analysis failed: {e}")
+            self.state_core.set_status(BotStatus.ERROR, reason=str(e))
             return {"error": str(e), "timestamp": datetime.now().isoformat()}
+        
+        finally:
+            # STATECORE: Always release analysis lock
+            self.state_core.release_analysis_lock()
     
     def _log_analysis_summary(self, analysis: dict):
         """Log human-readable summary."""
         try:
-            summary = analysis.get("summary", {})
+            # Get summary from signal_processing (V5 format)
+            summary = analysis.get("signal_processing", analysis.get("summary", {}))
+            
+            # DEBUG: Log what we got
+            logger.debug(f"[AI-Scheduler] Summary for logging: {summary}")
+            
             signals = analysis.get("signals", [])
             blocks = analysis.get("trading_blocks", {})
             
@@ -616,14 +693,16 @@ def get_scheduler() -> AnalystScheduler:
 def init_scheduler(
     callback: Optional[Callable] = None, 
     executor: Optional[object] = None,
-    signal_manager: Optional['AISignalManager'] = None
+    signal_manager: Optional['AISignalManager'] = None,
+    rejected_logger: Optional[object] = None
 ) -> AnalystScheduler:
     """Initialize and start global scheduler."""
     global _scheduler_instance
     _scheduler_instance = AnalystScheduler(
         callback=callback, 
         executor=executor,
-        signal_manager=signal_manager
+        signal_manager=signal_manager,
+        rejected_logger=rejected_logger
     )
     _scheduler_instance.start()
     return _scheduler_instance

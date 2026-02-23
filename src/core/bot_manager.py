@@ -14,6 +14,7 @@ import csv
 from pathlib import Path
 import sys
 from src.core.logger import logger
+from src.core.config_manager import get_config_manager
 
 # Helper для работы с путями в EXE
 def get_data_path(filename):
@@ -56,6 +57,11 @@ class BotStatus(Enum):
     STOPPED = "stopped"
     RUNNING = "running"
     PAUSED = "paused"
+    WAITING = "waiting"       # Bot idle, waiting for next analysis
+    ANALYZING = "analyzing"   # GPT analysis in progress
+    BLOCKED = "blocked"       # Trade blocked by filters
+    ORDERING = "ordering"     # Placing order to MT5
+    ERROR = "error"           # Error state
 
 
 class BotManager:
@@ -80,7 +86,15 @@ class BotManager:
         self.status = BotStatus.STOPPED
         self.is_running = False  # Для Telegram бота
         self.mode = 'demo'  # Режим работы: demo, backtest, live
-        self.trading_mode = 'pure_ai'  # Pure AI режим (фиксированный)
+        
+        # Load trading_mode from config
+        self.config_manager = get_config_manager()
+        self.trading_mode = self.config_manager.get('trading.yaml', 'trading', 'mode', 'manual')
+        logger.info(f"[BotManager] Trading mode loaded from config: {self.trading_mode}")
+        
+        # Register config reload callback
+        self.config_manager.register_reload_callback(self._on_config_reload)
+        
         self.bot_thread: Optional[threading.Thread] = None
         self.stop_event = threading.Event()
         self.pause_event = threading.Event()
@@ -146,6 +160,21 @@ class BotManager:
         
         # Синхронизация с MT5 после подключения
         self._sync_with_mt5()
+    
+    def _on_config_reload(self):
+        """Callback вызываемый при перезагрузке конфигурации."""
+        try:
+            old_mode = self.trading_mode
+            new_mode = self.config_manager.get('trading.yaml', 'trading', 'mode', 'manual')
+            
+            if old_mode != new_mode:
+                self.trading_mode = new_mode
+                logger.info(f"[BotManager] Trading mode updated: {old_mode} → {new_mode}")
+            else:
+                logger.debug(f"[BotManager] Trading mode unchanged: {new_mode}")
+                
+        except Exception as e:
+            logger.error(f"[BotManager] Failed to reload config: {e}")
     
     def _update_stats_from_mt5(self):
         """Обновление статистики из MT5."""
@@ -237,7 +266,10 @@ class BotManager:
                 if not self.signal_manager:
                     try:
                         from src.ai.signal_manager import AISignalManager
-                        self.signal_manager = AISignalManager(telegram_notifier=self.telegram)
+                        self.signal_manager = AISignalManager(
+                            telegram_notifier=self.telegram,
+                            bot_queue=getattr(self, 'bot_queue', None)  # Pass bot_queue for events
+                        )
                         logger.info("[BotManager] Signal Manager initialized with Telegram notifications")
                     except Exception as e:
                         logger.warning(f"[BotManager] Failed to init Signal Manager: {e}")
@@ -390,13 +422,14 @@ class BotManager:
             logger.error(f"[BotManager] Ошибка получения настроек: {e}")
             return {}
     
-    def start(self, mode: str = 'demo', trading_mode: str = 'strategy'):
+    def start(self, mode: str = 'demo', trading_mode: str = 'strategy', bot_queue=None):
         """
         Запуск бота.
         
         Args:
             mode: Режим счета ('demo' или 'live')
             trading_mode: Режим торговли ('strategy' или 'pure_ai')
+            bot_queue: Queue for event-driven UI updates
         """
         if self.status == BotStatus.RUNNING:
             self.log("Warning: Bot already running")
@@ -405,6 +438,7 @@ class BotManager:
         self.stop_event.clear()
         self.pause_event.clear()
         self.trading_mode = trading_mode  # Сохраняем режим торговли
+        self.bot_queue = bot_queue  # Store bot_queue for passing to components
         self.status = BotStatus.RUNNING
         self.is_running = True  # Для Telegram бота
         
@@ -528,9 +562,18 @@ class BotManager:
         try:
             # Импортируем необходимые компоненты
             from src.live.live_trader import LiveTrader
+            import yaml
+            from pathlib import Path
             
-            # Определяем режим торговли
-            enable_trading = (mode == 'live')
+            # Читаем режим торговли из конфига (а не из mode!)
+            enable_trading = False  # Default
+            trading_config_path = Path('config/trading.yaml')
+            if trading_config_path.exists():
+                with open(trading_config_path, 'r', encoding='utf-8') as f:
+                    trading_config = yaml.safe_load(f)
+                    enable_trading = trading_config.get('trading', {}).get('enabled', False)
+            
+            logger.info(f"[BotManager] Account mode: {mode.upper()}, Trading from config: {'ON' if enable_trading else 'OFF'}")
             
             # Инициализация LiveTrader
             # LiveTrader сам загружает конфиги, подключается к MT5, 
@@ -538,7 +581,8 @@ class BotManager:
             self.live_trader = LiveTrader(
                 config_dir='config',
                 enable_trading=enable_trading,
-                enable_gpt=True  # GPT фильтр включен
+                enable_gpt=True,  # GPT фильтр включен
+                bot_queue=getattr(self, 'bot_queue', None)  # Pass bot_queue for event-driven UI
             )
             
             self.log(f"LiveTrader initialized (trading={'ON' if enable_trading else 'OFF'})")

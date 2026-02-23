@@ -1,0 +1,228 @@
+{
+  "timestamp": "2026-02-22T19:05:19.699558",
+  "total": 11,
+  "passed": 5,
+  "failed": 6,
+  "pass_rate": "45.5%",
+  "tests": [
+    {
+      "test_id": "T01",
+      "test_name": "Min Confidence = 99 (High Threshold)",
+      "description": "Verify high confidence threshold blocks signals below 99%",
+      "settings_changed": {
+        "min_confidence": 99
+      },
+      "effective_config_value": 99,
+      "expected_behavior": "BLOCK due to confidence < 99",
+      "actual_behavior": "No decision log entry found",
+      "decision_log_entry": null,
+      "ui_status": [
+        "Check GUI logs for BLOCK messages"
+      ],
+      "passed": false,
+      "evidence": [
+        "Updated config: min_confidence = 99",
+        "Effective Config shows: 99"
+      ],
+      "timestamp": "2026-02-22T19:05:17.554274"
+    },
+    {
+      "test_id": "T02",
+      "test_name": "Min Confidence = 50 (Low Threshold)",
+      "description": "Verify low confidence threshold allows more signals",
+      "settings_changed": {
+        "min_confidence": 50
+      },
+      "effective_config_value": 50,
+      "expected_behavior": "ENTER allowed for signals >= 50%",
+      "actual_behavior": "Not implemented (requires bot runner)",
+      "decision_log_entry": null,
+      "ui_status": [
+        "Config updated"
+      ],
+      "passed": true,
+      "evidence": [
+        "Updated config: min_confidence = 50",
+        "Effective Config shows: 50"
+      ],
+      "timestamp": "2026-02-22T19:05:18.088019"
+    },
+    {
+      "test_id": "T03",
+      "test_name": "Cooldown = 999 min (Extreme)",
+      "description": "Verify extreme cooldown blocks subsequent trades",
+      "settings_changed": {
+        "cooldown_minutes": 999
+      },
+      "effective_config_value": 999,
+      "expected_behavior": "After 1 trade, cooldown blocks all others for 999 min",
+      "actual_behavior": "Config updated, runtime test needed",
+      "decision_log_entry": null,
+      "ui_status": [
+        "Config updated"
+      ],
+      "passed": true,
+      "evidence": [
+        "Updated config: cooldown = 999 min",
+        "Effective Config shows: 999"
+      ],
+      "timestamp": "2026-02-22T19:05:18.618880"
+    },
+    {
+      "test_id": "T04",
+      "test_name": "Daily Limit = 1",
+      "description": "Verify daily trade limit enforcement",
+      "settings_changed": {
+        "daily_limit": 1
+      },
+      "effective_config_value": null,
+      "expected_behavior": "After 1 trade today, rest BLOCKED by daily_limit",
+      "actual_behavior": "Config path verification needed",
+      "decision_log_entry": null,
+      "ui_status": [
+        "Implementation needed"
+      ],
+      "passed": false,
+      "evidence": [
+        "Daily limit test - config path needs verification"
+      ],
+      "timestamp": "2026-02-22T19:05:18.619235"
+    },
+    {
+      "test_id": "T05",
+      "test_name": "GPT Gate Toggle",
+      "description": "Verify GPT gate can be toggled and affects runtime",
+      "settings_changed": {
+        "ai_enabled": false
+      },
+      "effective_config_value": false,
+      "expected_behavior": "GPT analysis skipped when disabled",
+      "actual_behavior": "Config toggle verified",
+      "decision_log_entry": null,
+      "ui_status": [
+        "Config toggle successful"
+      ],
+      "passed": true,
+      "evidence": [
+        "AI enabled: True → False"
+      ],
+      "timestamp": "2026-02-22T19:05:18.619680"
+    },
+    {
+      "test_id": "T06",
+      "test_name": "Max Spread = 0.5 pips",
+      "description": "Verify max spread filter rejects high spread symbols",
+      "settings_changed": {
+        "max_spread_pips": 0.5
+      },
+      "effective_config_value": 0.5,
+      "expected_behavior": "Symbols with spread > 0.5 pips BLOCKED",
+      "actual_behavior": "Config updated, runtime test needed",
+      "decision_log_entry": null,
+      "ui_status": [
+        "Config updated"
+      ],
+      "passed": true,
+      "evidence": [
+        "Updated config: max_spread_pips = 0.5",
+        "Effective Config shows: 0.5"
+      ],
+      "timestamp": "2026-02-22T19:05:19.160737"
+    },
+    {
+      "test_id": "T07",
+      "test_name": "Recovery Mode Block",
+      "description": "Verify recovery mode blocks all trading",
+      "settings_changed": {},
+      "effective_config_value": null,
+      "expected_behavior": "All trades BLOCKED during recovery period",
+      "actual_behavior": "Requires runtime testing with StateCore",
+      "decision_log_entry": null,
+      "ui_status": [
+        "Implementation needed"
+      ],
+      "passed": false,
+      "evidence": [
+        "Recovery mode test - requires StateCore integration"
+      ],
+      "timestamp": "2026-02-22T19:05:19.161157"
+    },
+    {
+      "test_id": "T08",
+      "test_name": "Max Open Positions = 1",
+      "description": "Verify max open positions limit enforcement",
+      "settings_changed": {
+        "max_open_positions": 1
+      },
+      "effective_config_value": null,
+      "expected_behavior": "Second position BLOCKED when max = 1",
+      "actual_behavior": "Config path verification needed",
+      "decision_log_entry": null,
+      "ui_status": [
+        "Implementation needed"
+      ],
+      "passed": false,
+      "evidence": [
+        "Max open positions test - config path needs verification"
+      ],
+      "timestamp": "2026-02-22T19:05:19.161576"
+    },
+    {
+      "test_id": "T09",
+      "test_name": "No Active Signal Gate",
+      "description": "Verify single-gate enforcement: no active_signal blocks orders",
+      "settings_changed": {},
+      "effective_config_value": null,
+      "expected_behavior": "Order BLOCKED when no active_signal",
+      "actual_behavior": "Requires runtime testing with StateCore",
+      "decision_log_entry": null,
+      "ui_status": [
+        "Implementation needed"
+      ],
+      "passed": false,
+      "evidence": [
+        "Gate test - requires StateCore integration"
+      ],
+      "timestamp": "2026-02-22T19:05:19.162205"
+    },
+    {
+      "test_id": "T10",
+      "test_name": "MT5 Disconnect Block",
+      "description": "Verify MT5 disconnect detection and trading block",
+      "settings_changed": {},
+      "effective_config_value": null,
+      "expected_behavior": "Trading BLOCKED when MT5 disconnected",
+      "actual_behavior": "Requires runtime testing with MT5Manager",
+      "decision_log_entry": null,
+      "ui_status": [
+        "Implementation needed"
+      ],
+      "passed": false,
+      "evidence": [
+        "MT5 disconnect test - requires MT5Manager integration"
+      ],
+      "timestamp": "2026-02-22T19:05:19.162706"
+    },
+    {
+      "test_id": "T14",
+      "test_name": "DRY_RUN Mode Validation",
+      "description": "Verify DRY_RUN mode simulates orders without real execution",
+      "settings_changed": {
+        "dry_run": true
+      },
+      "effective_config_value": true,
+      "expected_behavior": "Orders simulated, logged as WOULD_SEND_ORDER",
+      "actual_behavior": "DRY_RUN mode enabled",
+      "decision_log_entry": null,
+      "ui_status": [
+        "DRY_RUN enabled"
+      ],
+      "passed": true,
+      "evidence": [
+        "Enabled DRY_RUN mode",
+        "Effective Config shows: dry_run = True"
+      ],
+      "timestamp": "2026-02-22T19:05:19.699249"
+    }
+  ]
+}

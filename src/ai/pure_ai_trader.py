@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""
+"""  
 Pure AI Trader - Trading based solely on GPT signals
 
 Режим торговли только по сигналам ChatGPT:
-- Анализ каждые 3 часа
-- Скриншоты 5M, 15M, 1H
+- Анализ каждые 30 минут (по умолчанию)
+- Скриншоты M5, M15
 - Новости с внешних источников
 - GPT генерирует готовые сигналы
 - Дедупликация по entry price
-- Таймфрейм исполнения: 15M
+- Таймфрейм исполнения: M5/M15
 - Символы: XAUUSD, EURUSD
+- Максимум 1 позиция на инструмент
 """
 
 import threading
@@ -28,19 +29,20 @@ class PureAITrader:
     Pure AI Trading Mode - торговля только по GPT сигналам.
     
     Логика:
-    1. Каждые 3 часа запускает анализ для XAUUSD и EURUSD
-    2. GPT анализирует скриншоты 5M/15M/1H + новости
+    1. Каждые 30 минут (по умолчанию) запускает анализ для XAUUSD и EURUSD
+    2. GPT анализирует скриншоты M5/M15 + новости
     3. Генерирует сигналы с entry/SL/TP
     4. SignalManager проверяет дубликаты и управляет TTL
-    5. Executor исполняет сделки на 15M таймфрейме
+    5. Executor исполняет сделки на M5/M15 таймфрейме
+    6. Максимум 1 открытая позиция на инструмент
     """
     
     # Конфигурация
-    SYMBOLS = ["XAUUSD", "EURUSD"]
-    ANALYSIS_INTERVAL = 3 * 60 * 60  # 3 часа в секундах
-    MIN_CONFIDENCE = 75  # Минимальная уверенность для входа
+    SYMBOLS = ["XAUUSD"]  # TEMPORARY: Только золото, EURUSD отключен
+    ANALYSIS_INTERVAL = 30 * 60  # IMPROVED: 30 minutes instead of 2 hours (more frequent analysis)
+    MIN_CONFIDENCE = 70  # IMPROVED: Lowered from 75 to 70 (balanced approach)
     MAX_TRADES_PER_DAY = 5  # Максимум сделок в день
-    COOLDOWN_HOURS = 2  # Пауза между сделками одного символа
+    COOLDOWN_MINUTES = 30  # IMPROVED: Пауза 30 мин после сделки (вместо 2 часов)
     
     def __init__(self, api_key: str = None, executor=None, analysis_interval_hours: int = None, telegram_notifier=None):
         """
@@ -66,13 +68,17 @@ class PureAITrader:
         # Состояние
         self.running = False
         self.thread = None
+        self.last_cycle_time = None  # NEW: для отслеживания глобального цикла
         self.last_analysis_time = {}  # {symbol: datetime}
         self.daily_trades = {}  # {date: count}
         self.symbol_cooldown = {}  # {symbol: datetime}
+        self.tracked_positions = {}  # NEW: {symbol: {ticket, entry_time, direction, entry_price}} - для мониторинга закрытий
         
         logger.info("[PureAI] Pure AI Trader initialized")
         logger.info(f"[PureAI] Symbols: {', '.join(self.SYMBOLS)}")
-        logger.info(f"[PureAI] Analysis every {self.ANALYSIS_INTERVAL // 3600} hours")
+        logger.info(f"[PureAI] Analysis every {self.ANALYSIS_INTERVAL // 60} minutes")
+        logger.info(f"[PureAI] Timeframes: M5, M15")
+        logger.info(f"[PureAI] Max 1 position per symbol")
     
     def start(self):
         """Запуск Pure AI Trading режима."""
@@ -103,6 +109,9 @@ class PureAITrader:
         
         while self.running:
             try:
+                # Мониторинг закрытых позиций
+                self._check_closed_positions()
+                
                 # Ждем до следующего цикла
                 next_analysis = self._get_next_analysis_time()
                 wait_seconds = (next_analysis - datetime.now()).total_seconds()
@@ -120,19 +129,19 @@ class PureAITrader:
                 time.sleep(60)
     
     def _get_next_analysis_time(self) -> datetime:
-        """Вычисляет время следующего анализа (каждые 3 часа)."""
+        """Вычисляет время следующего анализа (каждые ANALYSIS_INTERVAL секунд)."""
         now = datetime.now()
-        current_hour = now.hour
         
-        # Округляем до следующего четного часа: 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22
-        next_hour = ((current_hour // 2) * 2 + 2) % 24
+        # Если последний цикл не был, запускаем сразу
+        if self.last_cycle_time is None:
+            return now
         
-        if next_hour <= current_hour:
-            # Следующий день
-            next_time = now.replace(hour=next_hour, minute=0, second=0, microsecond=0)
-            next_time += timedelta(days=1)
-        else:
-            next_time = now.replace(hour=next_hour, minute=0, second=0, microsecond=0)
+        # Следующий анализ через ANALYSIS_INTERVAL секунд после последнего
+        next_time = self.last_cycle_time + timedelta(seconds=self.ANALYSIS_INTERVAL)
+        
+        # Если уже прошло время - запускаем сразу
+        if next_time <= now:
+            return now
         
         return next_time
     
@@ -157,6 +166,8 @@ class PureAITrader:
                 except Exception as e:
                     logger.error(f"[PureAI] Error analyzing {symbol}: {e}")
             
+            # Сохраняем время завершения цикла
+            self.last_cycle_time = datetime.now()
             logger.info("[PureAI] ✅ Analysis cycle completed")
             
         except Exception as e:
@@ -172,7 +183,12 @@ class PureAITrader:
         try:
             # Проверяем cooldown
             if not self._check_cooldown(symbol):
-                logger.info(f"[PureAI] {symbol} in cooldown, skipping")
+                # Показываем сколько осталось до следующего анализа
+                if symbol in self.symbol_cooldown:
+                    cooldown_end = self.symbol_cooldown[symbol]
+                    remaining = (cooldown_end - datetime.now()).total_seconds() / 60
+                    if remaining > 0:
+                        logger.info(f"[PureAI] {symbol} in cooldown - next analysis in {remaining:.0f} minutes ({cooldown_end.strftime('%H:%M')})") 
                 return
             
             logger.info(f"[PureAI] 📊 Analyzing {symbol}...")
@@ -278,11 +294,75 @@ class PureAITrader:
                 today = datetime.now().date()
                 self.daily_trades[today] = self.daily_trades.get(today, 0) + 1
                 
-                # Устанавливаем cooldown для символа
-                self.symbol_cooldown[symbol] = datetime.now() + timedelta(hours=self.COOLDOWN_HOURS)
+                # Устанавливаем cooldown для символа (30 минут)
+                cooldown_end = datetime.now() + timedelta(minutes=self.COOLDOWN_MINUTES)
+                self.symbol_cooldown[symbol] = cooldown_end
+                logger.info(f"[PureAI] ⏱️ {symbol} cooldown set - next analysis at {cooldown_end.strftime('%H:%M')} ({self.COOLDOWN_MINUTES} min)")
+                
+                # Сохраняем информацию о позиции для мониторинга закрытия
+                self.tracked_positions[symbol] = {
+                    'signal_type': signal_type,
+                    'entry_price': entry_price,
+                    'stop_loss': stop_loss,
+                    'take_profit': take_profit,
+                    'entry_time': datetime.now(),
+                    'cooldown_end': cooldown_end
+                }
             
         except Exception as e:
             logger.error(f"[PureAI] Error processing signal: {e}", exc_info=True)
+    
+    def _check_closed_positions(self):
+        """
+        Проверка закрытых позиций и логирование завершения сделок.
+        Вызывается каждую минуту в главном цикле.
+        """
+        if not self.tracked_positions:
+            return
+        
+        if not self.executor or not hasattr(self.executor, 'has_position'):
+            return
+        
+        try:
+            # Проверяем каждую отслеживаемую позицию
+            for symbol in list(self.tracked_positions.keys()):
+                pos_info = self.tracked_positions[symbol]
+                
+                # Проверяем есть ли позиция в MT5
+                has_pos = self.executor.has_position(symbol=symbol)
+                
+                if not has_pos:
+                    # Позиция закрыта!
+                    entry_time = pos_info['entry_time']
+                    signal_type = pos_info['signal_type']
+                    entry_price = pos_info['entry_price']
+                    cooldown_end = pos_info.get('cooldown_end', datetime.now())
+                    
+                    # Вычисляем время держания позиции
+                    duration = datetime.now() - entry_time
+                    duration_str = f"{duration.seconds // 60}m" if duration.seconds < 3600 else f"{duration.seconds // 3600}h {(duration.seconds % 3600) // 60}m"
+                    
+                    # Вычисляем оставшийся кулдаун
+                    remaining_cooldown = (cooldown_end - datetime.now()).total_seconds() / 60
+                    
+                    logger.info("=" * 60)
+                    logger.info(f"[PureAI] 🏁 POSITION CLOSED: {symbol}")
+                    logger.info(f"[PureAI]    Direction: {signal_type}")
+                    logger.info(f"[PureAI]    Entry: {entry_price:.5f if 'EUR' in symbol else entry_price:.2f}")
+                    logger.info(f"[PureAI]    Duration: {duration_str}")
+                    
+                    if remaining_cooldown > 0:
+                        logger.info(f"[PureAI]    ⏱️ Cooldown active: next analysis in {remaining_cooldown:.0f} minutes (at {cooldown_end.strftime('%H:%M')})")
+                    else:
+                        logger.info(f"[PureAI]    ✅ Cooldown expired - symbol available for analysis")
+                    
+                    logger.info("=" * 60)
+                    
+                    # Удаляем из отслеживания
+                    del self.tracked_positions[symbol]
+                    
+        except Exception as e:
+            logger.error(f"[PureAI] Error checking closed positions: {e}")
     
     def _check_cooldown(self, symbol: str) -> bool:
         """
@@ -348,3 +428,34 @@ class PureAITrader:
                 status['cooldowns'][symbol] = f"{remaining:.0f} min"
         
         return status
+    
+    def get_next_analysis_time(self) -> str:
+        """
+        Получить время следующего анализа в человеко-читаемом формате.
+        
+        Returns:
+            Строка с временем следующего анализа
+        """
+        try:
+            next_time = self._get_next_analysis_time()
+            now = datetime.now()
+            
+            if next_time <= now:
+                return "сейчас"
+            
+            delta = next_time - now
+            delta_minutes = int(delta.total_seconds() / 60)
+            
+            if delta_minutes < 60:
+                return f"через {delta_minutes} мин"
+            else:
+                hours = delta_minutes // 60
+                minutes = delta_minutes % 60
+                if minutes > 0:
+                    return f"через {hours}ч {minutes}мин"
+                else:
+                    return f"через {hours}ч"
+        except Exception as e:
+            logger.error(f"[PureAI] Error getting next analysis time: {e}")
+            return "не определено"
+

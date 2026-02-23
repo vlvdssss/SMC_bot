@@ -73,7 +73,13 @@ def main():
         run_backtest(args.year)
     else:
         # GUI приложение
+        print("=" * 60)
+        print("🚀 BAZA Trading Bot V5.0 - Initializing...")
+        print("=" * 60)
+        print("⏳ Loading GUI modules...")
         from src.gui.app import main as gui_main
+        print("✅ GUI modules loaded")
+        print("🎨 Starting interface...")
         gui_main()
 
 

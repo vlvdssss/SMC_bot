@@ -1,0 +1,149 @@
+# ========================================================================
+# Trading Configuration Template
+# ========================================================================
+# Copy this file to config/trading.yaml
+# All settings can be changed in GUI: Settings → General / Trade Filters
+# ========================================================================
+
+trading:
+  enabled: true
+  dry_run: true  # ⚠️ KEEP TRUE for testing! Set to false only for LIVE trading
+  mode: auto  # auto, semi-auto, or manual
+  check_interval_seconds: 1
+  
+  # Trading Hours
+  hours:
+    start: 01:10
+    end: '23:30'
+  
+  # ========================================================================
+  # Risk Management
+  # ========================================================================
+  risk:
+    fixed_lot_size: 0.01
+    default_sl_pips: 40
+    default_tp_pips: 100
+    max_spread_pips: 1.5  # Deprecated - use filters.max_spread_pips
+  
+  # ========================================================================
+  # Trade Filters (XAUUSD Safe Preset - Default)
+  # ========================================================================
+  filters:
+    enabled: true
+    
+    # Quality Filters
+    min_confidence: 75      # Minimum AI confidence (%)
+    min_setup_score: 70     # Minimum setup quality score
+    min_rr: 1.2             # Minimum risk/reward ratio
+    
+    # Market Conditions
+    max_spread_pips: 1.5    # Maximum allowed spread (pips)
+    
+    # Trade Frequency
+    daily_limit: 6          # Maximum trades per day
+    
+    # Cooldown Periods (minutes)
+    cooldown_after_win: 15      # After winning trade
+    cooldown_after_loss: 45     # After 1 loss
+    cooldown_after_2_losses: 180  # After 2 consecutive losses
+    
+    # HTF Trend Filter
+    htf_timeframe: M15      # Higher timeframe for trend
+    htf_ema_fast: 50        # Fast EMA period
+    htf_ema_slow: 200       # Slow EMA period
+  
+  # ========================================================================
+  # Trailing Stop
+  # ========================================================================
+  trailing_stop:
+    enabled: true
+    activation_profit_percent: 30   # Activate after 30% profit
+    trailing_step_percent: 10       # Trail by 10% increments
+  
+  # ========================================================================
+  # Stop Loss Protection (Circuit Breaker)
+  # ========================================================================
+  stop_loss_protection:
+    enabled: true
+    consecutive_stops: 2        # Block after 2 consecutive losses
+    cooldown_minutes: 180       # Block for 3 hours
+  
+  # ========================================================================
+  # Profit Protection
+  # ========================================================================
+  profit_protection:
+    enabled: true
+    consecutive_wins: 3         # Block after 3 consecutive wins
+    cooldown_minutes: 180       # Cool off for 3 hours
+  
+  # ========================================================================
+  # Signal Time-To-Live (TTL)
+  # ========================================================================
+  signal_ttl:
+    enabled: true
+    ttl_minutes: 30                             # Signal expires after 30 min
+    auto_requery_on_expire: true                # Re-query AI on expire
+    auto_requery_on_close: true                 # Re-query after position closes
+    auto_requery_on_invalidate: true            # Re-query if signal invalidated
+    requery_cooldown_minutes: 15                # Cooldown between re-queries
+    auto_requery_invalidate_cooldown_minutes: 5 # Quick requery on invalidation
+  
+  # ========================================================================
+  # Signal Quality (Direction Control)
+  # ========================================================================
+  signal_quality:
+    invert_signals: false  # ⚠️ MUST be false for XAUUSD! (true = reverse direction)
+  
+  # ========================================================================
+  # Smart Money Concepts (SMC)
+  # ========================================================================
+  smc:
+    enabled: true
+    order_blocks: true
+    fair_value_gaps: true
+  
+  # ========================================================================
+  # Trend Filter
+  # ========================================================================
+  trend_filter:
+    enabled: true
+  
+  # ========================================================================
+  # Indicators
+  # ========================================================================
+  indicators:
+    timeframes:
+      - M15
+      - M30
+      - H1
+      - H4
+    ema_periods:
+      - 20
+      - 50
+      - 200
+    rsi_period: 14
+    atr_period: 14
+  
+  # ========================================================================
+  # V5 Improvements
+  # ========================================================================
+  v5_improvements:
+    # Adaptive Lot Sizing
+    adaptive_lot:
+      enabled: false  # Disabled by default (use fixed lot)
+      base_lot: 0.01
+      max_lot: 0.05
+      lookback_trades: 10
+    
+    # Session Adapter
+    session_adapter:
+      enabled: true
+    
+    # Technical Filter
+    technical_filter:
+      enabled: true
+      strict_mode: false
+    
+    # Rejected Trade Logger
+    rejected_logger:
+      enabled: true

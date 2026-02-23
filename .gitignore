@@ -1,4 +1,12 @@
+# ========================================================================
+# BAZA Trading Bot - .gitignore
+# ========================================================================
+# Excludes sensitive data, build artifacts, and temporary files
+# ========================================================================
+
+# ========================================================================
 # Python
+# ========================================================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -11,79 +19,213 @@ dist-info/
 venv/
 ENV/
 env/
+*.pyc
 
-# Testing
+# ========================================================================
+# Virtual Environments
+# ========================================================================
+.venv/
+venv/
+env/
+ENV/
+.env.local
+.env.*.local
+
+# ========================================================================
+# Testing & Coverage
+# ========================================================================
 .pytest_cache/
 .coverage
 htmlcov/
 .tox/
 *.cover
+.hypothesis/
+.pytest_cache/
+*.log
 
-# PyInstaller
+# ========================================================================
+# Build & Distribution
+# ========================================================================
 build/
 dist/
 *.spec
+*.exe
+*.app
+*.dmg
+*.pkg
+*.deb
+*.rpm
 
-# Logs
+# PyInstaller
+*.manifest
+*.spec
+
+# ========================================================================
+# Logs & Runtime Data
+# ========================================================================
 logs/
 *.log
+*.log.*
+debug.log
+error.log
+app.log
+bot.log
 
-# Data files
+# Trading logs & data
 data/ai_analysis/
 data/ai_signals/
 data/screenshots/
 data/backtest/
+data/runs/
 data/*.json
+data/*.jsonl
+decision_logs.jsonl
+run_state.json
 results/
 
-# Sensitive config
+# ========================================================================
+# SENSITIVE: Config Files (Secrets)
+# ========================================================================
+# All config files with secrets are excluded
+# Templates are in config/examples/ instead
+
 config/*.enc
 config/mt5.yaml
 config/telegram.yaml
-config/trading.yaml
 config/ai.yaml
+config/trading.yaml
 config/portfolio.yaml
 config/monitoring.yaml
+config/instruments.yaml
 config/.env
+
+# Root .env (API keys)
 .env
+.env.local
+.env.production
+.env.development
 
-# Credentials (на рабочем столе)
-../baza_credentials.txt
-**/baza_credentials.txt
+# ========================================================================
+# Credentials & API Keys
+# ========================================================================
+**/credentials.txt
+**/api_keys.txt
+**/secrets.txt
+**/*_secret*
+**/*_credential*
 
-# IDE
+# ========================================================================
+# IDE & Editors
+# ========================================================================
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 .vs/
+*.code-workspace
+.project
+.pydevproject
+.settings/
 
-# OS
+# ========================================================================
+# OS Files
+# ========================================================================
 .DS_Store
 Thumbs.db
 desktop.ini
+ehthumbs.db
+*.lnk
 
-# Archive
+# Windows
+$RECYCLE.BIN/
+Desktop.ini
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+.directory
+.fuse_hidden*
+.Trash-*
+
+# ========================================================================
+# Archive & Temporary Files
+# ========================================================================
 archive/
 *.bak
 *.tmp
-Thumbs.db
-desktop.ini
-
-# Temporary
-*.tmp
-*.bak
+*.temp
+*~
+*.swp
+*.swo
 booom.txt
 
-# Results
-results/
-
-# Models
+# ========================================================================
+# ML Models (Large Files)
+# ========================================================================
 models/*.pkl
 models/*.h5
+models/*.model
+models/*.joblib
+models/*.pt
+models/*.pth
+models/*.onnx
 
-# Tests
-.pytest_cache/
-.coverage
-htmlcov/
+# ========================================================================
+# Results & Reports
+# ========================================================================
+results/
+reports/
+*.csv
+*.xlsx
+
+# ========================================================================
+# Documentation Build
+# ========================================================================
+docs/_build/
+docs/_static/
+docs/_templates/
+site/
+
+# ========================================================================
+# Jupyter Notebooks (Checkpoints)
+# ========================================================================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ========================================================================
+# Pre-commit Hooks
+# ========================================================================
+.pre-commit-config.yaml
+
+# ========================================================================
+# Database Files
+# ========================================================================
+*.db
+*.sqlite
+*.sqlite3
+
+# ========================================================================
+# Backup Files
+# ========================================================================
+*.backup
+*.bak
+*_backup
+*_old
+*.orig
+
+# ========================================================================
+# Large Binary Files
+# ========================================================================
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# ========================================================================
+# End of .gitignore
+# ========================================================================

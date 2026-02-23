@@ -187,6 +187,177 @@ class ControlPanel(tk.Frame):
             command=self._reset_protection
         )
         self.reset_protection_btn.pack(side='left', padx=5)
+        
+        # === НОВЫЕ БЫСТРЫЕ КНОПКИ ===
+        # Вторая строка кнопок
+        btn_container_2 = tk.Frame(self, bg=Colors.BG_DARK)
+        btn_container_2.pack(pady=(0, 10))
+        
+        # Force Analysis
+        self.force_analysis_btn = tk.Button(
+            btn_container_2,
+            text="🚀 Force AI Analysis",
+            font=('Arial', 8, 'bold'),
+            bg=Colors.ACCENT,
+            fg='white',
+            activebackground=Colors.INFO,
+            activeforeground='white',
+            relief='flat',
+            cursor='hand2',
+            width=17,
+            command=self._force_analysis
+        )
+        self.force_analysis_btn.pack(side='left', padx=5)
+        
+        # Pause Trading
+        self.pause_btn = tk.Button(
+            btn_container_2,
+            text="⏸ Pause Trading",
+            font=('Arial', 8, 'bold'),
+            bg=Colors.WARNING,
+            fg='black',
+            activebackground='#e0a800',
+            activeforeground='black',
+            relief='flat',
+            cursor='hand2',
+            width=17,
+            command=self._toggle_pause
+        )
+        self.pause_btn.pack(side='left', padx=5)
+        self.is_paused = False
+        
+        # Show Positions
+        self.positions_btn = tk.Button(
+            btn_container_2,
+            text="📊 Open Positions",
+            font=('Arial', 8, 'bold'),
+            bg=Colors.INFO,
+            fg='white',
+            activebackground='#4080ff',
+            activeforeground='white',
+            relief='flat',
+            cursor='hand2',
+            width=17,
+            command=self._show_positions
+        )
+        self.positions_btn.pack(side='left', padx=5)
+        
+        # Emergency Stop
+        self.emergency_btn = tk.Button(
+            btn_container_2,
+            text="⚡ EMERGENCY",
+            font=('Arial', 8, 'bold'),
+            bg=Colors.ERROR,
+            fg='white',
+            activebackground='#c01010',
+            activeforeground='white',
+            relief='flat',
+            cursor='hand2',
+            width=15,
+            command=self._emergency_stop
+        )
+        self.emergency_btn.pack(side='left', padx=5)
+    
+    def _force_analysis(self):
+        """Принудительный запуск AI анализа"""
+        try:
+            from src.core.bot_manager import BotManager
+            bot_manager = BotManager()
+            
+            if hasattr(bot_manager, 'analyst_scheduler') and bot_manager.analyst_scheduler:
+                bot_manager.analyst_scheduler.force_analysis()
+                messagebox.showinfo("Success", "🚀 AI Analysis запущен!\\n\\nАнализ начнется в течение 10 секунд.\\nПроверьте логи для результатов.")
+                logger.info("[GUI] Force AI Analysis triggered")
+            else:
+                messagebox.showwarning("Warning", "Бот не запущен")
+        except Exception as e:
+            messagebox.showerror("Error", f"Ошибка запуска анализа:\\n{str(e)}")
+            logger.error(f"[GUI] Force analysis error: {e}")
+    
+    def _toggle_pause(self):
+        """Пауза/возобновление торговли"""
+        try:
+            from src.core.bot_manager import BotManager
+            bot_manager = BotManager()
+            
+            self.is_paused = not self.is_paused
+            
+            if self.is_paused:
+                self.pause_btn.config(text="▶ Resume Trading", bg=Colors.SUCCESS)
+                if hasattr(bot_manager, 'live_trader') and bot_manager.live_trader:
+                    bot_manager.live_trader.pause_trading()
+                messagebox.showinfo("Paused", "⏸ Торговля приостановлена\\n\\nБот продолжит анализ, но не будет открывать новые сделки.\\nОткрытые позиции продолжат работать.")
+                logger.info("[GUI] Trading paused")
+            else:
+                self.pause_btn.config(text="⏸ Pause Trading", bg=Colors.WARNING)
+                if hasattr(bot_manager, 'live_trader') and bot_manager.live_trader:
+                    bot_manager.live_trader.resume_trading()
+                messagebox.showinfo("Resumed", "▶ Торговля возобновлена\\n\\nБот продолжит открывать сделки.")
+                logger.info("[GUI] Trading resumed")
+        except Exception as e:
+            messagebox.showerror("Error", f"Ошибка паузы:\\n{str(e)}")
+            logger.error(f"[GUI] Toggle pause error: {e}")
+    
+    def _show_positions(self):
+        """Показать открытые позиции"""
+        try:
+            from src.core.bot_manager import BotManager
+            bot_manager = BotManager()
+            
+            if hasattr(bot_manager, 'live_trader') and bot_manager.live_trader:
+                positions = bot_manager.live_trader.get_open_positions()
+                
+                if not positions:
+                    messagebox.showinfo("Positions", "📊 Нет открытых позиций\\n\\nВсе позиции закрыты.")
+                    return
+                
+                pos_text = f"📊 Открытые позиции ({len(positions)}):\\n\\n"
+                for pos in positions:
+                    profit = pos.get('profit', 0)
+                    profit_sign = '+' if profit >= 0 else ''
+                    pos_text += (
+                        f"{'✅' if profit >= 0 else '❌'} #{pos.get('ticket')}\\n"
+                        f"   {pos.get('symbol')} {pos.get('type')}\\n"
+                        f"   Entry: {pos.get('price_open'):.5f}\\n"
+                        f"   SL: {pos.get('sl', 0):.5f} | TP: {pos.get('tp', 0):.5f}\\n"
+                        f"   💰 P&L: {profit_sign}${profit:.2f}\\n\\n"
+                    )
+                
+                messagebox.showinfo("Open Positions", pos_text)
+                logger.info(f"[GUI] Displayed {len(positions)} open positions")
+            else:
+                messagebox.showwarning("Warning", "Бот не запущен")
+        except Exception as e:
+            messagebox.showerror("Error", f"Ошибка получения позиций:\\n{str(e)}")
+            logger.error(f"[GUI] Show positions error: {e}")
+    
+    def _emergency_stop(self):
+        """Аварийная остановка"""
+        try:
+            result = messagebox.askyesnocancel("⚠️ EMERGENCY STOP", 
+                                              "⚠️ АВАРИЙНАЯ ОСТАНОВКА!\\n\\n"
+                                              "Это действие:\\n"
+                                              "• Закроет ВСЕ открытые позиции НЕМЕДЛЕННО\\n"
+                                              "• Остановит бота\\n"
+                                              "• Прекратит любые операции\\n\\n"
+                                              "Вы УВЕРЕНЫ?",
+                                              icon='warning')
+            
+            if result:
+                from src.core.bot_manager import BotManager
+                bot_manager = BotManager()
+                
+                if hasattr(bot_manager, 'emergency_stop'):
+                    bot_manager.emergency_stop()
+                    self.control_btn.config(text="▶ START BOT", bg=Colors.SUCCESS)
+                    self.is_running = False
+                    messagebox.showinfo("Stopped", "⚡ EMERGENCY STOP выполнен!\\n\\nВсе позиции закрыты.\\nБот остановлен.")
+                    logger.warning("[GUI] EMERGENCY STOP triggered")
+                else:
+                    messagebox.showinfo("Info", "Бот уже остановлен")
+        except Exception as e:
+            messagebox.showerror("Error", f"Ошибка аварийной остановки:\\n{str(e)}")
+            logger.error(f"[GUI] Emergency stop error: {e}")
     
     def _reset_protection(self):
         """Сброс protection блокировок"""
@@ -307,8 +478,8 @@ class CurrentSettingsPanel(tk.Frame):
         # Risk %
         self._create_setting_row(settings_frame, "Risk:", "1.0%")
         
-        # MT5 Status
-        self._create_setting_row(settings_frame, "MT5:", "Connected")
+        # Trading Status (ON/OFF)
+        self._create_setting_row(settings_frame, "Trading:", "OFF")
         
         # AI Model
         self._create_setting_row(settings_frame, "AI:", "GPT-4o")
@@ -340,12 +511,12 @@ class CurrentSettingsPanel(tk.Frame):
                 risk = settings.get('risk_percent', 1.0)
                 self._risk_label.config(text=f"{risk}%")
             
-            # MT5 Status
-            if hasattr(self, '_mt5_label'):
-                mt5_connected = settings.get('mt5_connected', False)
-                self._mt5_label.config(
-                    text="OK" if mt5_connected else "Off",
-                    fg=Colors.SUCCESS if mt5_connected else Colors.ERROR
+            # Trading Status
+            if hasattr(self, '_trading_label'):
+                trading_mode = settings.get('trading_mode', False)
+                self._trading_label.config(
+                    text="ON" if trading_mode else "OFF",
+                    fg=Colors.SUCCESS if trading_mode else Colors.ERROR
                 )
             
             # AI Model
@@ -1214,6 +1385,7 @@ class BazaApp:
     """Главное приложение с новым UI"""
     
     def __init__(self):
+        print("⏳ Creating GUI window...")
         self.root = tk.Tk()
         self.root.title("BAZA Trading Bot - Pure AI Mode")
         
@@ -1223,6 +1395,7 @@ class BazaApp:
         self.root.configure(bg=Colors.BG_DARK)
         
         # Инициализация состояния
+        print("⏳ Initializing app state...")
         self.app_state = AppState()
         self.stop_event = threading.Event()
         self.bot_running = False
@@ -1232,23 +1405,26 @@ class BazaApp:
         self.bot_manager = BotManager()
         
         # Загрузка настроек
+        print("⏳ Loading configuration...")
         self.load_settings()
         self.load_mt5_config()
         
         # Создание UI (сначала UI, потом MT5 чтобы header был доступен)
+        print("⏳ Building interface...")
         self._create_ui()
         
-        # Инициализация MT5
-        self._init_mt5_manager()
+        # Инициализация MT5 в фоне (не блокирует GUI)
+        print("⏳ Starting background services...")
+        self.root.after(100, self._init_mt5_manager)
         
-        # Запуск мониторинга
-        self._start_mt5_monitoring()
+        # Запуск мониторинга (после небольшой задержки)
+        self.root.after(500, self._start_mt5_monitoring)
         
         # Установка callback для логов
         app_logger.set_gui_callback(self.add_log)
         
-        # Системная диагностика
-        self._run_diagnostics()
+        # Системная диагностика в фоне
+        self.root.after(200, self._run_diagnostics)
         
         # Первичное обновление панели настроек
         if hasattr(self, 'settings_info_panel'):
@@ -1259,6 +1435,8 @@ class BazaApp:
         if AI_ANALYSIS_AVAILABLE and hasattr(self, 'analyst_panel'):
             self.root.after(1000, self.analyst_panel.refresh_analysis)
         
+        print("✅ GUI interface ready! (Background services starting...)")
+        print("=" * 60)
         app_logger.info("[BAZA] Trading Terminal started")
     
     def _create_ui(self):
@@ -1468,7 +1646,8 @@ class BazaApp:
                     # КРИТИЧНО: Передаём существующий signal_manager из trader
                     scheduler = init_scheduler(
                         executor=trader.executor,
-                        signal_manager=trader.ai_signal_manager
+                        signal_manager=trader.ai_signal_manager,
+                        rejected_logger=trader.rejected_logger
                     )
                     scheduler.start()
                     app_logger.info("[LOOP] AI Scheduler started for Pure AI mode")
@@ -1484,8 +1663,11 @@ class BazaApp:
                     # Scheduler reference уже установлен, так что NONE retry будет работать
                     app_logger.info("[LOOP] 🔥 Requesting initial AI analysis for Pure AI mode...")
                     try:
-                        # Запрос анализа только для активных инструментов
-                        for symbol in ['XAUUSD']:  # EURUSD отключен
+                        # Запрос анализа для всех активных инструментов
+                        # 💎 FIXED: Loading symbols from PureAITrader.SYMBOLS (no hardcoding)
+                        from src.ai.pure_ai_trader import PureAITrader
+                        symbols = getattr(PureAITrader, 'SYMBOLS', ['XAUUSD'])  # Default to XAUUSD only
+                        for symbol in symbols:
                             scheduler.trigger_immediate_analysis(
                                 symbol=symbol,
                                 reason="Pure AI mode started - initial analysis"
@@ -1650,26 +1832,21 @@ class BazaApp:
             if success:
                 self.header.update_mt5_status(True)
                 app_logger.info(f"[MT5] {message}")
+                print("✅ MT5 connected successfully!")
                 
                 # Связать BotManager с MT5
                 self.bot_manager.set_mt5_manager(self.app_state.mt5_manager)
                 
                 # ИСПРАВЛЕНО: Обновить статистику через метод app
                 self._update_stats_from_mt5()
+                
+                # Обновить панель Current Settings после подключения MT5
+                if hasattr(self, 'settings_info_panel'):
+                    settings = self.bot_manager.get_current_settings()
+                    self.settings_info_panel.update_settings(settings)
             else:
                 self.header.update_mt5_status(False)
                 app_logger.error(f"[MT5] Connection failed: {message}")
-                messagebox.showerror(
-                    "MT5 Connection Failed",
-                    f"Failed to connect to MT5 account!\n\n"
-                    f"Error: {message}\n\n"
-                    f"Please check:\n"
-                    f"• Login: {login}\n"
-                    f"• Server: {server}\n"
-                    f"• Password is correct\n"
-                    f"• MetaTrader 5 is running\n\n"
-                    f"Use Settings → MT5 Connection to update."
-                )
                 
         except Exception as e:
             app_logger.error(f"[MT5] Error: {e}")
@@ -1692,6 +1869,11 @@ class BazaApp:
                             
                             # ИСПРАВЛЕНО: Обновить статистику через общий метод
                             self.root.after(0, self._update_stats_from_mt5)
+                            
+                            # Обновить Current Settings панель
+                            if hasattr(self, 'settings_info_panel'):
+                                settings = self.bot_manager.get_current_settings()
+                                self.root.after(0, lambda s=settings: self.settings_info_panel.update_settings(s))
                     
                     threading.Event().wait(2)
                 except Exception as e:
@@ -1742,6 +1924,8 @@ class BazaApp:
                     app_logger.startup(f"All systems operational ({working}/{total_systems})")
             else:
                 app_logger.startup("All systems operational")
+            
+            print("✅ System diagnostics completed!")
                 
         except Exception as e:
             app_logger.error(f"[Diagnostics] Failed to run diagnostics: {e}")

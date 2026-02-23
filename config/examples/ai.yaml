@@ -1,0 +1,117 @@
+# ========================================================================
+# AI Configuration Template
+# ========================================================================
+# Copy this file to config/ai.yaml and configure your AI settings
+# Edit API key in GUI: Settings → General → GPT API Key
+# ========================================================================
+
+ai_enabled: true
+
+manual_overrides:
+  enabled: false
+  eurusd:
+    fixed_lot: null
+    sl_pips: 30
+    tp_pips: 50
+  xauusd:
+    fixed_lot: null
+    sl_dollars: 4.5
+    tp_dollars: 12.0
+
+market_analyst:
+  enabled: true
+  analysis_version: '1.0'
+  prompt_version: 2026-01
+  
+  # GPT Configuration (⚠️ Edit in GUI instead!)
+  gpt:
+    api_key: null  # Set in GUI: Settings → GPT API Key
+    model: gpt-4o
+    temperature: 0.3
+    max_tokens: 4000
+  
+  # Analysis Schedule
+  schedule:
+    enabled: true
+    mode: interval  # interval or scheduled
+    interval_minutes: 60  # Analyze every 60 minutes
+    times: []  # For scheduled mode: ["09:00", "15:00"]
+    
+    restrictions:
+      weekend_block:
+        enabled: true
+        friday_start: '22:00'
+        monday_end: 01:00
+      night_block:
+        enabled: false
+        start: '22:00'
+        end: 02:00
+  
+  # Screenshot Generation
+  screenshots:
+    enabled: true
+    timeframes:
+      - M5
+      - M15
+    bars: 200
+    dpi: 150
+    cleanup_days: 7
+  
+  # Signal Management
+  signals:
+    default_ttl_hours: 24
+    validity_minutes: 60
+    confidence_decay: true
+    auto_cleanup: true
+  
+  signal_validity_minutes: 30
+  
+  # Safety Limits
+  safety:
+    max_daily_calls: 50
+    max_monthly_cost: 50.0
+    min_minutes_between_calls: 15
+  
+  # Fallback Behavior
+  fallback:
+    use_stale_analysis: true
+    max_stale_hours: 6
+    on_error: warning  # warning, block, or skip
+  
+  # Block Severity Weights
+  blocks:
+    none: 1.0
+    bias: 0.8
+    warning: 0.5
+    soft_block: 0.3
+    hard_block: 0.0
+    auto_expire_hours: 12
+
+# News Filter (Optional)
+news_filter:
+  enabled: false
+  instruments:
+    - XAUUSD
+  cache_duration: 3600
+  
+  openai:
+    model: gpt-4o-mini
+    temperature: 0.1
+    max_tokens: 100
+  
+  risk_actions:
+    LOW: trade
+    MEDIUM: reduce_75
+    HIGH: reduce_50
+    EXTREME: skip
+
+# Pure AI Mode
+pure_ai:
+  enabled: true
+  symbols:
+    - XAUUSD
+  timeframes:
+    - M5
+    - M15
+  analysis_interval_minutes: 30
+  max_positions_per_symbol: 1

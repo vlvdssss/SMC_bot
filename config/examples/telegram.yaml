@@ -1,0 +1,51 @@
+# ========================================================================
+# Telegram Configuration Template
+# ========================================================================
+# Copy this file to config/telegram.yaml
+# ⚠️ Edit in GUI: Settings → Telegram
+# ========================================================================
+
+telegram:
+  enabled: false  # Enable Telegram notifications
+  enable_bot: true  # Enable interactive bot commands
+  
+  # Bot Credentials (⚠️ Configure in GUI!)
+  bot_token: ''   # Get from @BotFather on Telegram
+  chat_id: ''     # Your Telegram chat ID
+  
+  # Notification Settings
+  notify:
+    startup: true           # Bot started notification
+    trade_opened: true      # Trade open notifications
+    trade_closed: true      # Trade close notifications
+    daily_report: true      # Daily performance summary
+    alerts: true            # Error/warning alerts
+  
+  # Alert Level Filter
+  alert_min_level: WARNING  # Minimum level to send: INFO, WARNING, ERROR
+
+# ========================================================================
+# SETUP INSTRUCTIONS
+# ========================================================================
+# 1. Get Bot Token:
+#    - Open Telegram
+#    - Search for @BotFather
+#    - Send /newbot
+#    - Follow instructions to create your bot
+#    - Copy the bot token
+#
+# 2. Get Chat ID:
+#    - Search for @userinfobot on Telegram
+#    - Send /start
+#    - Copy your chat ID (numeric)
+#
+# 3. Configure in GUI:
+#    - Open GUI → Settings → Telegram
+#    - Paste bot token
+#    - Paste chat ID
+#    - Click "Save"
+#
+# 4. Test:
+#    - Send /start to your bot
+#    - You should receive a welcome message
+# ========================================================================

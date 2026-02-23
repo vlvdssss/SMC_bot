@@ -15,8 +15,7 @@ monitoring:
   save_trades: true
 portfolio:
   allocation:
-    EURUSD: 0.7
-    XAUUSD: 0.3
+    XAUUSD: 1.0
   baseline_performance:
     contribution:
       EURUSD: 47.7
@@ -30,8 +29,7 @@ portfolio:
     win_rate_avg: 66.65
   instruments:
   - XAUUSD
-  - EURUSD
-  name: XAUUSD + EURUSD Baseline Portfolio
+  name: XAUUSD Pure Strategy (5-Day Safe)
   risk_model:
     allow_simultaneous_positions: true
     max_total_exposure: 1.25

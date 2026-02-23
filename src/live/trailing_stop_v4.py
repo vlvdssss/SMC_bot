@@ -126,6 +126,7 @@ class TrailingStopV4:
             # Check position still exists
             positions = self.mt5.positions_get(ticket=ticket)
             if not positions or len(positions) == 0:
+                logger.debug(f"[V4-Trailing] Position #{ticket} no longer exists")
                 continue
             
             current_position = positions[0]
@@ -146,6 +147,12 @@ class TrailingStopV4:
             
             if direction == 'BUY':
                 current_profit = current_price - entry
+                
+                # DEBUG: Log trailing check status
+                profit_percent = (current_profit / tp_distance) * 100 if tp_distance > 0 else 0
+                activation_percent = self.activation_percent
+                
+                logger.debug(f"[V4-Trailing] Checking BUY #{ticket}: profit ${current_profit:.2f} ({profit_percent:.0f}%), activation at ${activation_threshold:.2f} ({activation_percent}%)")
                 
                 # Проверка активации
                 if current_profit >= activation_threshold:
@@ -199,6 +206,12 @@ class TrailingStopV4:
             
             elif direction == 'SELL':
                 current_profit = entry - current_price
+                
+                # DEBUG: Log trailing check status
+                profit_percent = (current_profit / tp_distance) * 100 if tp_distance > 0 else 0
+                activation_percent = self.activation_percent
+                
+                logger.debug(f"[V4-Trailing] Checking SELL #{ticket}: profit ${current_profit:.2f} ({profit_percent:.0f}%), activation at ${activation_threshold:.2f} ({activation_percent}%)")
                 
                 # Проверка активации
                 if current_profit >= activation_threshold:

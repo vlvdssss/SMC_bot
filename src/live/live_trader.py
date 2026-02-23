@@ -12,6 +12,7 @@ from pathlib import Path
 import sys
 from src.core.logger import logger
 from src.core.risk_manager import RiskManager
+from src.core.state_core import get_state_core, BotStatus
 
 # Helper для работы с путями в EXE
 def get_data_path(filename):
@@ -55,8 +56,37 @@ try:
 except ImportError:
     MONITORING_AVAILABLE = False
 
+# V5 Improvements
+try:
+    from src.ai.technical_filter import TechnicalConfirmation
+    TECHNICAL_FILTER_AVAILABLE = True
+except ImportError:
+    TECHNICAL_FILTER_AVAILABLE = False
+    logger.warning("[V5] Technical Filter not available")
+
+try:
+    from src.ai.session_adapter import SessionAdapter
+    SESSION_ADAPTER_AVAILABLE = True
+except ImportError:
+    SESSION_ADAPTER_AVAILABLE = False
+    logger.warning("[V5] Session Adapter not available")
+
+try:
+    from src.ai.adaptive_lot import AdaptiveLotSizing
+    ADAPTIVE_LOT_AVAILABLE = True
+except ImportError:
+    ADAPTIVE_LOT_AVAILABLE = False
+    logger.warning("[V5] Adaptive Lot not available")
+
+try:
+    from src.ai.rejected_logger import RejectedSignalsLogger
+    REJECTED_LOGGER_AVAILABLE = True
+except ImportError:
+    REJECTED_LOGGER_AVAILABLE = False
+    logger.warning("[V5] Rejected Logger not available")
+
 class LiveTrader:
-    def __init__(self, config_dir: str = 'config', enable_trading: bool = False, enable_gpt: bool = True) -> None:
+    def __init__(self, config_dir: str = 'config', enable_trading: bool = False, enable_gpt: bool = True, bot_queue=None) -> None:
         """
         Args:
             config_dir: Путь к папке с конфигами
@@ -78,6 +108,9 @@ class LiveTrader:
         self.enable_trading: bool = enable_trading
         self.enable_gpt: bool = enable_gpt
         self.connected: bool = False
+        
+        # Bot queue for event-driven UI updates
+        self.bot_queue = bot_queue
         
         # Флаг для отслеживания блокировки торговли (чтобы не спамить логи)
         self._last_block_reason: str = None
@@ -115,7 +148,11 @@ class LiveTrader:
         logger.info("[LiveTrader] Initializing Executor...")
         from src.core.executor import Executor
         magic_number = self.mt5_config.get('mt5', {}).get('settings', {}).get('magic_number', 123456)
-        self.executor = Executor(mt5_connector=self.mt5_connector, magic_number=magic_number)
+        self.executor = Executor(
+            mt5_connector=self.mt5_connector,
+            magic_number=magic_number,
+            bot_queue=getattr(self, 'bot_queue', None)  # Pass bot_queue for events
+        )
         logger.info(f"[LiveTrader] Executor ready (Magic: {magic_number})")
         
         # Инициализация RiskManager для trailing расчётов
@@ -154,7 +191,11 @@ class LiveTrader:
                 logger.info("[LiveTrader] Initializing AI Signal Manager...")
                 # Передаем telegram_notifier если он уже инициализирован
                 telegram_for_signals = getattr(self, 'telegram', None)
-                self.ai_signal_manager = AISignalManager(telegram_notifier=telegram_for_signals)
+                self.ai_signal_manager = AISignalManager(
+                    telegram_notifier=telegram_for_signals,
+                    bot_queue=getattr(self, 'bot_queue', None),  # Pass bot_queue for events
+                    mt5_connector=self.mt5_connector  # 🔥 Pass MT5 connector for Trade Filters
+                )
                 # Set executor reference for position checks
                 self.ai_signal_manager.set_executor(self.executor)
                 
@@ -178,6 +219,19 @@ class LiveTrader:
         else:
             logger.warning("[LiveTrader] AI Signal Manager unavailable")
         
+        # StateCore - единый источник правды
+        logger.info("[LiveTrader] Initializing StateCore...")
+        self.state_core = get_state_core()
+        self.state_core.set_status(BotStatus.IDLE)
+        
+        # Register MT5 connector for watchdog
+        self.state_core.set_mt5_connector(self.mt5_connector)
+        
+        # Start background tasks (MT5 watchdog, invariants checker)
+        self.state_core.start_background_tasks()
+        
+        logger.info("[LiveTrader] StateCore integrated with watchdog enabled")
+        
         # Инициализация ML Data Collector для сбора данных для обучения
         self.ml_collector = None
         if ML_DATA_COLLECTOR_AVAILABLE:
@@ -189,6 +243,85 @@ class LiveTrader:
                 logger.error(f"[LiveTrader] Failed to init ML Data Collector: {e}")
         else:
             logger.debug("[LiveTrader] ML Data Collector unavailable")
+        
+        # ✅ V5: Инициализация новых модулей
+        logger.info("[LiveTrader] Initializing V5 improvements...")
+        
+        # Загружаем V5 конфиг из trading.yaml
+        v5_config = self.config.get('trading', {}).get('v5_improvements', {})
+        
+        # Technical Filter (гибридная стратегия GPT + Technical)
+        self.tech_filter = None
+        tech_config = v5_config.get('technical_filter', {})
+        tech_enabled = tech_config.get('enabled', True)
+        tech_strict = tech_config.get('strict_mode', False)
+        
+        if TECHNICAL_FILTER_AVAILABLE and tech_enabled:
+            try:
+                self.tech_filter = TechnicalConfirmation(strict_mode=tech_strict)
+                mode_text = "STRICT" if tech_strict else "BALANCED"
+                logger.info(f"[V5] ✅ Technical Confirmation Filter enabled ({mode_text} mode)")
+            except Exception as e:
+                logger.error(f"[V5] Failed to init Technical Filter: {e}")
+        else:
+            reason = "disabled in config" if not tech_enabled else "module not available"
+            logger.warning(f"[V5] ⚠️ Technical Filter disabled ({reason})")
+        
+        # Session Adapter (адаптация под торговые сессии)
+        self.session_adapter = None
+        session_config = v5_config.get('session_adapter', {})
+        session_enabled = session_config.get('enabled', True)
+        
+        if SESSION_ADAPTER_AVAILABLE and session_enabled:
+            try:
+                self.session_adapter = SessionAdapter()
+                logger.info("[V5] ✅ Session Adapter enabled (Asian/European/US adaptation)")
+            except Exception as e:
+                logger.error(f"[V5] Failed to init Session Adapter: {e}")
+        else:
+            reason = "disabled in config" if not session_enabled else "module not available"
+            logger.warning(f"[V5] ⚠️ Session Adapter disabled ({reason})")
+        
+        # Adaptive Lot Sizing (умный расчет лота)
+        self.lot_sizer = None
+        lot_config = v5_config.get('adaptive_lot', {})
+        lot_enabled = lot_config.get('enabled', True)
+        
+        if ADAPTIVE_LOT_AVAILABLE and lot_enabled:
+            try:
+                base_lot = lot_config.get('base_lot', risk_config.get('fixed_lot_size', 0.01))
+                max_lot = lot_config.get('max_lot', 0.05)
+                lookback = lot_config.get('lookback_trades', 10)
+                
+                self.lot_sizer = AdaptiveLotSizing(
+                    base_lot=base_lot,
+                    min_lot=0.01,
+                    max_lot=max_lot,
+                    lookback_trades=lookback
+                )
+                logger.info(f"[V5] ✅ Adaptive Lot Sizing enabled (base={base_lot}, max={max_lot}, lookback={lookback})")
+            except Exception as e:
+                logger.error(f"[V5] Failed to init Adaptive Lot: {e}")
+        else:
+            reason = "disabled in config" if not lot_enabled else "module not available"
+            logger.warning(f"[V5] ⚠️ Adaptive Lot disabled ({reason})")
+        
+        # Rejected Signals Logger (логирование отклоненных сигналов)
+        self.rejected_logger = None
+        logger_config = v5_config.get('rejected_logger', {})
+        logger_enabled = logger_config.get('enabled', True)
+        
+        if REJECTED_LOGGER_AVAILABLE and logger_enabled:
+            try:
+                self.rejected_logger = RejectedSignalsLogger()
+                logger.info("[V5] ✅ Rejected Signals Logger enabled")
+            except Exception as e:
+                logger.error(f"[V5] Failed to init Rejected Logger: {e}")
+        else:
+            reason = "disabled in config" if not logger_enabled else "module not available"
+            logger.warning(f"[V5] ⚠️ Rejected Logger disabled ({reason})")
+        
+        logger.info("[LiveTrader] V5 improvements initialized")
         
         # Инициализация мониторинга
         logger.info("[LiveTrader] Initializing monitoring (Telegram)...")
@@ -520,12 +653,37 @@ class LiveTrader:
             for trade in new_trades:
                 trade_id = int(trade.get('id', 0))
                 pnl = trade.get('pnl', 0)
+                symbol = trade.get('instrument', trade.get('symbol', 'UNKNOWN'))
+                ticket = trade.get('ticket', trade_id)  # Ticket может быть в 'ticket' или использовать trade_id
                 
                 # Для Pure AI все закрытия через SL/TP, не трейлинг
                 is_trailing = False
                 
                 # Регистрируем результат для защиты
                 self._register_trade_result(pnl=pnl, is_trailing_stop=is_trailing)
+                
+                # 🔥 Record trade result for Trade Filters (cooldown management)
+                if self.ai_signal_manager and hasattr(self.ai_signal_manager, 'trade_filters'):
+                    try:
+                        self.ai_signal_manager.trade_filters.record_trade_result(symbol, pnl)
+                    except Exception as e:
+                        logger.debug(f"[Trade Filters] Failed to record result: {e}")
+                
+                # STATECORE: Log CLOSE event and clear active signal when position closed
+                if self.state_core.active_signal and self.state_core.active_signal.symbol == symbol:
+                    # Log CLOSE event with P&L and duration
+                    self.state_core.log_close_event(
+                        ticket=ticket,
+                        symbol=symbol,
+                        pnl=pnl,
+                        signal_id=self.state_core.active_signal.signal_id
+                    )
+                    
+                    result_str = "WIN" if pnl > 0 else "LOSS"
+                    self.state_core.clear_active_signal(reason=f"Position closed ({result_str}, P&L: ${pnl:.2f})")
+                    
+                    # Update status to WAITING
+                    self.state_core.set_status(BotStatus.WAITING)
                 
                 # Обновляем ID последней обработанной сделки
                 self._last_processed_trade_id = trade_id
@@ -850,11 +1008,6 @@ class LiveTrader:
                 logger.info(f"[LiveTrader] Found {len(ai_signals)} AI signals")
                 signals.extend(ai_signals)
                 
-                # КРИТИЧНО: Проверяем нет ли открытой позиции ПЕРЕД исполнением
-                if self.executor and self.executor.has_position():
-                    logger.warning("[LiveTrader] Position already open - AI signals saved but NOT executed yet")
-                    return signals  # Сигналы сохранены, исполним после закрытия позиции
-                
                 # КРИТИЧНО: Проверяем доступность GPT перед торговлей
                 if hasattr(self, 'analyst_scheduler') and self.analyst_scheduler:
                     analyst = getattr(self.analyst_scheduler, 'analyst', None)
@@ -863,13 +1016,19 @@ class LiveTrader:
                         logger.warning("[LiveTrader] Recovery in progress... waiting for GPT reconnection")
                         return signals  # Не торгуем пока GPT недоступен
                 
-                # Исполняем AI сигналы (только один раз здесь)
+                # Исполняем AI сигналы (multi-symbol: по 1 позиции на символ)
                 if self.enable_trading:
                     for ai_signal in ai_signals:
                         symbol = ai_signal.get('symbol')
+                        
+                        # Проверяем позицию по конкретному символу
+                        if self.executor and self.executor.has_position(symbol=symbol):
+                            logger.debug(f"[LiveTrader] Position already open for {symbol} - skipping")
+                            continue
+                        
                         logger.info(f"[LiveTrader] Executing AI signal for {symbol}")
                         self.execute_trade(symbol, ai_signal)
-                        break  # ← ВАЖНО: Только 1 сделка за раз
+                        # No break - allow multiple symbols to trade simultaneously
             else:
                 logger.debug("[LiveTrader] No triggered AI signals found")
         else:
@@ -1072,9 +1231,14 @@ class LiveTrader:
                     logger.warning("[TRADE] Trading blocked until GPT recovery completes")
                     return None
             
-            # КРИТИЧНО: Проверяем нет ли уже открытой позиции
-            if self.executor.has_position():
-                logger.warning(f"[TRADE] Position already open - ignoring new signal for {symbol}")
+            # КРИТИЧНО: Проверяем нет ли уже открытой позиции ДЛЯ ЭТОГО СИМВОЛА (max 1 per symbol)
+            try:
+                positions = self.mt5_connector.positions_get(symbol=symbol)
+                if positions and len(positions) > 0:
+                    logger.warning(f"[TRADE] Position already open for {symbol} - ignoring new signal (max 1 per symbol)")
+                    return None
+            except Exception as e:
+                logger.error(f"[TRADE] Failed to check positions for {symbol}: {e}")
                 return None
             
             # Проверяем включена ли торговля для этого инструмента
@@ -1082,7 +1246,385 @@ class LiveTrader:
                 logger.info(f"[TRADE] Trading disabled for {symbol} in config - signal ignored")
                 return None
             
-            result = self.executor.execute_signal(symbol, signal)
+            # ✅ V5: ПРИМЕНЯЕМ НОВЫЕ ФИЛЬТРЫ ПЕРЕД ИСПОЛНЕНИЕМ
+            direction = signal.get('direction', '').upper()
+            if direction.lower() == 'long':
+                direction = 'BUY'
+            elif direction.lower() == 'short':
+                direction = 'SELL'
+            
+            entry = signal.get('entry_price', signal.get('entry', 0))
+            sl = signal.get('sl', signal.get('stop_loss', 0))
+            tp = signal.get('tp', signal.get('take_profit', 0))
+            
+            # FIXED: Handle decimal confidence from signals (0-1 format)
+            raw_confidence = signal.get('confidence', 75)
+            if isinstance(raw_confidence, str):
+                try:
+                    raw_confidence = float(raw_confidence)
+                except (ValueError, TypeError):
+                    raw_confidence = 75
+            
+            # Convert decimal (0-1) to percentage (0-100)
+            if isinstance(raw_confidence, (int, float)) and raw_confidence <= 1.0:
+                confidence = int(raw_confidence * 100)  # Convert 0.85 → 85%
+                logger.info(f"[LiveTrader] Converted decimal confidence {raw_confidence} → {confidence}%")
+            else:
+                confidence = int(raw_confidence) if raw_confidence > 1 else 75
+            
+            lot_size = signal.get('lot_size', signal.get('volume', 0.01))
+            
+            # 1️⃣ TECHNICAL CONFIRMATION FILTER
+            if self.tech_filter and confidence < 80:
+                try:
+                    confirmed, reason, tech_data = self.tech_filter.confirm_signal(
+                        symbol=symbol,
+                        direction=direction,
+                        confidence=confidence,
+                        entry_price=entry
+                    )
+                    
+                    if not confirmed:
+                        logger.warning(f"[V5-TechFilter] ❌ Signal REJECTED: {reason}")
+                        
+                        # Emit risk_blocked event to GUI
+                        if hasattr(self, 'bot_queue') and self.bot_queue and signal_id:
+                            try:
+                                signal_id_short = signal_id[-6:] if len(signal_id) >= 6 else signal_id
+                                self.bot_queue.put({
+                                    'type': 'risk_blocked',
+                                    'signal_id': signal_id,
+                                    'signal_id_short': signal_id_short,
+                                    'reason': f"Technical Filter: {reason}",
+                                    'filter_type': 'technical',
+                                    'symbol': symbol
+                                })
+                                logger.debug(f"[TRADE] Event emitted: risk_blocked (TechFilter)")
+                            except Exception as e:
+                                logger.error(f"[TRADE] Failed to emit risk_blocked event: {e}")
+                        
+                        # Логируем отклонение
+                        if self.rejected_logger:
+                            self.rejected_logger.log_rejection(
+                                symbol=symbol, direction=direction, confidence=confidence,
+                                entry=entry, sl=sl, tp=tp,
+                                reason=reason, filter_type='technical',
+                                tech_data=tech_data
+                            )
+                        return None
+                    
+                    logger.info(f"[V5-TechFilter] ✅ Signal CONFIRMED: {reason}")
+                except Exception as e:
+                    logger.error(f"[V5-TechFilter] Filter error: {e}")
+            
+            # 2️⃣ SESSION ADAPTER
+            if self.session_adapter:
+                try:
+                    new_sl, new_tp, new_lot, allowed, reason = self.session_adapter.adapt_signal_parameters(
+                        entry=entry,
+                        sl=sl,
+                        tp=tp,
+                        confidence=confidence,
+                        lot=lot_size
+                    )
+                    
+                    if not allowed:
+                        logger.warning(f"[V5-SessionAdapter] ❌ Signal REJECTED: {reason}")
+                        
+                        # Emit risk_blocked event to GUI
+                        if hasattr(self, 'bot_queue') and self.bot_queue and signal_id:
+                            try:
+                                signal_id_short = signal_id[-6:] if len(signal_id) >= 6 else signal_id
+                                self.bot_queue.put({
+                                    'type': 'risk_blocked',
+                                    'signal_id': signal_id,
+                                    'signal_id_short': signal_id_short,
+                                    'reason': f"Session Adapter: {reason}",
+                                    'filter_type': 'session',
+                                    'symbol': symbol
+                                })
+                                logger.debug(f"[TRADE] Event emitted: risk_blocked (SessionAdapter)")
+                            except Exception as e:
+                                logger.error(f"[TRADE] Failed to emit risk_blocked event: {e}")
+                        
+                        # Логируем отклонение
+                        if self.rejected_logger:
+                            session_info = self.session_adapter.get_session_info()
+                            self.rejected_logger.log_rejection(
+                                symbol=symbol, direction=direction, confidence=confidence,
+                                entry=entry, sl=sl, tp=tp,
+                                reason=reason, filter_type='session',
+                                session_info=session_info
+                            )
+                        return None
+                    
+                    # Применяем адаптированные параметры
+                    signal['sl'] = new_sl
+                    signal['stop_loss'] = new_sl
+                    signal['tp'] = new_tp
+                    signal['take_profit'] = new_tp
+                    lot_size = new_lot
+                    logger.info(f"[V5-SessionAdapter] ✅ Parameters adapted: {reason}")
+                    
+                except Exception as e:
+                    logger.error(f"[V5-SessionAdapter] Adapter error: {e}")
+            
+            # 3️⃣ ADAPTIVE LOT SIZING
+            if self.lot_sizer:
+                try:
+                    # Получаем последние сделки для ЭТОГО символа
+                    recent_trades = self._get_recent_trades_for_lot_sizing(symbol=symbol)
+                    
+                    # Получаем базовый лот для этого инструмента
+                    instrument_config = self.instruments_config.get('instruments', {}).get(symbol, {})
+                    instrument_base_lot = instrument_config.get('base_lot', None)
+                    instrument_max_lot = instrument_config.get('max_lot', None)
+                    
+                    # Рассчитываем адаптивный лот
+                    signal_quality_mult = signal.get('quality_multiplier', 1.0)
+                    session_mult = signal.get('session_multiplier', 1.0)
+                    
+                    adaptive_lot = self.lot_sizer.calculate_lot(
+                        recent_trades=recent_trades,
+                        current_confidence=confidence,
+                        signal_quality_multiplier=signal_quality_mult,
+                        session_multiplier=session_mult,
+                        instrument_base_lot=instrument_base_lot,
+                        instrument_max_lot=instrument_max_lot
+                    )
+                    
+                    lot_size = adaptive_lot
+                    logger.info(f"[V5-AdaptiveLot] ✅ Calculated adaptive lot for {symbol}: {lot_size:.2f} (base: {instrument_base_lot or 'default'})")
+                    
+                except Exception as e:
+                    logger.error(f"[V5-AdaptiveLot] Calculation error: {e}")
+            
+            # Применяем финальный лот к сигналу
+            signal['lot_size'] = lot_size
+            signal['volume'] = lot_size
+            
+            # Добавляем max_spread_pips для spread filter в executor
+            max_spread = self.config.get('trading', {}).get('risk', {}).get('max_spread_pips', 3.0)
+            signal['max_spread_pips'] = max_spread
+            
+            # ✅ All risk checks passed - emit risk_ok event
+            if hasattr(self, 'bot_queue') and self.bot_queue and signal_id:
+                try:
+                    signal_id_short = signal_id[-6:] if len(signal_id) >= 6 else signal_id
+                    self.bot_queue.put({
+                        'type': 'risk_ok',
+                        'signal_id': signal_id,
+                        'signal_id_short': signal_id_short,
+                        'symbol': symbol,
+                        'direction': direction,
+                        'lot_size': lot_size
+                    })
+                    logger.debug(f"[TRADE] Event emitted: risk_ok (ID: {signal_id_short})")
+                except Exception as e:
+                    logger.error(f"[TRADE] Failed to emit risk_ok event: {e}")
+            
+            # ════════════════════════════════════════════════════════════════
+            # SINGLE GATE: Единственный путь к ордеру - все проверки перед lock
+            # ════════════════════════════════════════════════════════════════
+            
+            # Gate 1: Проверяем active_signal существует
+            if not self.state_core.active_signal:
+                logger.error("[TRADE] 🚨 GATE VIOLATION: No active_signal - cannot proceed to order")
+                if signal_id:
+                    from src.core.state_core import DecisionLog
+                    self.state_core.log_decision(DecisionLog(
+                        signal_id=signal_id,
+                        timestamp=datetime.now().isoformat(),
+                        symbol=symbol,
+                        raw_signal=direction,
+                        gpt_confidence=0,
+                        gpt_reasoning="",
+                        filters={},
+                        setup_score=0,
+                        final_decision="BLOCK",
+                        block_reason="Gate: No active_signal"
+                    ))
+                return None
+            
+            # Gate 2: Проверяем что active_signal.action != HOLD
+            if self.state_core.active_signal.action == "HOLD":
+                logger.error("[TRADE] 🚨 GATE VIOLATION: active_signal is HOLD - should never reach order execution")
+                return None
+            
+            # Gate 3: Проверяем recovery block
+            in_recovery, recovery_min = self.state_core.is_recovery_blocked()
+            if in_recovery:
+                logger.warning(f"[TRADE] ⛔ GATE BLOCK: Bot in recovery mode ({recovery_min} min remaining)")
+                if signal_id:
+                    from src.core.state_core import DecisionLog
+                    self.state_core.log_decision(DecisionLog(
+                        signal_id=signal_id,
+                        timestamp=datetime.now().isoformat(),
+                        symbol=symbol,
+                        raw_signal=direction,
+                        gpt_confidence=0,
+                        gpt_reasoning="",
+                        filters={},
+                        setup_score=0,
+                        final_decision="BLOCK",
+                        block_reason=f"Gate: Recovery block ({recovery_min}min)"
+                    ))
+                return None
+            
+            # Gate 4: Проверяем MT5 connection
+            if not self.state_core.mt5_connection_healthy:
+                logger.error("[TRADE] 🚨 GATE BLOCK: MT5 not connected")
+                if signal_id:
+                    from src.core.state_core import DecisionLog
+                    self.state_core.log_decision(DecisionLog(
+                        signal_id=signal_id,
+                        timestamp=datetime.now().isoformat(),
+                        symbol=symbol,
+                        raw_signal=direction,
+                        gpt_confidence=0,
+                        gpt_reasoning="",
+                        filters={},
+                        setup_score=0,
+                        final_decision="BLOCK",
+                        block_reason="Gate: MT5 disconnected"
+                    ))
+                return None
+            
+            # All gates passed ✅
+            logger.info(f"[TRADE] ✅ All gates passed for {symbol} - proceeding to order execution")
+            
+            # ════════════════════════════════════════════════════════════════
+            
+            # STATECORE: Acquire order lock (защита от дублей)
+            if not self.state_core.acquire_order_lock():
+                logger.warning("[TRADE] ⚠️ Order lock already held - skipping duplicate order")
+                return None
+            
+            try:
+                # STATECORE: Update status to ORDERING
+                self.state_core.set_status(BotStatus.ORDERING)
+                self.state_core.last_order_ts = datetime.now()
+                
+                # ═══════════════════════════════════════════════════════════════
+                # DRY_RUN MODE: Simulate order without real execution
+                # ═══════════════════════════════════════════════════════════════
+                dry_run = self.config.get('trading', {}).get('dry_run', False)
+                
+                if dry_run:
+                    logger.warning(f"[DRY_RUN] 🧪 SIMULATING ORDER for {symbol} (no real execution)")
+                    logger.info(f"[DRY_RUN] WOULD_SEND_ORDER: {direction} {lot_size} lots @ {entry}")
+                    logger.info(f"[DRY_RUN] SL: {sl}, TP: {tp}, Confidence: {confidence}%")
+                    
+                    # Log simulated order to decision_logs
+                    if signal_id:
+                        from src.core.state_core import DecisionLog
+                        self.state_core.log_decision(DecisionLog(
+                            signal_id=signal_id,
+                            timestamp=datetime.now().isoformat(),
+                            symbol=symbol,
+                            raw_signal=direction,
+                            gpt_confidence=confidence,
+                            gpt_reasoning=signal.get('reasoning', 'DRY_RUN test'),
+                            filters={'dry_run': {'passed': True, 'reason': 'Simulated in DRY_RUN mode'}},
+                            setup_score=confidence,
+                            final_decision="SIMULATED",
+                            block_reason=f"DRY_RUN: Would send {direction} order"
+                        ))
+                    
+                    # Emit simulated event to UI
+                    if hasattr(self, 'bot_queue') and self.bot_queue and signal_id:
+                        try:
+                            signal_id_short = signal_id[-6:] if len(signal_id) >= 6 else signal_id
+                            self.bot_queue.put({
+                                'type': 'dry_run_simulated',
+                                'signal_id': signal_id,
+                                'signal_id_short': signal_id_short,
+                                'symbol': symbol,
+                                'direction': direction,
+                                'lot_size': lot_size,
+                                'entry': entry,
+                                'sl': sl,
+                                'tp': tp
+                            })
+                            logger.debug(f"[DRY_RUN] Event emitted: dry_run_simulated")
+                        except Exception as e:
+                            logger.error(f"[DRY_RUN] Failed to emit event: {e}")
+                    
+                    # Clear active signal in DRY_RUN mode
+                    self.state_core.clear_active_signal(reason="DRY_RUN simulation completed")
+                    
+                    # Set status back to MONITORING
+                    self.state_core.set_status(BotStatus.MONITORING)
+                    
+                    logger.info(f"[DRY_RUN] ✅ Simulation completed for {symbol}")
+                    return {'simulated': True, 'symbol': symbol, 'direction': direction}
+                
+                # ═══════════════════════════════════════════════════════════════
+                # REAL EXECUTION (dry_run = False)
+                # ═══════════════════════════════════════════════════════════════
+                
+                result = self.executor.execute_signal(symbol, signal)
+                
+                if result:
+                    logger.info(f"[TRADE] ✅ Order sent successfully for {symbol}")
+                    
+                    # ═══════════════════════════════════════════════════════════════
+                    # POSITION CONFIRMATION: Verify position opened with 3 retries
+                    # ═══════════════════════════════════════════════════════════════
+                    
+                    position_confirmed, ticket = self.state_core.confirm_position_opened(
+                        symbol=symbol,
+                        retries=3,
+                        delay=0.5
+                    )
+                    
+                    if not position_confirmed:
+                        # Position not confirmed after retries
+                        logger.error(f"[TRADE] 🚨 CRITICAL: Order sent but position NOT confirmed for {symbol}")
+                        
+                        # Set ERROR status
+                        self.state_core.set_status(BotStatus.ERROR, reason="Order sent but no position")
+                        
+                        # Log to decision_logs
+                        if signal_id:
+                            from src.core.state_core import DecisionLog
+                            self.state_core.log_decision(DecisionLog(
+                                signal_id=signal_id,
+                                timestamp=datetime.now().isoformat(),
+                                symbol=symbol,
+                                raw_signal=direction if 'direction' in locals() else "UNKNOWN",
+                                gpt_confidence=0,
+                                gpt_reasoning="Order sent but position not confirmed",
+                                filters={},
+                                setup_score=0,
+                                final_decision="ERROR",
+                                block_reason="Position confirmation failed"
+                            ))
+                        
+                        # Clear active signal (trade failed)
+                        self.state_core.clear_active_signal(reason="Position confirmation failed")
+                        
+                        return None
+                    
+                    # Position confirmed! ✅
+                    logger.info(f"[TRADE] ✅ Position confirmed: {symbol} ticket={ticket}")
+                    
+                    # STATECORE: Save ticket and opened_at to active_signal
+                    if self.state_core.active_signal:
+                        self.state_core.active_signal.ticket = ticket
+                        self.state_core.active_signal.opened_at = datetime.now().isoformat()
+                        logger.info(f"[StateCore] Position tracking: ticket={ticket}, opened_at={self.state_core.active_signal.opened_at}")
+                    
+                    # STATECORE: Update status to TRADING (position confirmed)
+                    self.state_core.set_status(BotStatus.TRADING)
+                else:
+                    # Order execution returned False/None
+                    logger.warning(f"[TRADE] ⚠️ Order execution returned {result} for {symbol}")
+                    self.state_core.set_status(BotStatus.WAITING)
+                    
+            finally:
+                # STATECORE: Always release order lock
+                self.state_core.release_order_lock()
             
             if result:
                 logger.info(f"Trade executed for {symbol}: {result}")
@@ -1119,7 +1661,13 @@ class LiveTrader:
                         trading_mode = bot_manager.trading_mode
                         
                         reasoning = signal.get('reasoning', '')
-                        confidence = signal.get('confidence', 0) * 100  # Convert to %
+                        
+                        # FIXED: Handle confidence format (decimal or percentage)
+                        raw_conf = signal.get('confidence', 0)
+                        if isinstance(raw_conf, (int, float)) and raw_conf <= 1.0:
+                            confidence = raw_conf * 100  # Convert decimal to %
+                        else:
+                            confidence = raw_conf  # Already in %
                         
                         # Отправляем уведомление
                         self.telegram.send_trade_opened(
@@ -1143,6 +1691,10 @@ class LiveTrader:
                     positions = self.mt5_connector.positions_get(symbol=symbol)
                     if positions and len(positions) > 0:
                         pos = positions[-1]  # Последняя открытая позиция
+                        
+                        # Вычисляем расстояние до ТП для трейлинга
+                        tp_distance = abs(tp - entry)
+                        
                         self.tracked_positions[pos.ticket] = {
                             'symbol': symbol,
                             'direction': direction,
@@ -1150,12 +1702,19 @@ class LiveTrader:
                             'sl': sl,
                             'current_sl': sl,  # Инициализируем текущий SL
                             'tp': tp,
+                            'tp_distance': tp_distance,  # NEW: for trailing calculations
                             'entry_time': datetime.now(),
                             'volume': lot_size,
                             'sl_moved': False,  # Флаг что SL еще не перемещен
                             'breakeven_moved': False  # Флаг что breakeven еще не выполнен
                         }
-                        logger.info(f"[Position] Tracking #{pos.ticket} for trailing/close notification")
+                        
+                        # Логирование параметров позиции
+                        logger.info(f"[Position] ✅ Tracking #{pos.ticket} ({symbol} {direction})")
+                        logger.info(f"[Position]    Entry: ${entry:.2f}, SL: ${sl:.2f}, TP: ${tp:.2f}")
+                        logger.info(f"[Position]    TP Distance: ${tp_distance:.2f} (used for trailing calculation)")
+                        logger.info(f"[Position]    🎯 Trailing activates at: +${tp_distance * 0.30:.2f} (30% of TP)")
+                        
                 except Exception as track_error:
                     logger.error(f"[Position] Failed to track position: {track_error}")
                 
@@ -1183,6 +1742,10 @@ class LiveTrader:
             delattr(self, '_trailing_disabled_logged')
         
         if not self.tracked_positions:
+            # Log periodically that no positions tracked (every 60 seconds)
+            if not hasattr(self, '_last_no_positions_log') or (datetime.now() - self._last_no_positions_log).total_seconds() > 60:
+                logger.debug("[V4-Trailing] No positions to track")
+                self._last_no_positions_log = datetime.now()
             return
         
         try:
@@ -1245,8 +1808,7 @@ class LiveTrader:
     
     def check_closed_positions(self):
         """Проверяет закрытые позиции и отправляет Telegram уведомления."""
-        if not self.telegram:
-            return
+        # FIXED: Works WITHOUT Telegram - logging always active
         
         # Import datetime at function start to avoid UnboundLocalError
         from datetime import datetime, timedelta
@@ -1341,18 +1903,33 @@ class LiveTrader:
                         bot_manager = BotManager()
                         trading_mode = bot_manager.trading_mode
                         
-                        # Отправляем уведомление
-                        self.telegram.send_trade_closed(
-                            symbol=pos_info['symbol'],
-                            direction=pos_info['direction'],
-                            profit=profit,
-                            pips=pips,
-                            duration=duration_str,
-                            mode='pure_ai' if trading_mode == 'pure_ai' else 'strategy',
-                            result_reason=result_reason
-                        )
+                        # 🔥 CRITICAL: ALWAYS log closure (even without Telegram)
+                        logger.info("=" * 70)
+                        logger.info(f"[Closed] 🏁 POSITION CLOSED: #{ticket}")
+                        logger.info(f"[Closed]    Symbol: {pos_info['symbol']} {pos_info['direction']}")
+                        logger.info(f"[Closed]    Entry: ${pos_info['entry_price']:.2f} → Close: ${close_price:.2f}")
+                        logger.info(f"[Closed]    SL: ${sl_price:.2f}, TP: ${tp_price:.2f}")
+                        logger.info(f"[Closed]    💰 Profit: ${profit:.2f} ({pips:.1f} pips)")
+                        logger.info(f"[Closed]    ⏱️ Duration: {duration_str}")
+                        logger.info(f"[Closed]    🎯 Reason: {result_reason}")
+                        logger.info(f"[Closed]    TP distance: ${tp_distance:.2f}, SL distance: ${sl_distance:.2f}")
+                        logger.info("=" * 70)
                         
-                        logger.info(f"[Telegram] Trade closed notification sent for #{ticket}: {result_reason}, profit=${profit:.2f}")
+                        # Отправляем уведомление (только если Telegram настроен)
+                        if self.telegram:
+                            try:
+                                self.telegram.send_trade_closed(
+                                    symbol=pos_info['symbol'],
+                                    direction=pos_info['direction'],
+                                    profit=profit,
+                                    pips=pips,
+                                    duration=duration_str,
+                                    mode='pure_ai' if trading_mode == 'pure_ai' else 'strategy',
+                                    result_reason=result_reason
+                                )
+                                logger.info(f"[Telegram] Trade closed notification sent for #{ticket}")
+                            except Exception as tg_error:
+                                logger.error(f"[Telegram] Failed to send closure notification: {tg_error}")
                         
                         # Логируем результат в ML систему
                         if self.ml_collector:
@@ -1454,22 +2031,36 @@ class LiveTrader:
                         except Exception as e:
                             logger.error(f"[Closed] Failed to calculate estimated profit: {e}")
                         
-                        # Отправляем уведомление
+                        # 🔥 CRITICAL: ALWAYS log closure (even without Telegram)
+                        logger.info("=" * 70)
+                        logger.info(f"[Closed] 🏁 POSITION CLOSED (NOT IN HISTORY): #{ticket}")
+                        logger.info(f"[Closed]    Symbol: {pos_info['symbol']} {pos_info['direction']}")
+                        logger.info(f"[Closed]    Entry: ${pos_info.get('entry_price', 0):.2f}")
+                        logger.info(f"[Closed]    💰 Estimated Profit: ${estimated_profit:.2f} ({estimated_pips:.1f} pips)")
+                        logger.info(f"[Closed]    ⏱️ Duration: {duration_str}")
+                        logger.info(f"[Closed]    🎯 Reason: Manual Close or Trailing Stop")
+                        logger.info(f"[Closed]    ⚠️ Deal not found in MT5 history - using estimated data")
+                        logger.info("=" * 70)
+                        
+                        # Отправляем уведомление (только если Telegram настроен)
                         if self.telegram and self.notify_config.get('trade_closed', True):
-                            from src.core.bot_manager import BotManager
-                            bot_manager = BotManager()
-                            trading_mode = bot_manager.trading_mode
-                            
-                            self.telegram.send_trade_closed(
-                                symbol=pos_info['symbol'],
-                                direction=pos_info['direction'],
-                                profit=estimated_profit,
-                                pips=estimated_pips,
-                                duration=duration_str,
-                                mode='pure_ai' if trading_mode == 'pure_ai' else 'strategy',
-                                result_reason="Trailing Stop"
-                            )
-                            logger.info(f"[Telegram] Trade closed notification sent for #{ticket} (estimated data)")
+                            try:
+                                from src.core.bot_manager import BotManager
+                                bot_manager = BotManager()
+                                trading_mode = bot_manager.trading_mode
+                                
+                                self.telegram.send_trade_closed(
+                                    symbol=pos_info['symbol'],
+                                    direction=pos_info['direction'],
+                                    profit=estimated_profit,
+                                    pips=estimated_pips,
+                                    duration=duration_str,
+                                    mode='pure_ai' if trading_mode == 'pure_ai' else 'strategy',
+                                    result_reason="Trailing Stop"
+                                )
+                                logger.info(f"[Telegram] Trade closed notification sent for #{ticket} (estimated data)")
+                            except Exception as tg_error:
+                                logger.error(f"[Telegram] Failed to send closure notification: {tg_error}")
                         
                         # NOTE: Trade history is now managed by bot_manager._sync_with_mt5()
                         # This prevents duplicate entries in trades_history.json
@@ -1546,6 +2137,59 @@ class LiveTrader:
         """
         logger.debug(f"[save_trade] DEPRECATED - trades are synced from MT5 automatically")
         pass
+    
+    def _get_recent_trades_for_lot_sizing(self, symbol: str = None, lookback_trades: int = 10) -> list:
+        """
+        📊 V5: Получить последние закрытые сделки для расчета адаптивного лота.
+        
+        Args:
+            symbol: Символ инструмента (если None, берет все сделки)
+            lookback_trades: Количество последних сделок (по умолчанию 10)
+        
+        Returns:
+            Список словарей с информацией о сделках:
+            [{'profit': float, 'success': bool, 'timestamp': datetime}, ...]
+        """
+        recent_trades = []
+        
+        try:
+            import MetaTrader5 as mt5
+            
+            # Получаем историю сделок за последние 30 дней
+            history = self.mt5_connector.history_deals_get(
+                datetime.now() - timedelta(days=30),
+                datetime.now()
+            )
+            
+            if not history:
+                logger.debug(f"[V5-AdaptiveLot] No trade history found for {symbol or 'all symbols'}")
+                return []
+            
+            # Фильтруем только закрывающие сделки (entry=1 означает OUT)
+            closing_deals = [deal for deal in history if deal.entry == 1]
+            
+            # Фильтруем по символу, если указан
+            if symbol:
+                closing_deals = [deal for deal in closing_deals if deal.symbol == symbol]
+            
+            # Берем последние N сделок
+            for deal in closing_deals[-lookback_trades:]:
+                trade_info = {
+                    'profit': deal.profit,
+                    'success': deal.profit > 0,
+                    'timestamp': datetime.fromtimestamp(deal.time),
+                    'symbol': deal.symbol,
+                    'volume': deal.volume
+                }
+                recent_trades.append(trade_info)
+            
+            symbol_info = f" for {symbol}" if symbol else " (all symbols)"
+            logger.debug(f"[V5-AdaptiveLot] Loaded {len(recent_trades)} recent trades{symbol_info} for lot calculation")
+            return recent_trades
+            
+        except Exception as e:
+            logger.error(f"[V5-AdaptiveLot] Failed to get trade history: {e}")
+            return []
     
     # ========== AI Integration Methods ==========
     
@@ -1654,56 +2298,48 @@ class LiveTrader:
         Returns:
             Dict в формате стратегии
             
-        Note: SL/TP from GUI config (default_sl_pips, default_tp_pips) are used 
-        instead of AI-suggested values.
+        Note: Uses AI-calculated SL/TP values which are already properly adapted
+        for instrument type, volatility, and session.
         """
         # Get fixed lot size from config (removed % risk calculation)
         fixed_lot_size = self.config.get('trading', {}).get('risk', {}).get('fixed_lot_size', 0.01)
         
-        # Get SL/TP in pips from config (user settings from GUI)
-        default_sl_pips = self.config.get('trading', {}).get('risk', {}).get('default_sl_pips', 40)
-        default_tp_pips = self.config.get('trading', {}).get('risk', {}).get('default_tp_pips', 120)
-        
-        # Convert pips to price (symbol-specific)
+        # ✅ USE AI-CALCULATED SL/TP (already adapted for volatility/session)
         symbol = ai_signal.symbol
         entry_price = ai_signal.entry_price
         direction = 'long' if ai_signal.type.upper() == 'BUY' else 'short'
         
-        # Determine pip value based on symbol
-        if 'JPY' in symbol:
-            pip_value = 0.01  # For JPY pairs
-        elif 'XAU' in symbol or 'GOLD' in symbol:
-            pip_value = 0.1   # For XAUUSD (Gold)
+        # Use SL/TP from AI signal (already calculated by market_analyst with proper adaptation)
+        sl_price = ai_signal.stop_loss
+        tp_price = ai_signal.take_profit
+        
+        # Log what we're using
+        if 'XAU' in symbol or 'GOLD' in symbol:
+            sl_distance_dollars = abs(entry_price - sl_price)
+            tp_distance_dollars = abs(entry_price - tp_price)
+            logger.info(f"[AI-Convert] {symbol} {direction.upper()}: Using AI-calculated SL/TP")
+            logger.info(f"[AI-Convert]    Entry: ${entry_price:.2f}, SL: ${sl_price:.2f} (${sl_distance_dollars:.2f}), TP: ${tp_price:.2f} (${tp_distance_dollars:.2f})")
         else:
-            pip_value = 0.0001  # For most currency pairs (EURUSD, GBPUSD, etc.)
-        
-        # Calculate SL/TP prices from GUI config (ignore AI suggestions)
-        if direction == 'long':
-            sl_price = entry_price - (default_sl_pips * pip_value)
-            tp_price = entry_price + (default_tp_pips * pip_value)
-        else:  # short
-            sl_price = entry_price + (default_sl_pips * pip_value)
-            tp_price = entry_price - (default_tp_pips * pip_value)
-        
-        logger.info(f"[AI-Convert] {symbol} {direction.upper()}: GUI SL/TP applied "
-                   f"({default_sl_pips}/{default_tp_pips} pips) = SL:{sl_price:.5f}, TP:{tp_price:.5f} "
-                   f"(AI suggestions ignored)")
+            sl_distance_pips = abs(entry_price - sl_price) * 10000
+            tp_distance_pips = abs(entry_price - tp_price) * 10000
+            logger.info(f"[AI-Convert] {symbol} {direction.upper()}: Using AI-calculated SL/TP")
+            logger.info(f"[AI-Convert]    Entry: {entry_price:.5f}, SL: {sl_price:.5f} ({sl_distance_pips:.1f} pips), TP: {tp_price:.5f} ({tp_distance_pips:.1f} pips)")
         
         return {
             'symbol': ai_signal.symbol,
             'direction': direction,
             'entry_price': entry_price,
-            'sl': sl_price,  # From GUI config, not AI
-            'tp': tp_price,  # From GUI config, not AI
+            'sl': sl_price,  # ✅ From AI (market_analyst adaptive calculation)
+            'tp': tp_price,  # ✅ From AI (market_analyst adaptive calculation)
             'stop_loss': sl_price,  # Дублируем для совместимости
             'take_profit': tp_price,
-            'confidence': ai_signal.confidence / 100.0,  # 0-1 scale
+            'confidence': ai_signal.confidence,  # Keep as percentage (0-100), not decimal
             'reasoning': ai_signal.reasoning,
             'source': 'AI-GPT',
             'ai_signal_id': ai_signal.id,
             'valid': True,  # AI сигналы всегда валидны после проверки
             'timestamp': datetime.now().isoformat(),
-            'lot_size': fixed_lot_size,  # Fixed lot from config
+            'lot_size': fixed_lot_size,  # Fixed lot from config (but will be overridden by adaptive_lot in execute flow)
             'volume': fixed_lot_size  # Duplicate for compatibility
         }
     

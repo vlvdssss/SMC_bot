@@ -39,7 +39,7 @@ class MarketAnalystService:
         """Initialize Market Analyst Service v2.0."""
         # Пробуем загрузить API ключ в порядке приоритета:
         # 1. Параметр api_key  
-        # 2. Credentials файл на рабочем столе
+        # 2. Credentials файл
         # 3. .env файл
         if not api_key:
             try:
@@ -51,30 +51,32 @@ class MarketAnalystService:
         self.api_key = api_key or os.getenv('OPENAI_API_KEY')
         
         # GPT Connection Recovery State
-        self.gpt_available = True  # Trading enabled/disabled flag
-        self.gpt_failed_attempts = 0  # Fast retry counter
-        self.gpt_last_failure_time = None  # Track when trading was disabled
-        self.gpt_recovery_thread = None  # Background recovery thread
+        self.gpt_available = True  # Assume available if API key exists, will disable on failures
+        self.gpt_failed_attempts = 0
+        self.gpt_last_failure_time = None
+        self.gpt_recovery_thread = None
         self._recovery_lock = threading.Lock()
         
         # Детальная проверка API ключа
         if not self.api_key:
-            logger.error("[AI] ❌ OpenAI API key not found!")
-            logger.error("[AI] 💡 Решение:")
-            logger.error("[AI]    1. Создай файл config/.env")
-            logger.error("[AI]    2. Добавь строку: OPENAI_API_KEY=sk-proj-...")
-            logger.error("[AI]    3. Или передай api_key в конструктор")
-            raise ValueError("OpenAI API key not found. Please configure API key in Settings.")
+            logger.warning("[AI] ⚠️ OpenAI API key not configured")
+            logger.warning("[AI] 💡 Bot will work in MANUAL mode without AI analysis")
+            logger.warning("[AI] 🔧 To enable AI:")
+            logger.warning("[AI]    1. Open .env file in project root")
+            logger.warning("[AI]    2. Set: OPENAI_API_KEY=sk-proj-your_key_here")
+            logger.warning("[AI]    3. Get key at: https://platform.openai.com/api-keys")
+            # НЕ падаем, просто работаем без AI
+            self.client = None
+            return
         
         # Проверка формата ключа
         if not self.api_key.startswith('sk-'):
-            logger.error(f"[AI] ❌ INVALID API KEY FORMAT!")
-            logger.error(f"[AI] Текущий ключ: {self.api_key[:30]}...")
-            logger.error(f"[AI] 💡 OpenAI ключи начинаются с 'sk-' или 'sk-proj-'")
-            logger.error(f"[AI] 🔧 Проверь правильность ключа в config/.env или Settings")
-            raise ValueError(f"Invalid OpenAI API key format. Key should start with 'sk-'")
+            logger.warning(f"[AI] ⚠️ API key format looks incorrect: {self.api_key[:15]}...")
+            logger.warning(f"[AI] 💡 OpenAI keys should start with 'sk-' or 'sk-proj-'")
+            logger.warning(f"[AI] 🔧 Check your .env file for typos")
+            # Пробуем всё равно использовать, может это новый формат
         
-        logger.info(f"[AI] ✅ API Key validated: {self.api_key[:15]}...{self.api_key[-4:]}")
+        logger.info(f"[AI] ✅ API Key loaded: {self.api_key[:15]}...{self.api_key[-4:]}")
         
         try:
             # Увеличенный timeout для медленного интернета
@@ -143,6 +145,12 @@ class MarketAnalystService:
         Returns:
             Dict with analysis results in structured format
         """
+        # Проверка: если API key не настроен, работаем без AI
+        if not self.client:
+            logger.warning(f"[AI] ⚠️ Analysis skipped - API key not configured")
+            logger.warning(f"[AI] 💡 Configure OPENAI_API_KEY in .env file to enable AI")
+            return self._get_fallback_response("API key not configured")
+        
         try:
             logger.info(f"[AI] Starting market analysis for {symbol}...")
             
@@ -166,8 +174,9 @@ class MarketAnalystService:
             
             # Log completion
             decision = validated.get('decision', {})
-            action = decision.get('action', 'BUY')
-            logger.info(f"[AI] ✅ Analysis completed: {action} (always trade mode)")
+            action = decision.get('action', 'HOLD')
+            confidence = decision.get('confidence', 0)
+            logger.info(f"[AI] ✅ Analysis completed: {action} ({confidence}% confidence)")
             return validated
             
         except Exception as e:
@@ -175,11 +184,11 @@ class MarketAnalystService:
             return self._get_fallback_response(str(e))
     
     def _capture_charts(self, symbol: str) -> Dict[str, str]:
-        """Capture M5 chart screenshot (V4: single timeframe for fast intraday analysis)."""
+        """Capture M5 and M15 chart screenshots (V5: two timeframes for better analysis)."""
         try:
             screenshots = {}
             
-            # M5 chart - fast intraday trading (V4 logic)
+            # M5 chart - fast intraday trading
             m5_path = self.screenshot_service.capture_chart(
                 symbol=symbol, 
                 timeframe=mt5.TIMEFRAME_M5,
@@ -189,7 +198,17 @@ class MarketAnalystService:
                 with open(m5_path, 'rb') as f:
                     screenshots['M5'] = base64.b64encode(f.read()).decode('utf-8')
             
-            logger.info(f"[AI] Captured M5 screenshot for V4 analysis ({len(screenshots)}/1)")
+            # M15 chart - trend confirmation
+            m15_path = self.screenshot_service.capture_chart(
+                symbol=symbol,
+                timeframe=mt5.TIMEFRAME_M15,
+                bars=200  # 200 M15 bars = ~50 hours of data
+            )
+            if m15_path:
+                with open(m15_path, 'rb') as f:
+                    screenshots['M15'] = base64.b64encode(f.read()).decode('utf-8')
+            
+            logger.info(f"[AI] Captured {len(screenshots)}/2 screenshots (M5, M15) for analysis")
             return screenshots
             
         except Exception as e:
@@ -305,13 +324,19 @@ You will receive ONE screenshot of M5 timeframe (last 200 candles = ~16 hours).
         prompt += """
 
 **YOUR TASK:**
-Look at the LAST 20-30 M5 candles and pick the BEST direction (BUY or SELL).
+Look at the LAST 20-30 M5 candles and decide: BUY, SELL, or HOLD.
 
-**ALWAYS TRADE - NO SKIPPING:**
-- **MUST return either BUY or SELL** - no exceptions, no NONE
-- Pick the direction with higher probability based on chart
-- If uncertain, pick based on recent momentum/trend
+**SMART TRADING - QUALITY OVER QUANTITY:**
+- **You CAN say HOLD** if market is unclear, choppy, or no clear setup
+- Only BUY/SELL when you see a CLEAR high-probability setup
+- Better to skip 5 unclear situations than enter 1 bad trade
 - **SL/TP are FIXED** by user config (you don't set them)
+- **Confidence must be ≥75%** for BUY/SELL (otherwise HOLD)
+
+**TAKE PROFIT LIMITS:**
+- Maximum TP distance: **$20 for GOLD** (e.g. if entry $2650, TP max $2670 or $2630)
+- Prefer smaller TPs ($10-$15) for safer exits
+- Never exceed $20 TP distance regardless of confidence
 
 **BUY signals when:**
 - Bullish momentum visible (more green candles)
@@ -338,6 +363,7 @@ Look at the LAST 20-30 M5 candles and pick the BEST direction (BUY or SELL).
   "symbol": "XAUUSD",
   "decision": {
     "action": "BUY|SELL",
+    "confidence": 75,
     "reasoning": "Brief explanation (1-2 sentences max)"
   },
   "trade": {
@@ -352,6 +378,25 @@ Look at the LAST 20-30 M5 candles and pick the BEST direction (BUY or SELL).
     "entry_quality": "optimal|good|fair"
   }
 }
+
+**CONFIDENCE RATING (60-100%):**
+Rate your confidence in this trade setup:
+
+- **90-100%**: PERFECT SETUP - Strong momentum (5+ candles), clear support/rejection, trend aligned, high volume
+  Example: Price bounced from key support with 6 strong green candles, EMA crossed bullish, ATR expanding
+
+- **80-89%**: VERY GOOD - Clear pattern (3-4 candles), momentum visible, trend confirmation
+  Example: Price rejected resistance with 4 red candles, EMA trending down, clear lower highs
+
+- **70-79%**: GOOD - Decent setup, 2-3 candles showing direction, some trend alignment
+  Example: Recent 3 green candles after pullback, trend is upward but weak
+
+- **60-69%**: ACCEPTABLE - Weak setup but has some merit, unclear momentum, mixed signals but one side slightly better
+  Example: Market choppy but last 2 candles slightly bullish, EMA flat
+
+- **Below 60%**: DON'T TRADE - Return NO_ACTION instead
+
+**IMPORTANT**: Most trades should be 70-85%. Reserve 90+ for exceptional setups only. Be honest about setup quality!
 
 **CRITICAL REQUIREMENTS:**
 1. **MUST return either BUY or SELL** - no NONE allowed
@@ -409,11 +454,9 @@ Analyze the M5 chart NOW and give your decision!
                 })
                 logger.info(f"[AI] Added {timeframe} screenshot to request")
             
-            # Check if GPT is disabled (after previous failures)
+            # Warn if GPT was previously disabled (but still try to connect)
             if not self.gpt_available:
-                logger.warning("[AI] ⛔ GPT currently DISABLED - trading blocked")
-                logger.warning("[AI] Recovery attempt in progress...")
-                raise APIConnectionError("GPT temporarily disabled after connection failures")
+                logger.warning("[AI] ⚠️ GPT was previously disabled - attempting connection...")
             
             # Call API with retry logic
             logger.info("[AI] Calling OpenAI API...")
@@ -567,8 +610,37 @@ Analyze the M5 chart NOW and give your decision!
                     logger.warning(f"[AI] Invalid action: {decision.get('action')}, forcing to BUY")
                     decision["action"] = "BUY"
                 
-                # Set defaults for compatibility (not used)
-                decision["confidence"] = 100  # Always 100%
+                # FIXED: Handle confidence conversion properly
+                # GPT sometimes returns 1.0 (decimal 0-1) or "1.0" (string) which gets misinterpreted as 1%
+                raw_confidence = decision.get("confidence", None)
+                
+                if raw_confidence is None:
+                    logger.warning(f"[AI] ⚠️ GPT did NOT return confidence - using default 100%")
+                    logger.warning(f"[AI] 💡 This means ALL signals pass confidence filter!")
+                    raw_confidence = 100
+                
+                # Convert to float if string
+                if isinstance(raw_confidence, str):
+                    try:
+                        raw_confidence = float(raw_confidence)
+                    except (ValueError, TypeError):
+                        logger.warning(f"[AI] Invalid confidence string: '{raw_confidence}' - using 100%")
+                        raw_confidence = 100
+                
+                # Check if decimal format (0-1) and convert to percentage
+                if isinstance(raw_confidence, (int, float)) and raw_confidence <= 1.0:
+                    # Convert decimal (0-1) to percentage (0-100)
+                    confidence_percentage = int(raw_confidence * 100)
+                    logger.info(f"[AI] Converting decimal confidence {raw_confidence} → {confidence_percentage}%")
+                    decision["confidence"] = confidence_percentage
+                else:
+                    # Already in percentage format (1-100), use as-is
+                    decision["confidence"] = int(raw_confidence)
+                    if raw_confidence == 100:
+                        logger.debug(f"[AI] Using confidence: {decision['confidence']}%")
+                    else:
+                        logger.info(f"[AI] 📊 GPT confidence: {decision['confidence']}%")
+                
                 decision["block"] = "NONE"  # No blocks
             
             # Validate trade data if action is not NONE
@@ -591,6 +663,11 @@ Analyze the M5 chart NOW and give your decision!
                         action = analysis["decision"]["action"]
                         current_price = metrics.get("current_price", 0)
                         
+                        # Log what GPT returned BEFORE we override
+                        gpt_sl = trade.get("stop_loss", 0)
+                        gpt_tp = trade.get("take_profit", 0)
+                        logger.debug(f"[AI] 📥 GPT RAW VALUES: Entry={entry:.5f}, SL={gpt_sl:.5f}, TP={gpt_tp:.5f}")
+                        
                         # V4 VALIDATION: Entry must be close to current price (within $2)
                         if current_price > 0:
                             entry_distance = abs(entry - current_price)
@@ -607,30 +684,126 @@ Analyze the M5 chart NOW and give your decision!
                             
                             logger.info(f"[AI] ✅ Entry validation OK: ${entry:.2f} (distance: ${entry_distance:.2f})")
                         
-                        # DYNAMIC SL BASED ON VOLATILITY (V4) - Adapts to gold volatility
-                        # Use ATR to adjust SL - tighter when calm, wider when volatile
-                        MIN_SL_DISTANCE = 3.0   # Minimum $3 (low volatility)
-                        MAX_SL_DISTANCE = 7.0   # Maximum $7 (high volatility - prevent stop hunting)
-                        BASE_SL = 4.0           # Base SL for normal conditions
-                        FIXED_TP_DISTANCE = 15.0  # $15 (keep target ambitious)
+                        # IMPROVED V5: DYNAMIC SL/TP with SESSION AWARENESS
+                        # Detect instrument type (XAUUSD vs EURUSD)
+                        symbol = analysis.get("symbol", "XAUUSD")
+                        is_forex = symbol in ["EURUSD", "GBPUSD", "USDJPY", "EURJPY"]
                         
-                        # Get ATR from analysis if available (measure of volatility)
-                        atr_value = analysis.get('analysis', {}).get('atr', 5.0)  # Default $5 ATR
+                        # Validate entry price
+                        if entry <= 0:
+                            logger.error(f"[AI] Invalid entry price: {entry}")
+                            analysis["decision"]["action"] = "NONE"
+                            return analysis
                         
-                        # Adjust SL based on ATR:
-                        # ATR < $3 (calm) → SL $3-4
-                        # ATR $3-7 (normal) → SL $4-5
-                        # ATR > $7 (volatile) → SL $5-7 (wider to avoid stop hunting)
-                        if atr_value < 3.0:
-                            FIXED_SL_DISTANCE = 3.5  # Tight SL when calm
-                        elif atr_value > 7.0:
-                            # High volatility - use wider SL to avoid stop hunting
-                            FIXED_SL_DISTANCE = min(MAX_SL_DISTANCE, BASE_SL + (atr_value - 7.0) * 0.3)
-                            logger.info(f"[AI] ⚠️ High volatility detected (ATR ${atr_value:.2f}) - using wider SL ${FIXED_SL_DISTANCE:.2f}")
+                        # CRITICAL: Override ANY SL/TP from GPT with our fixed values
+                        # GPT often returns unrealistic values like TP=1.21 when entry=1.18
+                        # We MUST recalculate everything based on entry price
+                        
+                        # 🎮 CHECK MANUAL OVERRIDES FIRST
+                        manual_overrides = self.config.get('manual_overrides', {})
+                        manual_enabled = manual_overrides.get('enabled', False)
+                        
+                        if manual_enabled:
+                            # USER CONTROLS SL/TP manually
+                            symbol_lower = symbol.lower()
+                            manual_settings = manual_overrides.get(symbol_lower, {})
+                            
+                            if is_forex:
+                                # FOREX: pips → price
+                                manual_sl_pips = manual_settings.get('sl_pips', 30)
+                                manual_tp_pips = manual_settings.get('tp_pips', 50)
+                                FIXED_SL_DISTANCE = manual_sl_pips * 0.0001  # pips to price
+                                FIXED_TP_DISTANCE = manual_tp_pips * 0.0001
+                                logger.info(f"[AI] 🎮 MANUAL MODE: SL={manual_sl_pips} pips, TP={manual_tp_pips} pips")
+                            else:
+                                # GOLD: dollars
+                                manual_sl_dollars = manual_settings.get('sl_dollars', 4.5)
+                                manual_tp_dollars = manual_settings.get('tp_dollars', 12.0)
+                                FIXED_SL_DISTANCE = manual_sl_dollars
+                                FIXED_TP_DISTANCE = manual_tp_dollars
+                                logger.info(f"[AI] 🎮 MANUAL MODE: SL=${manual_sl_dollars:.1f}, TP=${manual_tp_dollars:.1f}")
                         else:
-                            FIXED_SL_DISTANCE = BASE_SL  # Normal $4 SL
+                            # AI ADAPTIVE MODE - calculate based on volatility
+                            logger.debug(f"[AI] 🤖 AI ADAPTIVE MODE: SL/TP based on volatility & session")
+                            
+                            # Base distances adjusted by instrument AND volatility
+                            if is_forex:
+                                # FOREX (EURUSD): Use pips (0.0001 = 1 pip) - SAFE BROKER MINIMUMS
+                                MIN_SL_DISTANCE = 0.0025   # 25 pips (broker minimum compliance)
+                                MAX_SL_DISTANCE = 0.0050   # 50 pips
+                                BASE_SL = 0.0030           # 30 pips base (standard safe value)
+                                BASE_TP_DISTANCE = 0.0050  # 50 pips base (R:R ~1.67)
+                            else:
+                                # GOLD (XAUUSD): Use dollars
+                                MIN_SL_DISTANCE = 3.0   # Minimum $3
+                                MAX_SL_DISTANCE = 8.0   # Maximum $8
+                                BASE_SL = 4.5           # Base SL $4.5
+                                BASE_TP_DISTANCE = 12.0 # Base TP $12
+                            
+                            # Get ATR and session info
+                            atr_value = analysis.get('analysis', {}).get('atr', 5.0 if not is_forex else 0.003)
+                            current_hour = datetime.now().hour
+                            
+                            # Session-based adjustments
+                            # Asian (0-8): Tight SL/TP (low volatility)
+                            # European (8-16): Normal SL/TP  
+                            # US (16-24): Wide SL/TP (high volatility)
+                            if 0 <= current_hour < 8:  # Asian
+                                session_sl_mult = 0.85
+                                session_tp_mult = 0.9
+                                session_name = "ASIAN"
+                            elif 8 <= current_hour < 16:  # European
+                                session_sl_mult = 1.0
+                                session_tp_mult = 1.0
+                                session_name = "EUROPEAN"
+                            else:  # US
+                                session_sl_mult = 1.15
+                                session_tp_mult = 1.2
+                                session_name = "US"
+                            
+                            # ATR-based adjustment (volatility adaptation)
+                            if is_forex:
+                                # FOREX volatility thresholds (in pips)
+                                if atr_value < 0.0020:
+                                    # Low volatility - tight SL (but respecting broker minimums)
+                                    FIXED_SL_DISTANCE = 0.0025  # 25 pips (matches MIN_SL_DISTANCE)
+                                    FIXED_TP_DISTANCE = 0.0045  # 45 pips
+                                    volatility_state = "LOW"
+                                elif atr_value > 0.0045:
+                                    # High volatility - wider SL
+                                    FIXED_SL_DISTANCE = min(MAX_SL_DISTANCE, BASE_SL + (atr_value - 0.0045) * 2.0)
+                                    FIXED_TP_DISTANCE = BASE_TP_DISTANCE * 1.3
+                                    volatility_state = "HIGH"
+                                    logger.info(f"[AI] ⚠️ High volatility (ATR {atr_value:.5f}) - wider SL {FIXED_SL_DISTANCE:.5f}")
+                                else:
+                                    # Normal volatility
+                                    FIXED_SL_DISTANCE = BASE_SL
+                                    FIXED_TP_DISTANCE = BASE_TP_DISTANCE
+                                    volatility_state = "NORMAL"
+                            else:
+                                # GOLD (XAUUSD) volatility thresholds (in dollars)
+                                if atr_value < 3.0:
+                                    # Low volatility - tight SL
+                                    FIXED_SL_DISTANCE = 3.5
+                                    FIXED_TP_DISTANCE = 9.0
+                                    volatility_state = "LOW"
+                                elif atr_value > 7.0:
+                                    # High volatility - wider SL to avoid stop hunting
+                                    FIXED_SL_DISTANCE = min(MAX_SL_DISTANCE, BASE_SL + (atr_value - 7.0) * 0.35)
+                                    FIXED_TP_DISTANCE = BASE_TP_DISTANCE * 1.3
+                                    volatility_state = "HIGH"
+                                    logger.info(f"[AI] ⚠️ High volatility (ATR ${atr_value:.2f}) - wider SL ${FIXED_SL_DISTANCE:.2f}")
+                                else:
+                                    # Normal volatility
+                                    FIXED_SL_DISTANCE = BASE_SL
+                                    FIXED_TP_DISTANCE = BASE_TP_DISTANCE
+                                    volatility_state = "NORMAL"
+                            
+                            # Apply session multipliers
+                            FIXED_SL_DISTANCE *= session_sl_mult
+                            FIXED_TP_DISTANCE *= session_tp_mult
                         
-                        # Calculate fixed SL/TP based on direction
+                        # Calculate fixed SL/TP based on direction (works for both manual and AI modes)
                         if action == "BUY":
                             new_sl = entry - FIXED_SL_DISTANCE
                             new_tp = entry + FIXED_TP_DISTANCE
@@ -638,21 +811,111 @@ Analyze the M5 chart NOW and give your decision!
                             new_sl = entry + FIXED_SL_DISTANCE
                             new_tp = entry - FIXED_TP_DISTANCE
                         
-                        # Override GPT values with fixed ones
-                        analysis["trade"]["stop_loss"] = round(new_sl, 2)
-                        analysis["trade"]["take_profit"] = round(new_tp, 2)
+                        # LIMIT TP: Max $20 for GOLD (safety limit)
+                        if not is_forex:  # GOLD
+                            tp_distance = abs(new_tp - entry)
+                            MAX_TP_DOLLARS = 20.0
+                            if tp_distance > MAX_TP_DOLLARS:
+                                logger.warning(f"[AI] ⚠️ TP too large (${tp_distance:.1f}) - limiting to ${MAX_TP_DOLLARS}")
+                                if action == "BUY":
+                                    new_tp = entry + MAX_TP_DOLLARS
+                                else:
+                                    new_tp = entry - MAX_TP_DOLLARS
+                                FIXED_TP_DISTANCE = MAX_TP_DOLLARS
                         
-                        # Calculate actual R:R based on fixed distances
+                        # CRITICAL VALIDATION: Ensure SL/TP are in correct direction
+                        if action == "BUY":
+                            if new_sl >= entry:
+                                logger.error(f"[AI] ❌ INVALID SL for BUY: SL {new_sl:.5f} >= Entry {entry:.5f}")
+                                analysis["decision"]["action"] = "NONE"
+                                return analysis
+                            if new_tp <= entry:
+                                logger.error(f"[AI] ❌ INVALID TP for BUY: TP {new_tp:.5f} <= Entry {entry:.5f}")
+                                analysis["decision"]["action"] = "NONE"
+                                return analysis
+                        else:  # SELL
+                            if new_sl <= entry:
+                                logger.error(f"[AI] ❌ INVALID SL for SELL: SL {new_sl:.5f} <= Entry {entry:.5f}")
+                                analysis["decision"]["action"] = "NONE"
+                                return analysis
+                            if new_tp >= entry:
+                                logger.error(f"[AI] ❌ INVALID TP for SELL: TP {new_tp:.5f} >= Entry {entry:.5f}")
+                                analysis["decision"]["action"] = "NONE"
+                                return analysis
+                        
+                        # Override GPT values with calculated ones
+                        # Round to appropriate precision (2 decimals for gold, 5 for forex)
+                        precision = 5 if is_forex else 2
+                        analysis["trade"]["stop_loss"] = round(new_sl, precision)
+                        analysis["trade"]["take_profit"] = round(new_tp, precision)
+                        
+                        # Calculate actual R:R
                         actual_sl_distance = abs(entry - new_sl)
                         actual_tp_distance = abs(entry - new_tp)
                         actual_rr = actual_tp_distance / actual_sl_distance if actual_sl_distance > 0 else 2.0
                         analysis["trade"]["risk_reward"] = round(actual_rr, 2)
                         
-                        logger.info(f"[AI] ✅ V4 FIXED SL/TP Applied:")
-                        logger.info(f"[AI]    Entry: ${entry:.2f}")
-                        logger.info(f"[AI]    SL: ${new_sl:.2f} (fixed ${FIXED_SL_DISTANCE:.1f})")
-                        logger.info(f"[AI]    TP: ${new_tp:.2f} (fixed ${FIXED_TP_DISTANCE:.1f})")
-                        logger.info(f"[AI]    R:R: {actual_rr:.1f}:1")
+                        # Logging: different for manual vs AI mode
+                        if manual_enabled:
+                            # MANUAL MODE: Simple logging
+                            if is_forex:
+                                sl_pips = FIXED_SL_DISTANCE * 10000
+                                tp_pips = FIXED_TP_DISTANCE * 10000
+                                logger.info(f"[AI] ✅ MANUAL SL/TP Applied:")
+                                logger.info(f"[AI]    Symbol: {symbol} (FOREX)")
+                                logger.info(f"[AI]    Entry: {entry:.5f}")
+                                logger.info(f"[AI]    SL: {new_sl:.5f} ({sl_pips:.1f} pips)")
+                                logger.info(f"[AI]    TP: {new_tp:.5f} ({tp_pips:.1f} pips)")
+                                logger.info(f"[AI]    R:R: {actual_rr:.2f}:1")
+                            else:
+                                logger.info(f"[AI] ✅ MANUAL SL/TP Applied:")
+                                logger.info(f"[AI]    Symbol: {symbol} (GOLD)")
+                                logger.info(f"[AI]    Entry: ${entry:.2f}")
+                                logger.info(f"[AI]    SL: ${new_sl:.2f} (${FIXED_SL_DISTANCE:.1f})")
+                                logger.info(f"[AI]    TP: ${new_tp:.2f} (${FIXED_TP_DISTANCE:.1f})")
+                                logger.info(f"[AI]    R:R: {actual_rr:.2f}:1")
+                        else:
+                            # AI ADAPTIVE MODE: Detailed logging with session/volatility info
+                            # Warning if GPT values were very different from ours
+                            gpt_sl_diff = abs(gpt_sl - new_sl) if gpt_sl > 0 else 0
+                            gpt_tp_diff = abs(gpt_tp - new_tp) if gpt_tp > 0 else 0
+                            
+                            if is_forex:
+                                # Check if difference > 20 pips
+                                if gpt_sl_diff > 0.0020 or gpt_tp_diff > 0.0020:
+                                    logger.warning(f"[AI] ⚠️ GPT values significantly different from calculated:")
+                                    logger.warning(f"[AI]    SL: GPT {gpt_sl:.5f} vs Calculated {new_sl:.5f} (diff: {gpt_sl_diff*10000:.1f} pips)")
+                                    logger.warning(f"[AI]    TP: GPT {gpt_tp:.5f} vs Calculated {new_tp:.5f} (diff: {gpt_tp_diff*10000:.1f} pips)")
+                            else:
+                                # Check if difference > $2
+                                if gpt_sl_diff > 2.0 or gpt_tp_diff > 2.0:
+                                    logger.warning(f"[AI] ⚠️ GPT values significantly different from calculated:")
+                                    logger.warning(f"[AI]    SL: GPT ${gpt_sl:.2f} vs Calculated ${new_sl:.2f} (diff: ${gpt_sl_diff:.2f})")
+                                    logger.warning(f"[AI]    TP: GPT ${gpt_tp:.2f} vs Calculated ${new_tp:.2f} (diff: ${gpt_tp_diff:.2f})")
+                            
+                            # Format log messages based on instrument type
+                            if is_forex:
+                                # FOREX: Show in pips (multiply by 10000)
+                                sl_pips = FIXED_SL_DISTANCE * 10000
+                                tp_pips = FIXED_TP_DISTANCE * 10000
+                                logger.info(f"[AI] ✅ V5 ADAPTIVE SL/TP Applied:")
+                                logger.info(f"[AI]    Symbol: {symbol} (FOREX)")
+                                logger.info(f"[AI]    Session: {session_name} (SL×{session_sl_mult:.2f}, TP×{session_tp_mult:.2f})")
+                                logger.info(f"[AI]    Volatility: {volatility_state} (ATR {atr_value:.5f})")
+                                logger.info(f"[AI]    Entry: {entry:.5f}")
+                                logger.info(f"[AI]    SL: {new_sl:.5f} ({sl_pips:.1f} pips)")
+                                logger.info(f"[AI]    TP: {new_tp:.5f} ({tp_pips:.1f} pips)")
+                                logger.info(f"[AI]    R:R: {actual_rr:.2f}:1")
+                            else:
+                                # GOLD: Show in dollars
+                                logger.info(f"[AI] ✅ V5 ADAPTIVE SL/TP Applied:")
+                                logger.info(f"[AI]    Symbol: {symbol} (GOLD)")
+                                logger.info(f"[AI]    Session: {session_name} (SL×{session_sl_mult:.2f}, TP×{session_tp_mult:.2f})")
+                                logger.info(f"[AI]    Volatility: {volatility_state} (ATR ${atr_value:.2f})")
+                                logger.info(f"[AI]    Entry: ${entry:.2f}")
+                                logger.info(f"[AI]    SL: ${new_sl:.2f} (${FIXED_SL_DISTANCE:.1f})")
+                                logger.info(f"[AI]    TP: ${new_tp:.2f} (${FIXED_TP_DISTANCE:.1f})")
+                                logger.info(f"[AI]    R:R: {actual_rr:.2f}:1")
             
             # Add metadata
             analysis["analyzed_at"] = datetime.now().isoformat()

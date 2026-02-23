@@ -22,6 +22,9 @@ from enum import Enum
 import threading
 
 from src.core.logger import logger
+from src.core.trade_filters import TradeFilters
+from src.core.state_core import get_state_core, BotStatus, ActiveSignal, LastAnalysis, DecisionLog
+from src.core.signal_id_generator import generate_signal_id_from_dict
 
 
 class BlockType(Enum):
@@ -89,7 +92,7 @@ class AISignalManager:
     Manages signals, blocks, and risk multipliers based on AI analysis.
     """
     
-    def __init__(self, telegram_notifier=None):
+    def __init__(self, telegram_notifier=None, bot_queue=None, mt5_connector=None):
         """Initialize Signal Manager v2.0."""
         self.signals_dir = Path("data/ai_signals")
         self.signals_dir.mkdir(parents=True, exist_ok=True)
@@ -99,6 +102,21 @@ class AISignalManager:
         
         # Telegram notifier for price invalidation alerts
         self.telegram = telegram_notifier
+        
+        # Bot queue for event-driven UI updates
+        self.bot_queue = bot_queue
+        
+        # Get ConfigManager for hot reload
+        from src.core.config_manager import get_config_manager
+        config_manager = get_config_manager()
+        
+        # Trade Filters для контроля качества входов (with hot reload)
+        self.trade_filters = TradeFilters(mt5_connector=mt5_connector, config_manager=config_manager)
+        logger.info("[AI-Signal] Trade Filters initialized (config-driven)")
+        
+        # StateCore - единый источник правды
+        self.state_core = get_state_core()
+        logger.info("[AI-Signal] StateCore integrated")
         
         self.active_signals: List[AISignal] = []
         self.signal_history: List[Dict] = []
@@ -178,7 +196,7 @@ class AISignalManager:
             
             # Sunday (all day)
             if current_weekday == 6:
-                return False, "Weekend block (Sunday)"
+                return False, f"Weekend block (Sunday) - resumes Monday {monday_end:02d}:00"
             
             # Monday before configured hour
             if current_weekday == 0 and current_hour < monday_end:
@@ -274,18 +292,104 @@ class AISignalManager:
                     "decision_action": "NONE",
                     "block_type": "none",
                     "risk_multiplier": 1.0,
-                    "symbol": symbol
+                    "symbol": symbol,
+                    "confidence": 100,  # Default 100% (always trade mode)
+                    "sentiment": "neutral"  # Default sentiment
                 }
                 
                 # Extract decision data
                 decision = analysis.get("decision", {})
-                action = decision.get("action", "BUY").upper()  # Default to BUY
-                confidence = decision.get("confidence", 100)  # Always 100%
+                action = decision.get("action", "HOLD").upper()  # Default to HOLD (safe)
+                
+                # 🔥 HANDLE HOLD: GPT can now skip unclear trades
+                if action == "HOLD":
+                    logger.info(f"[AI-Signal] 💤 GPT decision: HOLD - market unclear, skipping trade")
+                    summary["decision_action"] = "HOLD"
+                    summary["sentiment"] = "neutral"
+                    summary["confidence"] = decision.get("confidence", 0)
+                    
+                    # STATECORE: Log HOLD decision
+                    decision_log = DecisionLog(
+                        signal_id=f"HOLD_{symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                        timestamp=datetime.now().isoformat(),
+                        symbol=symbol,
+                        raw_signal="HOLD",
+                        gpt_confidence=summary["confidence"],
+                        gpt_reasoning=decision.get("reasoning", "Market unclear"),
+                        filters={},
+                        setup_score=0,
+                        final_decision="HOLD",
+                        block_reason="GPT chose HOLD (smart trading)"
+                    )
+                    self.state_core.log_decision(decision_log)
+                    
+                    # STATECORE: Save last_analysis (but NOT active_signal)
+                    # HOLD никогда не перетирует active_signal
+                    last_analysis = LastAnalysis(
+                        signal_id=decision_log.signal_id,
+                        symbol=symbol,
+                        action="HOLD",
+                        confidence=summary["confidence"],
+                        reasoning=decision.get("reasoning", "Market unclear"),
+                        timestamp=datetime.now().isoformat(),
+                        filters_passed=False,
+                        block_reason="GPT chose HOLD",
+                        setup_score=0
+                    )
+                    self.state_core.set_last_analysis(last_analysis)
+                    
+                    # STATECORE: Update status back to WAITING
+                    self.state_core.set_status(BotStatus.WAITING)
+                    
+                    # Emit event to UI
+                    if self.bot_queue:
+                        self.bot_queue.put({
+                            'type': 'gpt_decision_ready',
+                            'signal_data': {
+                                'action': 'HOLD',
+                                'confidence': summary["confidence"],
+                                'reasoning': decision.get("reasoning", "Market unclear"),
+                                'timestamp': datetime.now().isoformat()
+                            }
+                        })
+                    
+                    return summary  # Exit early, no signal created
+                
+                # FIXED: Handle confidence properly
+                # Some GPT responses return 1.0 (decimal) which gets interpreted as 1%
+                raw_confidence = decision.get("confidence", 100)
+                
+                # Convert to float if string
+                if isinstance(raw_confidence, str):
+                    try:
+                        raw_confidence = float(raw_confidence)
+                    except (ValueError, TypeError):
+                        raw_confidence = 100
+                
+                # Check if decimal format (0-1) and convert to percentage
+                if isinstance(raw_confidence, (int, float)) and raw_confidence <= 1.0:
+                    # Decimal format (0-1) -> convert to percentage (0-100)
+                    confidence = int(raw_confidence * 100)
+                    logger.info(f"[AI-Signal] Converted decimal confidence {raw_confidence} → {confidence}%")
+                else:
+                    # Already percentage format (1-100), use as-is
+                    confidence = int(raw_confidence)
+                    logger.debug(f"[AI-Signal] Using confidence: {confidence}%")
+                
                 block_level = decision.get("block", "NONE").upper()
                 reasoning = decision.get("reasoning", f"{action} - always trade mode")  # Берём из GPT
                 
+                # Update summary with extracted data
                 summary["decision_action"] = action
                 summary["block_type"] = block_level.lower()
+                summary["confidence"] = confidence
+                # Set sentiment based on action
+                if action == "BUY":
+                    summary["sentiment"] = "bullish"
+                elif action == "SELL":
+                    summary["sentiment"] = "bearish"
+                else:
+                    summary["sentiment"] = "neutral"
                 
                 logger.info(
                     f"[AI-Signal] 📊 Decision received: {action} (aggressive mode, symbol: {symbol})"
@@ -303,9 +407,9 @@ class AISignalManager:
                     
                     trade_data = analysis["trade"]
                     
-                    # Check #1: Position already exists?
+                    # Check #1: Position already exists FOR THIS SYMBOL?
                     if hasattr(self, 'executor') and self.executor:
-                        if self.executor.has_position():
+                        if self.executor.has_position(symbol=symbol):
                             logger.warning(
                                 f"[AI-Signal] ⛔ Position already open for {symbol} - "
                                 f"skipping {action} signal creation"
@@ -400,6 +504,28 @@ class AISignalManager:
                         f"| Confidence: {signal.confidence}% | TTL: {ttl_minutes}min "
                         f"| Expires: {signal.expires_at[11:16]}"
                     )
+                    
+                    # Emit event to GUI (event-driven UI update)
+                    if hasattr(self, 'bot_queue') and self.bot_queue:
+                        try:
+                            signal_id_short = signal.id[-6:] if len(signal.id) >= 6 else signal.id
+                            self.bot_queue.put({
+                                'type': 'gpt_decision_ready',
+                                'signal_id': signal.id,
+                                'signal_id_short': signal_id_short,
+                                'action': signal.type,
+                                'confidence': signal.confidence,
+                                'symbol': signal.symbol,
+                                'entry_price': signal.entry_price,
+                                'stop_loss': signal.stop_loss,
+                                'take_profit': signal.take_profit,
+                                'reasoning': signal.reasoning,
+                                'timestamp': signal.created_at,
+                                'status': 'pending'
+                            })
+                            logger.debug(f"[AI-Signal] Event emitted: gpt_decision_ready (ID: {signal_id_short})")
+                        except Exception as e:
+                            logger.error(f"[AI-Signal] Failed to emit event: {e}")
                 
                 # 3. Handle NONE action
                 elif action == "NONE":
@@ -410,6 +536,27 @@ class AISignalManager:
                     logger.info(
                         f"[AI-Signal] ⏰ Следующая попытка анализа через 15 минут"
                     )
+                    
+                    # Emit event to GUI (HOLD decision - no active signal, but update Last Analysis)
+                    if hasattr(self, 'bot_queue') and self.bot_queue:
+                        try:
+                            self.bot_queue.put({
+                                'type': 'gpt_decision_ready',
+                                'signal_id': None,  # No signal ID for HOLD
+                                'signal_id_short': None,
+                                'action': 'HOLD',
+                                'confidence': confidence,
+                                'symbol': symbol,
+                                'entry_price': 0,
+                                'stop_loss': 0,
+                                'take_profit': 0,
+                                'reasoning': signal_data.get('reason', 'Market unclear or risky'),
+                                'timestamp': datetime.now().isoformat(),
+                                'status': None  # HOLD has no status
+                            })
+                            logger.debug(f"[AI-Signal] Event emitted: gpt_decision_ready (HOLD)")
+                        except Exception as e:
+                            logger.error(f"[AI-Signal] Failed to emit HOLD event: {e}")
                     
                     # Telegram notification about NONE decision
                     if hasattr(self, 'telegram') and self.telegram:
@@ -437,11 +584,20 @@ class AISignalManager:
                 # 5. Save state
                 self._save_state()
                 
+                # DEBUG: Log summary before returning
+                logger.debug(f"[AI-Signal] Returning summary: confidence={summary.get('confidence', 'MISSING')}, "
+                            f"sentiment={summary.get('sentiment', 'MISSING')}, action={summary.get('decision_action', 'MISSING')}")
+                
                 return summary
                 
         except Exception as e:
             logger.error(f"[AI-Signal] ❌ Failed to process analysis: {e}", exc_info=True)
-            return {"error": str(e), "signals_created": 0}
+            return {
+                "error": str(e), 
+                "signals_created": 0,
+                "confidence": 0,  # Add confidence for logging
+                "sentiment": "error"  # Add sentiment for logging
+            }
     
     def _process_block_level(self, block_level: str, summary: Dict):
         """Process block level from decision (v2.0)."""
@@ -583,9 +739,14 @@ class AISignalManager:
         confidence = signal_data["confidence"]
         if confidence < min_confidence:
             logger.info(
-                f"[AI-Signal] ❌ Rejected low confidence: {confidence}% < {min_confidence}%"
+                f"[AI-Signal] ❌ Rejected LOW CONFIDENCE: {confidence}% < {min_confidence}% (threshold)"
+            )
+            logger.info(
+                f"[AI-Signal] 💡 Increase signal quality or lower min_confidence in config/trading.yaml"
             )
             return False
+        else:
+            logger.info(f"[AI-Signal] ✅ Confidence OK: {confidence}% >= {min_confidence}%")
         
         # Basic validation: entry != SL/TP
         entry = signal_data["entry_price"]
@@ -658,7 +819,7 @@ class AISignalManager:
         signal_data: Dict
     ) -> Optional[AISignal]:
         """
-        Создание сигнала из анализа с проверкой на дубликаты.
+        Создание сигнала из анализа с проверкой на дубликаты через StateCore.
         
         Args:
             symbol: Торговый символ
@@ -666,14 +827,177 @@ class AISignalManager:
             signal_data: Данные конкретного сигнала
         
         Returns:
-            AISignal или None если дубликат
+            AISignal или None если дубликат/заблокирован
         """
         try:
-            # Проверяем валидность
-            if not self._validate_signal(signal_data):
+            # 1. ГЕНЕРАЦИЯ SIGNAL_ID (уникальный хеш от параметров)
+            signal_data_with_symbol = {**signal_data, 'symbol': symbol}
+            signal_id = generate_signal_id_from_dict(signal_data_with_symbol)
+            
+            logger.info(f"[AI-Signal] Processing signal {signal_id[:32]}...")
+            
+            # 2. ДЕДУПЛИКАЦИЯ через StateCore
+            if signal_id in self.state_core.processed_signal_ids:
+                logger.warning(f"[AI-Signal] ⚠️ DUPLICATE signal_id detected: {signal_id[:32]}... - SKIPPED")
+                
+                # Лог решения: ДУБЛИКАТ
+                decision = DecisionLog(
+                    signal_id=signal_id,
+                    timestamp=datetime.now().isoformat(),
+                    symbol=symbol,
+                    raw_signal=signal_data.get('type', 'UNKNOWN'),
+                    gpt_confidence=signal_data.get('confidence', 0),
+                    gpt_reasoning=signal_data.get('reasoning', ''),
+                    filters={},
+                    setup_score=0,
+                    final_decision="DUPLICATE",
+                    block_reason="Signal ID already processed"
+                )
+                self.state_core.log_decision(decision)
+                
                 return None
             
-            # КРИТИЧНО: Удаляем ВСЕ старые сигналы для этого символа
+            # 3. ВАЛИДАЦИЯ базовых параметров
+            if not self._validate_signal(signal_data):
+                decision = DecisionLog(
+                    signal_id=signal_id,
+                    timestamp=datetime.now().isoformat(),
+                    symbol=symbol,
+                    raw_signal=signal_data.get('type', 'UNKNOWN'),
+                    gpt_confidence=signal_data.get('confidence', 0),
+                    gpt_reasoning=signal_data.get('reasoning', ''),
+                    filters={},
+                    setup_score=0,
+                    final_decision="INVALID",
+                    block_reason="Failed basic validation (entry/SL/TP)"
+                )
+                self.state_core.log_decision(decision)
+                return None
+            
+            # 4. ФИЛЬТРАЦИЯ: Проверяем все гейты
+            gates_passed, gate_reason, setup_score = self.trade_filters.check_all_gates(
+                signal=signal_data,
+                market_data=analysis
+            )
+            
+            # Получаем детальные результаты фильтров для лога
+            filter_details = {
+                "htf_gate": "UNKNOWN",
+                "rr_gate": "UNKNOWN",
+                "spread_gate": "UNKNOWN",
+                "cooldown_gate": "UNKNOWN",
+                "daily_limit_gate": "UNKNOWN"
+            }
+            
+            # Парсим gate_reason для детальных результатов
+            if gate_reason:
+                filter_details["failed_gate"] = gate_reason
+            
+            # 5. DECISION LOG
+            decision = DecisionLog(
+                signal_id=signal_id,
+                timestamp=datetime.now().isoformat(),
+                symbol=symbol,
+                raw_signal=signal_data.get('type', 'UNKNOWN'),
+                gpt_confidence=signal_data.get('confidence', 0),
+                gpt_reasoning=signal_data.get('reasoning', ''),
+                filters=filter_details,
+                setup_score=setup_score,
+                final_decision="BLOCK" if not gates_passed else "ENTER",
+                block_reason=gate_reason if not gates_passed else None
+            )
+            
+            self.state_core.log_decision(decision)
+            
+            # 6. ЕСЛИ ЗАБЛОКИРОВАНО - останавливаемся
+            if not gates_passed:
+                logger.warning(f"[AI-Signal] ❌ Signal BLOCKED by filters: {gate_reason}")
+                
+                # Set StateCore status
+                self.state_core.set_status(
+                    BotStatus.BLOCKED,
+                    reason=f"Filters: {gate_reason}"
+                )
+                
+                # Save last analysis (даже если заблокирован)
+                last_analysis = LastAnalysis(
+                    signal_id=signal_id,
+                    symbol=symbol,
+                    action=signal_data.get('type', 'UNKNOWN'),
+                    confidence=signal_data.get('confidence', 0),
+                    reasoning=signal_data.get('reasoning', ''),
+                    timestamp=datetime.now().isoformat(),
+                    filters_passed=False,
+                    block_reason=gate_reason,
+                    setup_score=setup_score
+                )
+                self.state_core.set_last_analysis(last_analysis)
+                
+                # Send rejected signal to rejected logger if available
+                if hasattr(self, 'rejected_logger') and self.rejected_logger:
+                    try:
+                        self.rejected_logger.log_rejected(
+                            symbol=symbol,
+                            direction=signal_data.get('type', 'UNKNOWN'),
+                            confidence=signal_data.get('confidence', 0),
+                            entry=signal_data.get('entry_price', 0),
+                            sl=signal_data.get('stop_loss', 0),
+                            tp=signal_data.get('take_profit', 0),
+                            reason=gate_reason,
+                            filter_type="trade_filters"
+                        )
+                    except Exception as e:
+                        logger.debug(f"[AI-Signal] Failed to log rejected: {e}")
+                
+                # Emit event to UI
+                if self.bot_queue:
+                    self.bot_queue.put({
+                        'type': 'filter_blocked',
+                        'symbol': symbol,
+                        'reason': gate_reason,
+                        'score': setup_score
+                    })
+                
+                return None
+            
+            # 7. ВСЕ ГЕЙТЫ ПРОШЛИ - создаем сигнал
+            logger.info(f"[AI-Signal] ✅ All filters PASSED (setup score: {setup_score})")
+            
+            # 8. STATECORE: Создаем ActiveSignal
+            active_signal = ActiveSignal(
+                signal_id=signal_id,
+                symbol=symbol,
+                action=signal_data.get('type', 'UNKNOWN'),
+                confidence=signal_data.get('confidence', 0),
+                entry=signal_data.get('entry_price', 0),
+                sl=signal_data.get('stop_loss', 0),
+                tp=signal_data.get('take_profit', 0),
+                reasoning=signal_data.get('reasoning', ''),
+                timestamp=datetime.now().isoformat(),
+                setup_score=setup_score,
+                expires_at=(datetime.now() + timedelta(hours=24)).isoformat()
+            )
+            
+            # Set active signal in StateCore
+            if not self.state_core.set_active_signal(active_signal):
+                logger.error(f"[AI-Signal] Failed to set active signal in StateCore (duplicate?)")
+                return None
+            
+            # Save last analysis (passed)
+            last_analysis = LastAnalysis(
+                signal_id=signal_id,
+                symbol=symbol,
+                action=signal_data.get('type', 'UNKNOWN'),
+                confidence=signal_data.get('confidence', 0),
+                reasoning=signal_data.get('reasoning', ''),
+                timestamp=datetime.now().isoformat(),
+                filters_passed=True,
+                block_reason=None,
+                setup_score=setup_score
+            )
+            self.state_core.set_last_analysis(last_analysis)
+            
+            # 9. КРИТИЧНО: Удаляем ВСЕ старые сигналы для этого символа (старый код)
             # Гарантия: только ОДИН активный сигнал на символ
             with self._lock:
                 removed_count = 0
@@ -686,9 +1010,9 @@ class AISignalManager:
                 if removed_count > 0:
                     logger.info(f"[AI-Signal] Cleared {removed_count} old signals for {symbol}")
             
-            # Создаем новый сигнал
+            # 10. Создаем внутренний AISignal object (для совместимости со старым кодом)
             version = analysis.get("analysis_version", "2.0")
-            signal = self._create_signal(symbol, signal_data, version)
+            signal = self._create_signal_with_id(signal_id, symbol, signal_data, version)
             
             with self._lock:
                 self.active_signals.append(signal)
@@ -707,7 +1031,7 @@ class AISignalManager:
                 
                 logger.info(
                     f"[AI-Signal] Created: {signal.type} @ {signal.entry_price} "
-                    f"(conf: {signal.confidence}%, RR: {signal.risk_reward:.2f})"
+                    f"(conf: {signal.confidence}%, RR: {signal.risk_reward:.2f}, Score: {setup_score})"
                 )
                 
                 # Save state
@@ -717,6 +1041,22 @@ class AISignalManager:
             
         except Exception as e:
             logger.error(f"[AI-Signal] Failed to create signal: {e}")
+            
+            # Log error decision
+            decision = DecisionLog(
+                signal_id=f"ERROR_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                timestamp=datetime.now().isoformat(),
+                symbol=symbol,
+                raw_signal=signal_data.get('type', 'UNKNOWN'),
+                gpt_confidence=signal_data.get('confidence', 0),
+                gpt_reasoning=signal_data.get('reasoning', ''),
+                filters={},
+                setup_score=0,
+                final_decision="ERROR",
+                block_reason=str(e)
+            )
+            self.state_core.log_decision(decision)
+            
             return None
     
     def _try_update_signal(self, symbol: str, new_signal_data: Dict):
@@ -748,9 +1088,12 @@ class AISignalManager:
                     break
     
     def _create_signal(self, symbol: str, signal_data: Dict, version: str) -> AISignal:
-        """Create AISignal with TTL."""
+        """Create AISignal with TTL (deprecated - use _create_signal_with_id)."""
         signal_id = f"{symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        
+        return self._create_signal_with_id(signal_id, symbol, signal_data, version)
+    
+    def _create_signal_with_id(self, signal_id: str, symbol: str, signal_data: Dict, version: str) -> AISignal:
+        """Create AISignal with provided signal_id."""
         # Calculate expiration (24 hours default)
         created = datetime.now()
         expires = created + timedelta(hours=24)

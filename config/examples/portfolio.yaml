@@ -1,0 +1,81 @@
+# ========================================================================
+# Portfolio Configuration Template
+# ========================================================================
+# Copy this file to config/portfolio.yaml
+# Defines portfolio allocation and risk model
+# ========================================================================
+
+portfolio:
+  name: XAUUSD Pure Strategy (5-Day Safe)
+  version: v1.0 FROZEN
+  status: PRODUCTION_READY
+  
+  # Instruments to Trade
+  instruments:
+    - XAUUSD
+  
+  # Portfolio Allocation (weights must sum to 1.0)
+  allocation:
+    XAUUSD: 1.0
+  
+  # Risk Model
+  risk_model:
+    mode: simple  # simple or advanced
+    max_total_exposure: 1.25
+    allow_simultaneous_positions: true
+  
+  # Baseline Performance (Historical Reference)
+  baseline_performance:
+    period: 2023-2025
+    total_trades_avg: 318
+    win_rate_avg: 66.65
+    roi_avg: 2381.59
+    max_dd_avg: 7.62
+    sortino_ratio: 312.3
+    diversification_benefit: 206
+    
+    contribution:
+      XAUUSD: 100.0
+
+# Trading Schedule
+trading_schedule:
+  enabled: true
+  start_hour: 0   # 00:00 UTC
+  end_hour: 23    # 23:59 UTC
+  
+  # Trading Days (0 = Monday, 6 = Sunday)
+  trading_days:
+    - 0  # Monday
+    - 1  # Tuesday
+    - 2  # Wednesday
+    - 3  # Thursday
+    - 4  # Friday
+  
+  # Maintenance Windows (No Trading)
+  maintenance_windows:
+    - name: Weekend
+      days:
+        - 5  # Saturday
+        - 6  # Sunday
+    
+    - name: Major news events
+      description: NFP, FOMC, etc. - manual disable
+
+# Manual Trading Settings
+manual_trading:
+  enabled: true
+  ai_predict_enabled: true
+  contract_size: 100000
+  pip_value: 0.0001
+  max_risk_percent: 5.0
+  min_rr_warning: 1.5
+  min_sl_spread_half: 0.5
+  min_sl_price_fraction: 0.00001
+
+# Monitoring & Alerts
+monitoring:
+  log_level: INFO
+  save_trades: true
+  save_equity_curve: true
+  alert_on_dd_threshold: 15.0
+  alert_on_consecutive_losses: 5

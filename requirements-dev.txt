@@ -1,0 +1,31 @@
+# ========================================================================
+# BAZA Trading Bot - Development Dependencies
+# ========================================================================
+# Install with: pip install -r requirements-dev.txt
+# ========================================================================
+
+# Testing Framework
+pytest==8.0.2                # Test runner
+pytest-cov==4.1.0            # Coverage reports
+pytest-mock==3.12.1          # Mocking utilities
+pytest-asyncio==0.23.5       # Async test support
+
+# Code Quality
+black==24.2.0                # Code formatter
+flake8==7.0.0                # Style checker
+pylint==3.0.3                # Linter
+mypy==1.8.0                  # Type checker
+isort==5.13.2                # Import sorter
+
+# Documentation
+sphinx==7.2.6                # Doc generator
+sphinx-rtd-theme==2.0.0      # ReadTheDocs theme
+
+# Development Tools
+ipython==8.21.0              # Enhanced REPL
+jupyterlab==4.1.0            # Notebooks
+pre-commit==3.6.2            # Git hooks
+
+# Profiling & Debug
+memory-profiler==0.61.0      # Memory profiling
+line-profiler==4.1.2         # Line-by-line profiling

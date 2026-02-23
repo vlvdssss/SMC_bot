@@ -1,4 +1,14 @@
 ai_enabled: true
+manual_overrides:
+  enabled: false
+  eurusd:
+    fixed_lot: null
+    sl_pips: 30
+    tp_pips: 50
+  xauusd:
+    fixed_lot: null
+    sl_dollars: 4.5
+    tp_dollars: 12.0
 market_analyst:
   analysis_version: '1.0'
   blocks:
@@ -14,6 +24,7 @@ market_analyst:
     on_error: warning
     use_stale_analysis: true
   gpt:
+    api_key: null
     max_tokens: 4000
     model: gpt-4o
     temperature: 0.3
@@ -23,7 +34,7 @@ market_analyst:
     max_monthly_cost: 50.0
     min_minutes_between_calls: 15
   schedule:
-    enabled: false
+    enabled: true
     interval_minutes: 60
     mode: interval
     restrictions:
@@ -37,14 +48,13 @@ market_analyst:
         monday_end: 01:00
     times: []
   screenshots:
-    bars: 100
+    bars: 200
     cleanup_days: 7
     dpi: 150
     enabled: true
     timeframes:
+    - M5
     - M15
-    - M30
-    - H1
   signal_validity_minutes: 30
   signals:
     auto_cleanup: true
@@ -65,3 +75,12 @@ news_filter:
     HIGH: reduce_50
     LOW: trade
     MEDIUM: reduce_75
+pure_ai:
+  analysis_interval_minutes: 30
+  enabled: true
+  max_positions_per_symbol: 1
+  symbols:
+  - XAUUSD
+  timeframes:
+  - M5
+  - M15

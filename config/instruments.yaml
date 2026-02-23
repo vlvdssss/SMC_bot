@@ -5,10 +5,24 @@ global_settings:
 instruments:
   EURUSD:
     analysis_enabled: false
+    base_lot: 0.1
+    commission_per_lot: 3.0
+    contract_size: 100000
     enabled: false
+    max_lot: 0.5
+    max_trades_per_day: 3
+    name: Euro vs US Dollar
+    pip_size: 0.0001
+    pip_value: 10.0
+    price_decimals: 5
+    risk_per_trade: 2.0
+    spread_multiplier: 0.0001
+    spread_points: 10.0
     trading_enabled: false
+    type: Forex
   XAUUSD:
     analysis_enabled: true
+    base_lot: 0.01
     baseline_performance:
       max_dd: 9.43
       roi: 243.52
@@ -17,6 +31,7 @@ instruments:
     commission_per_lot: 7.0
     contract_size: 100
     enabled: true
+    max_lot: 0.05
     max_trades_per_day: 3
     name: Gold (XAU/USD)
     pip_size: 0.01

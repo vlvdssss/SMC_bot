@@ -1,0 +1,82 @@
+# ========================================================================
+# Instruments Configuration Template
+# ========================================================================
+# Copy this file to config/instruments.yaml
+# Defines trading instruments and their parameters
+# ========================================================================
+
+global_settings:
+  timezone: UTC
+  leverage: 100
+  data_source: backtest  # backtest or live
+
+instruments:
+  # ========================================================================
+  # XAUUSD (Gold) - PRIMARY INSTRUMENT
+  # ========================================================================
+  XAUUSD:
+    enabled: true
+    analysis_enabled: true
+    trading_enabled: true
+    type: Metal
+    name: Gold (XAU/USD)
+    
+    # Contract Specifications
+    contract_size: 100
+    pip_size: 0.01
+    pip_value: 1.0
+    price_decimals: 2
+    spread_multiplier: 0.01
+    spread_points: 20.0
+    
+    # Trading Parameters
+    base_lot: 0.01
+    max_lot: 0.05
+    max_trades_per_day: 3
+    risk_per_trade: 2.0
+    commission_per_lot: 7.0
+    
+    # Strategy
+    strategy_class: StrategyXAUUSD
+    strategy_version: Phase 2 Baseline v1.1 (Fixed Entry)
+    
+    # Historical Performance Reference
+    baseline_performance:
+      total_trades: 97
+      win_rate: 52.6
+      roi: 243.52
+      max_dd: 9.43
+  
+  # ========================================================================
+  # EURUSD (Euro) - DISABLED (Optional)
+  # ========================================================================
+  EURUSD:
+    enabled: false
+    analysis_enabled: false
+    trading_enabled: false
+    type: Forex
+    name: Euro vs US Dollar
+    
+    # Contract Specifications
+    contract_size: 100000
+    pip_size: 0.0001
+    pip_value: 10.0
+    price_decimals: 5
+    spread_multiplier: 0.0001
+    spread_points: 10.0
+    
+    # Trading Parameters
+    base_lot: 0.1
+    max_lot: 0.5
+    max_trades_per_day: 3
+    risk_per_trade: 2.0
+    commission_per_lot: 3.0
+
+# ========================================================================
+# NOTES
+# ========================================================================
+# - This configuration focuses on XAUUSD only
+# - To enable EURUSD, set enabled: true and configure in portfolio.yaml
+# - Pip size/value must match your broker's specifications
+# - Commission per lot depends on your broker - check with support
+# ========================================================================

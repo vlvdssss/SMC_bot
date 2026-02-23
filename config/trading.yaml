@@ -1,8 +1,23 @@
 trading:
   check_interval_seconds: 1
+  dry_run: false
+  enabled: true
+  filters:
+    cooldown_after_2_losses: 180
+    cooldown_after_loss: 45
+    cooldown_after_win: 15
+    daily_limit: 6
+    enabled: true
+    htf_ema_fast: 50
+    htf_ema_slow: 200
+    htf_timeframe: M15
+    max_spread_pips: 1.5
+    min_confidence: 75
+    min_rr: 1.2
+    min_setup_score: 70
   hours:
-    end: '23:00'
-    start: 01:00
+    end: '23:30'
+    start: 01:10
   indicators:
     atr_period: 14
     ema_periods:
@@ -15,17 +30,18 @@ trading:
     - M30
     - H1
     - H4
+  mode: auto
   profit_protection:
     consecutive_wins: 3
-    cooldown_minutes: 20
+    cooldown_minutes: 180
     enabled: true
   risk:
     default_sl_pips: 40
     default_tp_pips: 100
     fixed_lot_size: 0.01
+    max_spread_pips: 1.5
   signal_quality:
-    invert_signals: true
-    min_confidence: 75
+    invert_signals: false
   signal_ttl:
     auto_requery_invalidate_cooldown_minutes: 5
     auto_requery_on_close: true
@@ -33,14 +49,14 @@ trading:
     auto_requery_on_invalidate: true
     enabled: true
     requery_cooldown_minutes: 15
-    ttl_minutes: 10
+    ttl_minutes: 30
   smc:
     enabled: true
     fair_value_gaps: true
     order_blocks: true
   stop_loss_protection:
     consecutive_stops: 2
-    cooldown_minutes: 10
+    cooldown_minutes: 180
     enabled: true
   trailing_stop:
     activation_profit_percent: 30
@@ -48,3 +64,16 @@ trading:
     trailing_step_percent: 10
   trend_filter:
     enabled: true
+  v5_improvements:
+    adaptive_lot:
+      base_lot: 0.01
+      enabled: false
+      lookback_trades: 10
+      max_lot: 0.05
+    rejected_logger:
+      enabled: true
+    session_adapter:
+      enabled: true
+    technical_filter:
+      enabled: true
+      strict_mode: false

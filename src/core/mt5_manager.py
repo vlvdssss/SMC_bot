@@ -4,6 +4,7 @@ MT5 Manager - централизованное управление MT5 подк
 
 import logging
 import time
+import threading
 from typing import Optional, Dict, Any, Tuple
 from pathlib import Path
 import sys
@@ -42,28 +43,47 @@ class MT5Manager:
         self.account_info = {}
         self.last_connect_attempt = 0
         self.connect_cooldown = 5  # секунды
+        
+        # Thread-safety lock для reconnect и торговых операций
+        self.lock = threading.Lock()
 
-        # Импортируем MT5
+        # Импортируем MT5 (опционально)
         try:
             import MetaTrader5 as mt5
             self.mt5 = mt5
             logger.info("MT5 library imported successfully")
         except ImportError:
-            logger.error("MetaTrader5 library not found")
-            raise ImportError("MetaTrader5 library is required")
+            logger.warning("MetaTrader5 library not found - MT5 features will be unavailable")
+            # Не падаем, просто работаем без MT5
         
         self._initialized = True
 
     def initialize(self, terminal_path: str = None) -> bool:
-        """Инициализация MT5."""
+        """Инициализация MT5 с понятными сообщениями об ошибках."""
         try:
+            if not self.mt5:
+                logger.warning("MT5 library not available")
+                return False
+            
             if terminal_path and Path(terminal_path).exists():
                 if not self.mt5.initialize(terminal_path):
-                    logger.error(f"Failed to initialize MT5 with path: {terminal_path}")
+                    error = self.mt5.last_error()
+                    error_code = error[0] if error else None
+                    
+                    if error_code == -10004:
+                        logger.error("MT5 terminal not running (No IPC connection)")
+                    else:
+                        logger.error(f"Failed to initialize MT5 with path: {terminal_path}, error: {error}")
                     return False
             else:
                 if not self.mt5.initialize():
-                    logger.error("Failed to initialize MT5")
+                    error = self.mt5.last_error()
+                    error_code = error[0] if error else None
+                    
+                    if error_code == -10004:
+                        logger.error("MT5 terminal not running (No IPC connection)")
+                    else:
+                        logger.error(f"Failed to initialize MT5, error: {error}")
                     return False
 
             logger.info("MT5 initialized successfully")
@@ -73,20 +93,39 @@ class MT5Manager:
             logger.error(f"MT5 initialization error: {e}")
             return False
 
-    def connect(self, login: int, password: str, server: str) -> Tuple[bool, str]:
-        """Подключение к торговому счету."""
+    def connect(self, login: int, password: str, server: str, terminal_path: str = None) -> Tuple[bool, str]:
+        """Подключение к торговому счету с автоинициализацией."""
         current_time = time.time()
 
         # Проверка cooldown
         if current_time - self.last_connect_attempt < self.connect_cooldown:
-            return False, "Подождите перед следующей попыткой подключения"
+            return False, "⏱️ Подождите перед следующей попыткой подключения"
 
         self.last_connect_attempt = current_time
 
         try:
             # Проверяем инициализацию
             if not self.mt5:
-                return False, "MT5 не инициализирован"
+                return False, "❌ MT5 библиотека не загружена (установите: pip install MetaTrader5)"
+            
+            # Автоматическая инициализация если еще не инициализирован
+            if not self.initialize(terminal_path):
+                error = self.mt5.last_error()
+                error_code = error[0] if error else None
+                
+                # Специальная обработка ошибки "No IPC connection"
+                if error_code == -10004:
+                    return False, (
+                        "🔌 MT5 терминал не запущен!\n\n"
+                        "Решение:\n"
+                        "1. Запустите MetaTrader 5 терминал вручную\n"
+                        "2. Дождитесь полной загрузки терминала\n"
+                        "3. Попробуйте подключиться снова"
+                    )
+                elif error_code == -10005:
+                    return False, "❌ MT5 терминал работает под другим пользователем"
+                else:
+                    return False, f"❌ Не удалось инициализировать MT5: {error}"
 
             # Подключаемся
             authorized = self.mt5.login(login, password, server)
@@ -132,6 +171,173 @@ class MT5Manager:
             logger.error(f"MT5 disconnect error: {e}")
 
         return False
+
+    def test_connection(self, login: int, password: str, server: str, terminal_path: str = None) -> Tuple[bool, str, Optional[Dict]]:
+        """
+        Тест подключения к MT5 без изменения текущего соединения.
+        
+        Returns:
+            Tuple[bool, str, Optional[Dict]]: (success, message, account_info_dict)
+        """
+        test_mt5 = None
+        try:
+            # Импортируем MT5 для теста
+            import MetaTrader5 as test_mt5_module
+            test_mt5 = test_mt5_module
+            
+            # Validate inputs
+            if not login or not password or not server:
+                return False, "Login, Password и Server обязательны", None
+            
+            # Initialize
+            if terminal_path and Path(terminal_path).exists():
+                if not test_mt5.initialize(terminal_path):
+                    error = test_mt5.last_error()
+                    error_code = error[0] if error else None
+                    
+                    # Специальная обработка "No IPC connection"
+                    if error_code == -10004:
+                        return False, (
+                            "🔌 MT5 терминал не запущен!\n\n"
+                            "Решение:\n"
+                            "1. Запустите MetaTrader 5 терминал вручную\n"
+                            "2. Дождитесь полной загрузки терминала\n"
+                            "3. Попробуйте Test Connection снова"
+                        ), None
+                    
+                    return False, f"Не удалось инициализировать MT5: {error}", None
+            else:
+                if not test_mt5.initialize():
+                    error = test_mt5.last_error()
+                    error_code = error[0] if error else None
+                    
+                    # Специальная обработка "No IPC connection"
+                    if error_code == -10004:
+                        return False, (
+                            "🔌 MT5 терминал не запущен!\n\n"
+                            "Решение:\n"
+                            "1. Запустите MetaTrader 5 терминал вручную\n"
+                            "2. Дождитесь полной загрузки терминала\n"
+                            "3. Попробуйте Test Connection снова"
+                        ), None
+                    
+                    return False, f"Не удалось инициализировать MT5: {error}", None
+            
+            # Try login
+            login_int = int(login) if isinstance(login, str) else login
+            authorized = test_mt5.login(login_int, password=password, server=server)
+            
+            if not authorized:
+                error = test_mt5.last_error()
+                test_mt5.shutdown()
+                return False, f"Ошибка авторизации: {error}", None
+            
+            # Get account info
+            account = test_mt5.account_info()
+            if not account:
+                test_mt5.shutdown()
+                return False, "Не удалось получить информацию о счёте", None
+            
+            account_dict = {
+                'login': account.login,
+                'name': account.name,
+                'server': account.server,
+                'balance': account.balance,
+                'currency': account.currency,
+                'equity': account.equity,
+                'margin': account.margin,
+                'margin_free': account.margin_free
+            }
+            
+            # Shutdown test connection
+            test_mt5.shutdown()
+            
+            message = f"✅ Подключение успешно!\n\nAccount: {account.login}\nName: {account.name}\nServer: {account.server}\nBalance: ${account.balance:.2f}\nCurrency: {account.currency}"
+            logger.info(f"[MT5] Test connection successful: {account.login}@{server}")
+            
+            return True, message, account_dict
+            
+        except Exception as e:
+            if test_mt5:
+                try:
+                    test_mt5.shutdown()
+                except:
+                    pass
+            logger.error(f"[MT5] Test connection failed: {e}")
+            return False, f"Ошибка тестирования: {str(e)}", None
+
+    def apply_settings(self, login: int, password: str, server: str, terminal_path: str = None) -> Tuple[bool, str]:
+        """
+        Применить новые настройки MT5 с reconnect без перезапуска бота.
+        
+        Thread-safe: использует self.lock для предотвращения конфликтов с торговыми операциями.
+        
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        with self.lock:
+            try:
+                # Validate inputs
+                if not login or not password or not server:
+                    return False, "Login, Password и Server обязательны"
+                
+                login_int = int(login) if isinstance(login, str) else login
+                
+                # Disconnect from current connection if any
+                was_connected = self.connected
+                if was_connected:
+                    logger.info("[MT5] Disconnecting for reconnect...")
+                    self.disconnect()
+                    time.sleep(0.5)  # Small delay
+                
+                # (Re)Initialize with new settings
+                if not self.initialize(terminal_path):
+                    return False, "Не удалось инициализировать MT5"
+                
+                # Connect with new credentials
+                success, message = self.connect(login_int, password, server)
+                
+                if success:
+                    logger.info(f"[MT5] Settings applied and connected: {login_int}@{server}")
+                    return True, f"✅ Настройки применены! {message}"
+                else:
+                    return False, f"Настройки сохранены, но не удалось подключиться: {message}"
+                    
+            except Exception as e:
+                logger.error(f"[MT5] Failed to apply settings: {e}")
+                return False, f"Ошибка применения настроек: {str(e)}"
+
+    def reconnect(self) -> Tuple[bool, str]:
+        """
+        Переподключение к MT5 с текущими credentials.
+        
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        with self.lock:
+            try:
+                if not self.account_info:
+                    return False, "Нет сохранённых credentials для reconnect"
+                
+                # Get current credentials
+                login = self.account_info.get('login')
+                server = self.account_info.get('server')
+                
+                if not login or not server:
+                    return False, "Incomplete credentials"
+                
+                # Disconnect
+                self.disconnect()
+                time.sleep(0.5)
+                
+                # Note: we can't reconnect without password, which we don't store
+                # This method is more for forced disconnect/connect cycle
+                logger.warning("[MT5] Reconnect called but password not available")
+                return False, "Reconnect requires password (use apply_settings instead)"
+                
+            except Exception as e:
+                logger.error(f"[MT5] Reconnect failed: {e}")
+                return False, f"Ошибка reconnect: {str(e)}"
 
     def is_connected(self) -> bool:
         """Проверка подключения."""
