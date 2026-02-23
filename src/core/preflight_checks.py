@@ -3,6 +3,7 @@ Pre-Flight Checks Module
 Validates system readiness before starting 5-day production run
 """
 
+import os
 import yaml
 from datetime import datetime
 from pathlib import Path
@@ -133,14 +134,22 @@ class PreFlightChecker:
                 if not scheduler or not scheduler.analyst:
                     return False, {'error': 'AI Scheduler not initialized'}
                 
-                # Check API key
+                # Check API key (правильный путь: market_analyst.gpt.api_key)
                 ai_config = self.config_manager.get_config('ai')
-                api_key = ai_config.get('openai', {}).get('api_key', '')
+                api_key = ai_config.get('market_analyst', {}).get('gpt', {}).get('api_key')
+                
+                # Если в yaml стоит null, пробуем загрузить из .env
+                if not api_key:
+                    try:
+                        from src.core.credentials import get_credential
+                        api_key = get_credential('OPENAI_API_KEY')
+                    except Exception:
+                        api_key = os.getenv('OPENAI_API_KEY')
                 
                 if not api_key or api_key == 'your_openai_api_key_here':
                     return False, {'error': 'OpenAI API key not configured'}
                 
-                model = ai_config.get('openai', {}).get('model', 'gpt-4o')
+                model = ai_config.get('market_analyst', {}).get('gpt', {}).get('model', 'gpt-4o')
                 
                 details = {
                     'scheduler_ready': True,
@@ -292,7 +301,7 @@ class PreFlightChecker:
                 'default_tp_pips': risk.get('default_tp_pips', 100),
                 
                 # AI
-                'model': ai_config.get('openai', {}).get('model', 'gpt-4o'),
+                'model': ai_config.get('market_analyst', {}).get('gpt', {}).get('model', 'gpt-4o'),
                 
                 # Mode
                 'dry_run': trading_config.get('trading', {}).get('dry_run', False),
