@@ -4137,6 +4137,8 @@ class BazaAppV2:
             else:
                 text = f"{seconds}s"
             self.bot_timer_label.configure(text=text)
+
+    def _bot_gpt_request_started(self, event: dict):
         """Handle GPT request started event"""
         symbol = event.get('symbol', 'XAUUSD')
         self.bot_state['status'] = 'ANALYZING'
@@ -4144,7 +4146,7 @@ class BazaAppV2:
         self.add_log(f"🤖 GPT analyzing {symbol}...", "INFO")
         self._bot_update_status({'status': 'ANALYZING'})
         self._bot_update_pipeline({'step': 'gpt', 'state': 'ACTIVE'})
-    
+
     def _bot_gpt_decision_ready(self, event: dict):
         """Handle GPT decision ready event (SINGLE SOURCE OF TRUTH)"""
         signal_data = {
