@@ -81,6 +81,7 @@ class AnalystScheduler:
         # Analysis lock to prevent duplicate runs
         self._analysis_lock = threading.Lock()
         self._last_analysis_time = {}  # symbol -> timestamp
+        self._countdown_remaining = 0  # seconds remaining in current cooldown (for GUI)
         
         if self.schedule_enabled:
             if self.mode == 'interval':
@@ -661,12 +662,16 @@ class AnalystScheduler:
                 total_seconds = cooldown_minutes * 60
                 sleep_interval = 10  # Check every 10 seconds
                 elapsed = 0
+                self._countdown_remaining = total_seconds
                 while elapsed < total_seconds:
                     if not self.running:
                         logger.info("[AI-Scheduler] ⏸️ Cooldown interrupted - scheduler stopped")
+                        self._countdown_remaining = 0
                         return
                     time.sleep(min(sleep_interval, total_seconds - elapsed))
                     elapsed += sleep_interval
+                    self._countdown_remaining = max(0, total_seconds - elapsed)
+                self._countdown_remaining = 0
                 logger.info(f"[AI-Scheduler] ⏰ Cooldown finished - starting analysis")
             
             # Check if scheduler is still running before analysis

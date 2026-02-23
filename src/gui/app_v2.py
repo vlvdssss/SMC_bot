@@ -3241,11 +3241,24 @@ class BazaAppV2:
                     # Update bot status
                     self.bot_queue.put({'type': 'status', 'status': 'WAITING'})
                     
-                    # Countdown timer
+                    # Countdown timer — show main-loop countdown or AI-Scheduler wait, whichever is larger
+                    try:
+                        _sched = get_scheduler()
+                        _sched_remaining = int(getattr(_sched, '_countdown_remaining', 0)) if _sched else 0
+                    except Exception:
+                        _sched_remaining = 0
+
                     for remaining in range(check_interval, 0, -1):
                         if self.trading_stop_event.is_set():
                             break
-                        self.bot_queue.put({'type': 'timer', 'seconds': remaining})
+                        # Prefer showing the longer AI-Scheduler countdown over the short main-loop tick
+                        try:
+                            _sched = get_scheduler()
+                            _cur_sched = int(getattr(_sched, '_countdown_remaining', 0)) if _sched else 0
+                        except Exception:
+                            _cur_sched = 0
+                        display_secs = _cur_sched if _cur_sched > remaining else remaining
+                        self.bot_queue.put({'type': 'timer', 'seconds': display_secs})
                         time.sleep(1)
                     
                     if self.trading_stop_event.is_set():
@@ -4117,13 +4130,13 @@ class BazaAppV2:
         self.bot_state['next_check_sec'] = seconds
         
         if seconds > 0:
-            self.bot_timer_label.configure(text=f"{seconds}s")
-        else:
-            self.bot_timer_label.configure(text="--s")
-    
-    # ==================== NEW: Signal Lifecycle Event Handlers ====================
-    
-    def _bot_gpt_request_started(self, event: dict):
+            if seconds >= 60:
+                mins = seconds // 60
+                secs = seconds % 60
+                text = f"{mins}m {secs}s" if secs > 0 else f"{mins}m"
+            else:
+                text = f"{seconds}s"
+            self.bot_timer_label.configure(text=text)
         """Handle GPT request started event"""
         symbol = event.get('symbol', 'XAUUSD')
         self.bot_state['status'] = 'ANALYZING'

@@ -2078,6 +2078,16 @@ class LiveTrader:
                         # Удаляем из tracked
                         del self.tracked_positions[ticket]
                     
+                    # ─── Reset StateCore: position is closed → back to IDLE ───
+                    if hasattr(self, 'state_core') and self.state_core:
+                        try:
+                            from src.core.state_core import BotStatus
+                            self.state_core.clear_active_signal()
+                            self.state_core.set_status(BotStatus.IDLE, reason="Position closed")
+                            logger.info(f"[LiveTrader] StateCore reset to IDLE after position close #{ticket}")
+                        except Exception as _sc_err:
+                            logger.warning(f"[LiveTrader] Failed to reset StateCore after close: {_sc_err}")
+
                     # AUTO-REQUERY: Trigger GPT analysis after position close (configurable cooldown)
                     if hasattr(self, 'analyst_scheduler') and self.analyst_scheduler:
                         cooldown = self.config.get('trading', {}).get('signal_ttl', {}).get('requery_cooldown_minutes', 5)
