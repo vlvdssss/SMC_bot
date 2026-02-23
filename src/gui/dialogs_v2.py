@@ -787,7 +787,9 @@ class MT5SettingsDialog(tk.Toplevel):
         # Login
         self._create_row(content, "Login:", is_first=True)
         self.login_var = tk.StringVar()
-        tk.Entry(content, textvariable=self.login_var,
+        login_frame = tk.Frame(content, bg=Colors.BG_DARK)
+        login_frame.pack(fill='x', pady=(5, 15))
+        tk.Entry(login_frame, textvariable=self.login_var,
                 font=('Arial', 10),
                 bg=Colors.BG_CARD,
                 fg=Colors.TEXT_PRIMARY,
@@ -795,7 +797,11 @@ class MT5SettingsDialog(tk.Toplevel):
                 relief='flat',
                 highlightthickness=1,
                 highlightbackground=Colors.BORDER,
-                highlightcolor=Colors.ACCENT).pack(fill='x', pady=(5, 15))
+                highlightcolor=Colors.ACCENT).pack(side='left', fill='x', expand=True)
+        tk.Button(login_frame, text="📋 Paste",
+                 command=lambda: self.login_var.set(self.clipboard_get()),
+                 font=('Arial', 8), bg=Colors.BG_CARD, fg=Colors.TEXT_SECONDARY,
+                 relief='flat', cursor='hand2', padx=6).pack(side='right', padx=(5, 0))
         
         # Password
         self._create_row(content, "Password:")
@@ -826,11 +832,17 @@ class MT5SettingsDialog(tk.Toplevel):
                       activebackground=Colors.BG_DARK,
                       activeforeground=Colors.TEXT_PRIMARY,
                       font=('Arial', 8)).pack(side='right', padx=(8, 0))
+        tk.Button(password_frame, text="📋 Paste",
+                 command=lambda: self.password_var.set(self.clipboard_get()),
+                 font=('Arial', 8), bg=Colors.BG_CARD, fg=Colors.TEXT_SECONDARY,
+                 relief='flat', cursor='hand2', padx=6).pack(side='right', padx=(5, 0))
         
         # Server
         self._create_row(content, "Server:")
         self.server_var = tk.StringVar()
-        tk.Entry(content, textvariable=self.server_var,
+        server_frame = tk.Frame(content, bg=Colors.BG_DARK)
+        server_frame.pack(fill='x', pady=(5, 15))
+        tk.Entry(server_frame, textvariable=self.server_var,
                 font=('Arial', 10),
                 bg=Colors.BG_CARD,
                 fg=Colors.TEXT_PRIMARY,
@@ -838,12 +850,18 @@ class MT5SettingsDialog(tk.Toplevel):
                 relief='flat',
                 highlightthickness=1,
                 highlightbackground=Colors.BORDER,
-                highlightcolor=Colors.ACCENT).pack(fill='x', pady=(5, 15))
+                highlightcolor=Colors.ACCENT).pack(side='left', fill='x', expand=True)
+        tk.Button(server_frame, text="📋 Paste",
+                 command=lambda: self.server_var.set(self.clipboard_get()),
+                 font=('Arial', 8), bg=Colors.BG_CARD, fg=Colors.TEXT_SECONDARY,
+                 relief='flat', cursor='hand2', padx=6).pack(side='right', padx=(5, 0))
         
         # Path (optional)
         self._create_row(content, "Terminal Path (optional):")
         self.path_var = tk.StringVar()
-        tk.Entry(content, textvariable=self.path_var,
+        path_frame = tk.Frame(content, bg=Colors.BG_DARK)
+        path_frame.pack(fill='x', pady=(5, 20))
+        tk.Entry(path_frame, textvariable=self.path_var,
                 font=('Arial', 9),
                 bg=Colors.BG_CARD,
                 fg=Colors.TEXT_SECONDARY,
@@ -851,7 +869,11 @@ class MT5SettingsDialog(tk.Toplevel):
                 relief='flat',
                 highlightthickness=1,
                 highlightbackground=Colors.BORDER,
-                highlightcolor=Colors.ACCENT).pack(fill='x', pady=(5, 20))
+                highlightcolor=Colors.ACCENT).pack(side='left', fill='x', expand=True)
+        tk.Button(path_frame, text="📋 Paste",
+                 command=lambda: self.path_var.set(self.clipboard_get()),
+                 font=('Arial', 8), bg=Colors.BG_CARD, fg=Colors.TEXT_SECONDARY,
+                 relief='flat', cursor='hand2', padx=6).pack(side='right', padx=(5, 0))
         
         # Status Bar (зелёный/красный)
         status_container = tk.Frame(self, bg=Colors.BG_CARD, height=50)
