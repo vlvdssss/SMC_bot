@@ -416,7 +416,8 @@ class MT5Manager:
                     return {
                         'name': terminal.name,
                         'company': terminal.company,
-                        'path': terminal.path
+                        'path': terminal.path,
+                        'connected': terminal.connected  # ВАЖНО: Статус подключения к серверу
                     }
             except Exception as e:
                 logger.error(f"Error getting terminal info: {e}")
