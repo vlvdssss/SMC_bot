@@ -34,6 +34,7 @@ from src.core.logger import logger as app_logger
 from src.core.mt5_manager import MT5Manager
 from src.core.run_session_manager import get_run_session_manager
 from src.core.state_core import get_state_core
+from src.core.config_manager import get_config_manager
 
 # Import AI modules conditionally
 try:
@@ -1042,6 +1043,7 @@ class BazaAppV2:
         self.app_state = AppState()
         self.update_queue = Queue()
         self.mt5_manager = MT5Manager()
+        self.config_manager = get_config_manager()  # Config manager singleton
         
         # ML Training state
         self.ml_queue = Queue()
