@@ -432,9 +432,18 @@ class AnalystScheduler:
             # NOW run actual GPT analysis
             logger.ai(f"Starting analysis for {symbol} ({vol_reason})")
             
-            # Step 1: Run analysis with fallback on error
+            # Step 1: Run analysis with hard 120-second timeout (prevents infinite GPT/screenshot hang)
+            import concurrent.futures as _cf
             try:
-                analysis = self.analyst.analyze_market(symbol)
+                with _cf.ThreadPoolExecutor(max_workers=1) as _tpe:
+                    _future = _tpe.submit(self.analyst.analyze_market, symbol)
+                    try:
+                        analysis = _future.result(timeout=120)  # 2-minute hard deadline
+                    except _cf.TimeoutError:
+                        logger.error(f"[AI-Scheduler] ❌ ANALYSIS TIMEOUT: analyze_market() did not complete in 120s")
+                        logger.error("[AI-Scheduler] 💡 Possible causes: GPT API hang, screenshot capture hang")
+                        analysis = self._get_fallback_analysis(symbol, error="Analysis timeout (120s)")
+                        self.state_core.set_status(BotStatus.ERROR, reason="Analysis timeout")
             except ValueError as e:
                 # Configuration errors (invalid API key, missing config)
                 logger.error(f"[AI-Scheduler] ❌ CONFIGURATION ERROR: {e}")

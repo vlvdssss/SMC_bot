@@ -1652,38 +1652,30 @@ class LiveTrader:
                     except Exception as e:
                         logger.error(f"[TRADE] Failed to mark AI signal as filled: {e}")
                 
-                # Отправка Telegram уведомления
+                # Отправка Telegram уведомления (в фоновом потоке — не блокирует торговый цикл)
                 if self.telegram:
                     try:
-                        # Определяем режим торговли
                         from src.core.bot_manager import BotManager
-                        bot_manager = BotManager()
-                        trading_mode = bot_manager.trading_mode
-                        
-                        reasoning = signal.get('reasoning', '')
-                        
-                        # FIXED: Handle confidence format (decimal or percentage)
-                        raw_conf = signal.get('confidence', 0)
-                        if isinstance(raw_conf, (int, float)) and raw_conf <= 1.0:
-                            confidence = raw_conf * 100  # Convert decimal to %
-                        else:
-                            confidence = raw_conf  # Already in %
-                        
-                        # Отправляем уведомление
-                        self.telegram.send_trade_opened(
-                            symbol=symbol,
-                            direction=direction,
-                            lot=lot_size,
-                            entry=entry,
-                            sl=sl,
-                            tp=tp,
-                            mode='pure_ai' if trading_mode == 'pure_ai' else 'strategy',
-                            reasoning=reasoning,
-                            confidence=confidence
-                        )
-                        logger.info(f"[Telegram] Trade opened notification sent for {symbol}")
+                        _tg_mode = BotManager().trading_mode
+                        _tg_reasoning = signal.get('reasoning', '')
+                        _raw_conf = signal.get('confidence', 0)
+                        _tg_conf = (_raw_conf * 100) if isinstance(_raw_conf, (int, float)) and _raw_conf <= 1.0 else _raw_conf
+                        _tg_ref = self.telegram
+                        def _send_opened(_ref=_tg_ref, _sym=symbol, _dir=direction, _lot=lot_size,
+                                         _en=entry, _sl=sl, _tp=tp, _mode=_tg_mode,
+                                         _reason=_tg_reasoning, _conf=_tg_conf):
+                            try:
+                                _ref.send_trade_opened(symbol=_sym, direction=_dir, lot=_lot,
+                                    entry=_en, sl=_sl, tp=_tp,
+                                    mode='pure_ai' if _mode == 'pure_ai' else 'strategy',
+                                    reasoning=_reason, confidence=_conf)
+                                logger.info(f"[Telegram] Trade opened notification sent for {_sym}")
+                            except Exception as _e:
+                                logger.error(f"[Telegram] Failed to send trade opened notification: {_e}")
+                        import threading as _thr
+                        _thr.Thread(target=_send_opened, daemon=True).start()
                     except Exception as tg_error:
-                        logger.error(f"[Telegram] Failed to send trade opened notification: {tg_error}")
+                        logger.error(f"[Telegram] Failed to queue trade opened notification: {tg_error}")
                 
                 # Запоминаем позицию для отслеживания закрытия и трейлинга
                 try:
@@ -1915,21 +1907,26 @@ class LiveTrader:
                         logger.info(f"[Closed]    TP distance: ${tp_distance:.2f}, SL distance: ${sl_distance:.2f}")
                         logger.info("=" * 70)
                         
-                        # Отправляем уведомление (только если Telegram настроен)
+                        # Отправляем уведомление (в фоновом потоке — не блокирует торговый цикл)
                         if self.telegram:
                             try:
-                                self.telegram.send_trade_closed(
-                                    symbol=pos_info['symbol'],
-                                    direction=pos_info['direction'],
-                                    profit=profit,
-                                    pips=pips,
-                                    duration=duration_str,
-                                    mode='pure_ai' if trading_mode == 'pure_ai' else 'strategy',
-                                    result_reason=result_reason
-                                )
-                                logger.info(f"[Telegram] Trade closed notification sent for #{ticket}")
+                                _tg_ref = self.telegram
+                                _tk = ticket; _pi = pos_info; _pr = profit; _pip = pips
+                                _dur = duration_str; _tm = trading_mode; _rr = result_reason
+                                def _send_closed(_ref=_tg_ref, _s=_pi['symbol'], _d=_pi['direction'],
+                                                 _p=_pr, _pp=_pip, _du=_dur, _mo=_tm, _re=_rr, _t=_tk):
+                                    try:
+                                        _ref.send_trade_closed(symbol=_s, direction=_d, profit=_p,
+                                            pips=_pp, duration=_du,
+                                            mode='pure_ai' if _mo == 'pure_ai' else 'strategy',
+                                            result_reason=_re)
+                                        logger.info(f"[Telegram] Trade closed notification sent for #{_t}")
+                                    except Exception as _e:
+                                        logger.error(f"[Telegram] Failed to send closure notification: {_e}")
+                                import threading as _thr
+                                _thr.Thread(target=_send_closed, daemon=True).start()
                             except Exception as tg_error:
-                                logger.error(f"[Telegram] Failed to send closure notification: {tg_error}")
+                                logger.error(f"[Telegram] Failed to queue closure notification: {tg_error}")
                         
                         # Логируем результат в ML систему
                         if self.ml_collector:
@@ -2042,25 +2039,28 @@ class LiveTrader:
                         logger.info(f"[Closed]    ⚠️ Deal not found in MT5 history - using estimated data")
                         logger.info("=" * 70)
                         
-                        # Отправляем уведомление (только если Telegram настроен)
+                        # Отправляем уведомление (в фоновом потоке — не блокирует торговый цикл)
                         if self.telegram and self.notify_config.get('trade_closed', True):
                             try:
                                 from src.core.bot_manager import BotManager
-                                bot_manager = BotManager()
-                                trading_mode = bot_manager.trading_mode
-                                
-                                self.telegram.send_trade_closed(
-                                    symbol=pos_info['symbol'],
-                                    direction=pos_info['direction'],
-                                    profit=estimated_profit,
-                                    pips=estimated_pips,
-                                    duration=duration_str,
-                                    mode='pure_ai' if trading_mode == 'pure_ai' else 'strategy',
-                                    result_reason="Trailing Stop"
-                                )
-                                logger.info(f"[Telegram] Trade closed notification sent for #{ticket} (estimated data)")
+                                _est_tm = BotManager().trading_mode
+                                _tg_ref = self.telegram
+                                _tk = ticket; _pi = pos_info
+                                _ep = estimated_profit; _epip = estimated_pips; _dur = duration_str
+                                def _send_est(_ref=_tg_ref, _s=_pi['symbol'], _d=_pi['direction'],
+                                              _p=_ep, _pp=_epip, _du=_dur, _mo=_est_tm, _t=_tk):
+                                    try:
+                                        _ref.send_trade_closed(symbol=_s, direction=_d, profit=_p,
+                                            pips=_pp, duration=_du,
+                                            mode='pure_ai' if _mo == 'pure_ai' else 'strategy',
+                                            result_reason="Trailing Stop")
+                                        logger.info(f"[Telegram] Trade closed notification sent for #{_t} (estimated data)")
+                                    except Exception as _e:
+                                        logger.error(f"[Telegram] Failed to send closure notification: {_e}")
+                                import threading as _thr
+                                _thr.Thread(target=_send_est, daemon=True).start()
                             except Exception as tg_error:
-                                logger.error(f"[Telegram] Failed to send closure notification: {tg_error}")
+                                logger.error(f"[Telegram] Failed to queue closure notification: {tg_error}")
                         
                         # NOTE: Trade history is now managed by bot_manager._sync_with_mt5()
                         # This prevents duplicate entries in trades_history.json
